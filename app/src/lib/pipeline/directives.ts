@@ -1,0 +1,120 @@
+import { visit } from "unist-util-visit";
+import { toString as mdToString } from "mdast-util-to-string";
+import { BlockError, parseChartBlock, parseKpiLine, parseTableBlock } from "./parse.js";
+import type { PipelineContext } from "./types.js";
+
+type AnyNode = Record<string, any>;
+
+function setElement(node: AnyNode, hName: string, hProperties: Record<string, unknown> = {}, hChildren?: unknown[]) {
+  const props: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(hProperties)) {
+    if (v !== undefined && v !== null && v !== "") props[k] = v;
+  }
+  node.data = node.data || {};
+  node.data.hName = hName;
+  node.data.hProperties = { ...(node.data.hProperties || {}), ...props };
+  if (hChildren) node.data.hChildren = hChildren;
+}
+
+function warn(ctx: PipelineContext, node: AnyNode, message: string) {
+  ctx.warnings.push({ line: node.position?.start?.line ?? 0, message });
+}
+
+function errorElement(node: AnyNode, message: string) {
+  setElement(node, "art-error", {}, [{ type: "text", value: message }]);
+}
+
+function kpiChildren(node: AnyNode) {
+  const items: AnyNode[] = [];
+  visit(node, "listItem", (item: AnyNode) => {
+    const parsed = parseKpiLine(mdToString(item));
+    if (!parsed) return;
+    items.push({
+      type: "element",
+      tagName: "art-kpi",
+      properties: {
+        label: parsed.label,
+        value: parsed.value,
+        tone: parsed.tone,
+        delta: parsed.delta,
+      },
+      children: [],
+    });
+  });
+  return items;
+}
+
+function handleDirective(node: AnyNode, ctx: PipelineContext) {
+  const attrs: Record<string, string> = node.attributes || {};
+  switch (node.name) {
+    case "card":
+      setElement(node, "art-card", { title: attrs.title, subtitle: attrs.subtitle });
+      return;
+    case "callout":
+      setElement(node, "art-callout", { tone: attrs.tone || "info", title: attrs.title });
+      return;
+    case "kpis":
+      setElement(node, "art-kpis", {}, kpiChildren(node));
+      return;
+    case "columns":
+      setElement(node, "art-columns", { n: String(Math.min(Math.max(Number(attrs.n || 2) || 2, 2), 4)) });
+      return;
+    case "col":
+      setElement(node, "art-col", {});
+      return;
+    case "tabs":
+      setElement(node, "art-tabs", {});
+      return;
+    case "tab":
+      setElement(node, "art-tab", { label: attrs.label || "Tab" });
+      return;
+    case "details":
+      setElement(node, "art-details", { summary: attrs.summary || "Details" });
+      return;
+    default:
+      warn(ctx, node, `unknown directive ":::${node.name}"`);
+      errorElement(node, `Unknown block ":::${node.name}"`);
+  }
+}
+
+function handleCode(node: AnyNode, ctx: PipelineContext, blockHint: string | null) {
+  const lang = (node.lang || "").toLowerCase();
+  if (lang !== "chart" && lang !== "table" && lang !== "mermaid" && lang !== "html") return;
+
+  if (lang === "mermaid" || lang === "html") {
+    const id = `e${ctx.embedCounter++}`;
+    ctx.embeds.push({ id, kind: lang, content: node.value ?? "", block: blockHint });
+    setElement(node, "art-embed", { dataEmbed: id, dataKind: lang }, []);
+    return;
+  }
+
+  try {
+    if (lang === "chart") {
+      const spec = parseChartBlock(node.value ?? "");
+      setElement(node, "art-chart", { dataChart: JSON.stringify(spec) }, []);
+    } else {
+      const spec = parseTableBlock(node.value ?? "");
+      setElement(node, "art-table", { dataTable: JSON.stringify(spec) }, []);
+    }
+  } catch (err) {
+    const message = err instanceof BlockError ? err.message : `${lang} block failed: ${(err as Error).message}`;
+    warn(ctx, node, message);
+    errorElement(node, message);
+  }
+}
+
+export function artifactsDirectives(ctx: PipelineContext) {
+  return (tree: AnyNode) => {
+    visit(tree, (node: AnyNode) => {
+      if (
+        node.type === "containerDirective" ||
+        node.type === "leafDirective" ||
+        node.type === "textDirective"
+      ) {
+        handleDirective(node, ctx);
+      } else if (node.type === "code") {
+        handleCode(node, ctx, null);
+      }
+    });
+  };
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@artifacts/primitives",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/primitives.js",
+  "exports": { ".": "./dist/primitives.js", "./css": "./dist/primitives.css" },
+  "scripts": { "build": "node build.mjs" },
+  "devDependencies": { "esbuild": "0.28.2" }
+}
