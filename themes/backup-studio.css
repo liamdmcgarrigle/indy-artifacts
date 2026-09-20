@@ -1,0 +1,89 @@
+/* Theme: backup-studio — warm paper stock, oxblood accent. */
+
+:root {
+  color-scheme: light;
+
+  --art-bg: #F3EEE4;
+  --art-surface: #FAF7F1;
+  --art-surface-2: #EDE6D9;
+  --art-border: #DDD5C6;
+  --art-border-strong: #C9BFAC;
+
+  --art-text: #22201C;
+  --art-text-muted: #6F685A;
+  --art-text-faint: #938B7B;
+
+  --art-accent: #5D0B0B;
+  --art-accent-hover: #4A0909;
+  --art-accent-wash: #F0DDD9;
+  --art-on-accent: #F3EEE4;
+  --art-link: #5D0B0B;
+
+  --art-good: #395D0B;
+  --art-good-wash: #E3E8D6;
+  --art-warn: #8A5A0B;
+  --art-warn-wash: #F2E6CF;
+  --art-bad: #5D0B0B;
+  --art-bad-wash: #F0DDD9;
+  --art-info: #3B4A5D;
+  --art-info-wash: #DFE5EC;
+
+  --art-font-sans: "Manrope", "Helvetica Neue", Arial, sans-serif;
+  --art-font-mono: "DM Mono", Menlo, Consolas, monospace;
+  --art-font-size: 15px;
+
+  --art-radius: 8px;
+  --art-radius-lg: 10px;
+  --art-shadow: 0 1px 2px rgba(35, 32, 28, 0.06), 0 10px 24px -14px rgba(35, 32, 28, 0.22);
+
+  --art-chart-1: #5D0B0B;
+  --art-chart-2: #395D0B;
+  --art-chart-3: #8A5A0B;
+  --art-chart-4: #3B4A5D;
+  --art-chart-5: #7A3B5D;
+  --art-chart-6: #6F685A;
+}
+
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+
+  --art-bg: #1C1916;
+  --art-surface: #262220;
+  --art-surface-2: #302A26;
+  --art-border: #3D3631;
+  --art-border-strong: #4E463F;
+
+  --art-text: #F1EBE0;
+  --art-text-muted: #A79E90;
+  --art-text-faint: #7E766A;
+
+  --art-accent: #7A1C1C;
+  --art-accent-hover: #8E2424;
+  --art-accent-wash: #3A201F;
+  --art-on-accent: #F3EEE4;
+  --art-link: #E39C96;
+
+  --art-good: #4A7413;
+  --art-good-wash: #243019;
+  --art-warn: #B98A2E;
+  --art-warn-wash: #33280F;
+  --art-bad: #E39C96;
+  --art-bad-wash: #3A201F;
+  --art-info: #8FA3BD;
+  --art-info-wash: #1F2833;
+
+  --art-font-sans: "Manrope", "Helvetica Neue", Arial, sans-serif;
+  --art-font-mono: "DM Mono", Menlo, Consolas, monospace;
+  --art-font-size: 15px;
+
+  --art-radius: 8px;
+  --art-radius-lg: 10px;
+  --art-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+
+  --art-chart-1: #A34A4A;
+  --art-chart-2: #6F9E2E;
+  --art-chart-3: #B98A2E;
+  --art-chart-4: #8FA3BD;
+  --art-chart-5: #B57BA0;
+  --art-chart-6: #A79E90;
+}

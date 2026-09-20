@@ -1,0 +1,91 @@
+/* Theme: picaflick — the product's own palette, lifted from its Flutter theme.
+   Picaflick is dark-first, but the file keeps the same shape as every other
+   theme: light on :root, dark under [data-scheme="dark"]. */
+
+:root {
+  color-scheme: light;
+
+  --art-bg: #F4F7FB;
+  --art-surface: #FFFFFF;
+  --art-surface-2: #E9EEF5;
+  --art-border: rgba(13, 17, 23, 0.10);
+  --art-border-strong: rgba(13, 17, 23, 0.20);
+
+  --art-text: #0D1117;
+  --art-text-muted: rgba(13, 17, 23, 0.70);
+  --art-text-faint: rgba(13, 17, 23, 0.45);
+
+  --art-accent: #2A71CE;
+  --art-accent-hover: #5A9AE6;
+  --art-accent-wash: rgba(42, 113, 206, 0.15);
+  --art-on-accent: #FFFFFF;
+  --art-link: #5A9AE6;
+
+  --art-good: #4CAF7D;
+  --art-good-wash: rgba(76, 175, 125, 0.15);
+  --art-warn: #E5A84C;
+  --art-warn-wash: rgba(229, 168, 76, 0.15);
+  --art-bad: #E55050;
+  --art-bad-wash: rgba(229, 80, 80, 0.15);
+  --art-info: #5A9AE6;
+  --art-info-wash: rgba(90, 154, 230, 0.15);
+
+  --art-font-sans: "Nunito Sans", system-ui, -apple-system, sans-serif;
+  --art-font-mono: ui-monospace, Menlo, Consolas, monospace;
+  --art-font-size: 15px;
+
+  --art-radius: 12px;
+  --art-radius-lg: 16px;
+  --art-shadow: 0 1px 2px rgba(13, 17, 23, .06), 0 10px 24px -16px rgba(13, 17, 23, .25);
+
+  --art-chart-1: #2A71CE;
+  --art-chart-2: #4CAF7D;
+  --art-chart-3: #E5A84C;
+  --art-chart-4: #5A9AE6;
+  --art-chart-5: #E55050;
+  --art-chart-6: #8A8F98;
+}
+
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+
+  --art-bg: #000000;
+  --art-surface: #0D1117;
+  --art-surface-2: #151B23;
+  --art-border: rgba(255, 255, 255, 0.08);
+  --art-border-strong: rgba(255, 255, 255, 0.16);
+
+  --art-text: #FFFFFF;
+  --art-text-muted: rgba(255, 255, 255, 0.70);
+  --art-text-faint: rgba(255, 255, 255, 0.45);
+
+  --art-accent: #2A71CE;
+  --art-accent-hover: #5A9AE6;
+  --art-accent-wash: rgba(42, 113, 206, 0.15);
+  --art-on-accent: #FFFFFF;
+  --art-link: #5A9AE6;
+
+  --art-good: #4CAF7D;
+  --art-good-wash: rgba(76, 175, 125, 0.15);
+  --art-warn: #E5A84C;
+  --art-warn-wash: rgba(229, 168, 76, 0.15);
+  --art-bad: #E55050;
+  --art-bad-wash: rgba(229, 80, 80, 0.15);
+  --art-info: #5A9AE6;
+  --art-info-wash: rgba(90, 154, 230, 0.15);
+
+  --art-font-sans: "Nunito Sans", system-ui, -apple-system, sans-serif;
+  --art-font-mono: ui-monospace, Menlo, Consolas, monospace;
+  --art-font-size: 15px;
+
+  --art-radius: 12px;
+  --art-radius-lg: 16px;
+  --art-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 28px -16px rgba(0, 0, 0, .8);
+
+  --art-chart-1: #2A71CE;
+  --art-chart-2: #4CAF7D;
+  --art-chart-3: #E5A84C;
+  --art-chart-4: #5A9AE6;
+  --art-chart-5: #E55050;
+  --art-chart-6: #8A8F98;
+}
