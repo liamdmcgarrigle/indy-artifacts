@@ -292,3 +292,20 @@ describe("slugify", () => {
     expect(slugify("  !!!  ")).toBe("artifact");
   });
 });
+
+describe("failed first publish", () => {
+  it("leaves no artifact behind, so the slug stays free", async () => {
+    const bad = makeContext({ dataDir: dir, assetRoots: [dir] });
+    await expect(
+      publishArtifact(bad, {
+        slug: "never-lands",
+        source: md("Nope"),
+        assets: [{ name: "missing.png", path: join(dir, "does-not-exist.png") }],
+      }),
+    ).rejects.toThrow(/not found on this host/);
+    expect(() => requireArtifact(bad, "never-lands")).toThrow(NotFoundError);
+    const second = await publishArtifact(bad, { slug: "never-lands", source: md("Second try") });
+    expect(second.version).toBe(1);
+    bad.db.close();
+  });
+});

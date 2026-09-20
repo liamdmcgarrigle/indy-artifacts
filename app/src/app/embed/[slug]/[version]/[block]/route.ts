@@ -1,4 +1,6 @@
-import { getContext } from "@/lib/service/context";
+import { buildDir, getContext } from "@/lib/service/context";
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import { requireArtifact, requireVersion } from "@/lib/service/artifacts";
 import { renderVersion } from "@/lib/service/render";
 import {
@@ -37,9 +39,14 @@ export async function GET(request: Request, { params }: Params) {
           { headers: embedHeaders() },
         );
       }
+      // Svelte injects its CSS into the bundle, so a stylesheet only exists for
+      // artifacts that imported one. Linking it unconditionally would 404.
       const base = `/api/bundle/${encodeURIComponent(slug)}/${v.number}`;
+      const hasCss = await stat(join(buildDir(ctx, artifact.id, v.number), "bundle.css"))
+        .then(() => true)
+        .catch(() => false);
       return new Response(
-        bundleDocument({ ...options, bundleUrl: `${base}/bundle.js`, cssUrl: `${base}/bundle.css` }),
+        bundleDocument({ ...options, bundleUrl: `${base}/bundle.js`, cssUrl: hasCss ? `${base}/bundle.css` : null }),
         { headers: embedHeaders() },
       );
     }

@@ -110,8 +110,29 @@ async function loadSveltePlugin() {
   });
 }
 
+/**
+ * Where to unpack artifact sources while esbuild runs. In the container /tmp is
+ * a read-only mount of the host's /tmp (so artifacts can reference assets by
+ * their host path), so the scratch directory has to live somewhere else.
+ */
+function scratchRoot(): string {
+  return process.env.ARTIFACTS_TMP || tmpdir();
+}
+
 export async function buildArtifact(input: BuildInput): Promise<BuildResult> {
-  const root = await mkdtemp(join(tmpdir(), "artifact-build-"));
+  let root: string;
+  try {
+    await mkdir(scratchRoot(), { recursive: true });
+    root = await mkdtemp(join(scratchRoot(), "artifact-build-"));
+  } catch (err) {
+    return {
+      status: "error",
+      log: `could not create a build directory under ${scratchRoot()}: ${(err as Error).message}`,
+      bytes: 0,
+      css: false,
+    };
+  }
+
   try {
     for (const [name, contents] of Object.entries(input.files)) {
       const safe = normalize(name).replace(/^(\.\.(\/|\\|$))+/, "");

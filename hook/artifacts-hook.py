@@ -141,6 +141,17 @@ def _span(start, end) -> str:
     return f"lines {start}-{end}"
 
 
+def one_line(value) -> str:
+    """Collapse any whitespace, including newlines, into single spaces."""
+    return " ".join(str(value or "").split())
+
+
+def sentence(value) -> str:
+    """One line, ending in punctuation, so it reads as a sentence when joined."""
+    text = one_line(value)
+    return text if not text or text[-1] in ".!?:;" else text + "."
+
+
 def describe_anchor(anchor) -> str:
     """One short phrase saying where in the artifact a comment is pinned."""
     if not anchor:
@@ -178,10 +189,17 @@ def _comment_version(comments, fallback=None):
 
 
 def format_message(event: dict) -> str:
-    """Render one event as the plain text typed into the agent's terminal."""
+    """Render one event as the plain text typed into the agent's terminal.
+
+    It must be ONE line. `orca terminal send --enter` replays a newline as a
+    submission, so a multi-line message would arrive as several separate
+    prompts, and in a plain shell each line would run as its own command.
+    Detail the agent needs beyond one line is fetched with artifacts_comments.
+    """
     artifact = event.get("artifact") or {}
     payload = event.get("payload") or {}
     title = artifact.get("title") or artifact.get("slug") or "artifact"
+    slug = artifact.get("slug") or ""
     url = artifact.get("url") or ""
     kind = event.get("kind")
 
@@ -189,13 +207,13 @@ def format_message(event: dict) -> str:
         comment = payload.get("comment") or {}
         version = comment.get("version_number")
         author = comment.get("author_name") or "operator"
-        body = " ".join(str(comment.get("body") or "").split())
+        body = sentence(comment.get("body"))
         where = describe_anchor(comment.get("anchor"))
         return (
-            f'[artifacts] Comment on "{title}" v{version} ({url})\n'
-            f"  {where}: {body}  — {author}\n"
-            "Reply with artifacts_reply/artifacts_resolve; "
-            "artifacts_comments lists all open threads."
+            f'[artifacts] {author} commented on "{title}" v{version} ({url}) at {where}: {body} '
+            f"Read the thread with artifacts_comments slug={slug}, answer with artifacts_reply, "
+            f"close it with artifacts_resolve, and publish fixes with artifacts_update "
+            f"expected_version={version}."
         )
 
     if kind == "feedback.sent":
@@ -203,22 +221,24 @@ def format_message(event: dict) -> str:
         version = _comment_version(comments, payload.get("version_number"))
         count = len(comments)
         noun = "comment" if count == 1 else "comments"
-        lines = [f'[artifacts] {count} {noun} on "{title}" v{version} ({url})']
+        parts = [f'[artifacts] {count} {noun} on "{title}" v{version} ({url})']
+
         message = payload.get("message")
         if message:
             author = payload.get("author_name")
             if not author:
                 author = (comments[0].get("author_name") if comments else None) or "operator"
-            lines.append(f"  {author}: {' '.join(str(message).split())}")
+            parts.append(f"{author}: {sentence(message)}")
+
         for index, comment in enumerate(comments, start=1):
             where = describe_anchor(comment.get("anchor"))
-            body = " ".join(str(comment.get("body") or "").split())
-            lines.append(f"  {index}. {where}: {body}")
-        lines.append(
-            "Use artifacts_comments for the full threads, then artifacts_reply / "
+            parts.append(f"({index}) {where}: {sentence(comment.get('body'))}")
+
+        parts.append(
+            f"Read the full threads with artifacts_comments slug={slug}, then artifacts_reply / "
             f"artifacts_resolve, and artifacts_update with expected_version={version}."
         )
-        return "\n".join(lines)
+        return " ".join(parts)
 
     if kind == "version.created":
         version_obj = payload.get("version") or {}
@@ -230,7 +250,8 @@ def format_message(event: dict) -> str:
             previous = "?"
         return (
             f'[artifacts] {author} edited "{title}", now v{number} ({url}). '
-            f"Read it back with artifacts_get, or artifacts_diff from={previous} to={number}."
+            f"Read it back with artifacts_get slug={slug}, or see exactly what changed with "
+            f"artifacts_diff from={previous} to={number}."
         )
 
     return f'[artifacts] {kind} on "{title}" ({url})'

@@ -6,6 +6,9 @@ services:
     image: localhost/artifacts:latest
     container_name: artifacts
     restart: unless-stopped
+    # Rootless podman: map the host user to the same uid inside, so the
+    # container's uid 1000 owns the bind-mounted ./data.
+    userns_mode: "keep-id"
     ports:
       - "${ARTIFACTS_PORT:-5174}:5174"
     environment:

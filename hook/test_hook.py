@@ -141,22 +141,33 @@ class DescribeAnchorTest(unittest.TestCase):
         self.assertEqual(described, "lines 60-72 (b9)")
 
 
+class SingleLineTest(unittest.TestCase):
+    """`orca terminal send --enter` submits on every newline, so a message that
+    contained one would arrive as several prompts. Every message must be one line."""
+
+    def test_every_message_kind_is_one_line(self):
+        for event in (comment_event(), feedback_event(), version_event()):
+            message = hook.format_message(event)
+            self.assertNotIn("\n", message, f"{event['kind']} message contains a newline")
+            self.assertNotIn("\r", message, f"{event['kind']} message contains a carriage return")
+
+
 class FormatMessageTest(unittest.TestCase):
     def test_comment_created(self):
         message = hook.format_message(comment_event())
-        self.assertIn('Comment on "Backup run 2026-09-20" v3', message)
+        self.assertIn('commented on "Backup run 2026-09-20" v3', message)
         self.assertIn("http://agentbox:5174/a/backup-run-2026-09-20", message)
         self.assertIn('lines 44-44 "restored 1.2 TB": This number looks stale.', message)
-        self.assertIn("— Liam", message)
+        self.assertIn("Liam commented on", message)
         self.assertIn("artifacts_comments", message)
         self.assertTrue(message.startswith("[artifacts] "))
 
     def test_feedback_sent(self):
         message = hook.format_message(feedback_event())
         self.assertIn('[artifacts] 2 comments on "Backup run 2026-09-20" v3', message)
-        self.assertIn("  Liam: Two small things before I sign this off.", message)
-        self.assertIn('  1. lines 44-46 "restored 1.2 TB": This number looks stale.', message)
-        self.assertIn("  2. lines 60-72 (b9): Chart axis needs a unit.", message)
+        self.assertIn("Liam: Two small things before I sign this off.", message)
+        self.assertIn('(1) lines 44-46 "restored 1.2 TB": This number looks stale.', message)
+        self.assertIn("(2) lines 60-72 (b9): Chart axis needs a unit.", message)
         self.assertIn("expected_version=3", message)
 
     def test_version_created(self):
@@ -282,7 +293,7 @@ class PollOnceTest(unittest.TestCase):
         self.assertIn("--enter", argv)
         self.assertIn("--json", argv)
         text = argv[argv.index("--text") + 1]
-        self.assertIn('Comment on "Backup run 2026-09-20" v3', text)
+        self.assertIn('commented on "Backup run 2026-09-20" v3', text)
 
         self.assertEqual(json.loads(self.state.read_text()), {"last_id": 21})
 

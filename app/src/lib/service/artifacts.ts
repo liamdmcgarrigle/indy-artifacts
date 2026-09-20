@@ -402,7 +402,14 @@ export async function publishArtifact(ctx: ServiceContext, input: PublishInput):
     );
 
   const artifact = requireArtifact(ctx, slug);
-  return writeVersion(ctx, artifact, input, content, meta, "agent", input.agent?.name ?? "agent", null);
+  try {
+    return await writeVersion(ctx, artifact, input, content, meta, "agent", input.agent?.name ?? "agent", null);
+  } catch (err) {
+    // A first version that never lands would leave an artifact with no content
+    // and its slug taken, so undo the row before reporting the failure.
+    ctx.db.prepare("DELETE FROM artifacts WHERE id = ? AND current_version = 0").run(artifact.id);
+    throw err;
+  }
 }
 
 export async function updateArtifact(
