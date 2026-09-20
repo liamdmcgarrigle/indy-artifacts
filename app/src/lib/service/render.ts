@@ -1,0 +1,27 @@
+import { renderMarkdown, type RenderResult } from "../pipeline/index.js";
+import type { Version } from "./types.js";
+
+const cache = new Map<string, RenderResult>();
+const MAX = 120;
+
+/** Render a markdown version, memoised on its content hash. */
+export function renderVersion(version: Pick<Version, "contentHash" | "source">, fallbackTitle = "Untitled"): RenderResult {
+  const key = version.contentHash;
+  const hit = cache.get(key);
+  if (hit) {
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit;
+  }
+  const result = renderMarkdown(version.source ?? "", fallbackTitle);
+  cache.set(key, result);
+  if (cache.size > MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  return result;
+}
+
+export function clearRenderCache(): void {
+  cache.clear();
+}
