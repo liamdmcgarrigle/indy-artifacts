@@ -1,8 +1,8 @@
 import { copyFile, link, mkdir, readdir, realpath, stat } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
-import { assetDir, type ServiceContext } from "./context.js";
-import { ValidationError } from "./errors.js";
-import { LIMITS, type AssetInput, type AssetRecord } from "./types.js";
+import { assetDir, type ServiceContext } from "./context";
+import { ValidationError } from "./errors";
+import { LIMITS, type AssetInput, type AssetRecord } from "./types";
 
 const TYPES: Record<string, string> = {
   ".png": "image/png",

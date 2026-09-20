@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeContext, type ServiceContext } from "@/lib/service/context.js";
+import { makeContext, type ServiceContext } from "@/lib/service/context";
 import {
   createHumanVersion,
   diffVersions,
@@ -13,10 +13,10 @@ import {
   requireVersion,
   slugify,
   updateArtifact,
-} from "@/lib/service/artifacts.js";
-import { createComment, listComments, patchComment, sendFeedback } from "@/lib/service/comments.js";
-import { ackEvent, listEvents } from "@/lib/service/events.js";
-import { ConflictError, NotFoundError, ValidationError } from "@/lib/service/errors.js";
+} from "@/lib/service/artifacts";
+import { createComment, listComments, patchComment, sendFeedback } from "@/lib/service/comments";
+import { ackEvent, listEvents } from "@/lib/service/events";
+import { ConflictError, NotFoundError, ValidationError } from "@/lib/service/errors";
 
 let dir: string;
 let ctx: ServiceContext;

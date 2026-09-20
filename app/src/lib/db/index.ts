@@ -1,24 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const here = dirname(fileURLToPath(import.meta.url));
-
-function schemaSql(): string {
-  for (const candidate of [
-    join(here, "schema.sql"),
-    join(process.cwd(), "src/lib/db/schema.sql"),
-    join(process.cwd(), "app/src/lib/db/schema.sql"),
-  ]) {
-    try {
-      return readFileSync(candidate, "utf8");
-    } catch {
-      /* try the next one */
-    }
-  }
-  throw new Error("schema.sql not found");
-}
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { SCHEMA } from "./schema";
 
 export function openDb(path: string): DatabaseSync {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -26,7 +9,7 @@ export function openDb(path: string): DatabaseSync {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec("PRAGMA busy_timeout = 5000");
-  db.exec(schemaSql());
+  db.exec(SCHEMA);
   return db;
 }
 

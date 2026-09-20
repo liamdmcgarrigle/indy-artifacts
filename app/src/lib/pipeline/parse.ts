@@ -1,5 +1,5 @@
 import { parse as parseYaml } from "yaml";
-import { CHART_TYPES, type ChartSpec, type TableSpec } from "./types.js";
+import { CHART_TYPES, type ChartSpec, type TableSpec } from "./types";
 
 export class BlockError extends Error {}
 

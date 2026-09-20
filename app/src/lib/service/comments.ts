@@ -1,10 +1,10 @@
 import { customAlphabet } from "nanoid";
-import { bind, withTx } from "../db/index.js";
-import type { ServiceContext } from "./context.js";
-import { NotFoundError, ValidationError } from "./errors.js";
-import { recordEvent } from "./events.js";
-import { requireArtifact } from "./artifacts.js";
-import { LIMITS, type Anchor, type AuthorKind, type Comment, type CommentStatus } from "./types.js";
+import { bind, withTx } from "../db/index";
+import type { ServiceContext } from "./context";
+import { NotFoundError, ValidationError } from "./errors";
+import { recordEvent } from "./events";
+import { requireArtifact } from "./artifacts";
+import { LIMITS, type Anchor, type AuthorKind, type Comment, type CommentStatus } from "./types";
 
 const id12 = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12);
 const now = () => new Date().toISOString();

@@ -1,3 +1,8 @@
+/**
+ * The whole schema, applied on every open. Kept inline rather than read from a
+ * .sql file so the standalone build cannot ship without it.
+ */
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY,
   slug TEXT NOT NULL UNIQUE,
@@ -63,3 +68,4 @@ CREATE INDEX IF NOT EXISTS idx_versions_artifact ON versions (artifact_id, numbe
 CREATE INDEX IF NOT EXISTS idx_comments_artifact ON comments (artifact_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_comments_open ON comments (artifact_id, status, sent_at);
 CREATE INDEX IF NOT EXISTS idx_events_undelivered ON events (delivered_at, id);
+`;

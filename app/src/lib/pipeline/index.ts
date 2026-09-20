@@ -9,12 +9,15 @@ import rehypeStringify from "rehype-stringify";
 import { parse as parseYaml } from "yaml";
 import { visit } from "unist-util-visit";
 
-import { artifactsDirectives } from "./directives.js";
-import { assignBlocks } from "./blocks.js";
-import { schema } from "./sanitize.js";
-import { DEFAULT_THEME, THEMES, type Frontmatter, type PipelineContext, type RenderResult } from "./types.js";
+import { artifactsDirectives } from "./directives";
+import { assignBlocks } from "./blocks";
+import { schema } from "./sanitize";
+import { DEFAULT_THEME, THEMES, type Frontmatter, type PipelineContext, type RenderOptions, type RenderResult } from "./types";
 
-type AnyNode = Record<string, any>;
+// mdast and hast nodes are manipulated structurally here: the published types
+// are narrower than the hName/hProperties escape hatch this pipeline relies on.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type AnyNode = any;
 
 function extractFrontmatter(ctx: PipelineContext) {
   return (tree: AnyNode) => {
@@ -63,13 +66,14 @@ export function normalizeFrontmatter(raw: Record<string, unknown> | null, fallba
   };
 }
 
-export function renderMarkdown(source: string, fallbackTitle = "Untitled"): RenderResult {
+export function renderMarkdown(source: string, fallbackTitle = "Untitled", options: RenderOptions = {}): RenderResult {
   const ctx: PipelineContext = {
     warnings: [],
     embeds: [],
     blocks: [],
     frontmatter: null,
     embedCounter: 0,
+    assetBase: options.assetBase,
   };
 
   const processor = unified()
@@ -107,4 +111,4 @@ export function readFrontmatter(source: string): Record<string, unknown> | null 
   }
 }
 
-export * from "./types.js";
+export * from "./types";

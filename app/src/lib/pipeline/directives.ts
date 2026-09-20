@@ -1,9 +1,12 @@
 import { visit } from "unist-util-visit";
 import { toString as mdToString } from "mdast-util-to-string";
-import { BlockError, parseChartBlock, parseKpiLine, parseTableBlock } from "./parse.js";
-import type { PipelineContext } from "./types.js";
+import { BlockError, parseChartBlock, parseKpiLine, parseTableBlock } from "./parse";
+import type { PipelineContext } from "./types";
 
-type AnyNode = Record<string, any>;
+// mdast and hast nodes are manipulated structurally here: the published types
+// are narrower than the hName/hProperties escape hatch this pipeline relies on.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type AnyNode = any;
 
 function setElement(node: AnyNode, hName: string, hProperties: Record<string, unknown> = {}, hChildren?: unknown[]) {
   const props: Record<string, unknown> = {};

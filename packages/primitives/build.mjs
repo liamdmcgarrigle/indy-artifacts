@@ -4,9 +4,9 @@
  *   src/index.ts    -> dist/primitives.js   (esm, es2022, unminified)
  *   src/*.css       -> dist/primitives.css  (concatenated in order)
  *
- * chart.js stays external: the element loads it with a dynamic import, and the
- * host page (or its bundler) supplies the module. Inlining it here would ship a
- * second copy of Chart.js to every artifact page whether or not it draws one.
+ * chart.js is bundled in, because this file is served raw to the browser and to
+ * sandbox frames with no import map, where a bare "chart.js/auto" specifier
+ * would not resolve and charts would silently fail to draw.
  */
 import { build } from "esbuild";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -27,10 +27,9 @@ const result = await build({
   format: "esm",
   target: "es2022",
   platform: "browser",
-  minify: false,
+  minify: true,
   sourcemap: false,
   legalComments: "none",
-  external: ["chart.js", "chart.js/auto"],
   logLevel: "warning",
   metafile: true,
 });

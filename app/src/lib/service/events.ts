@@ -1,7 +1,7 @@
-import { bind } from "../db/index.js";
-import { artifactUrl, type ServiceContext } from "./context.js";
-import { NotFoundError } from "./errors.js";
-import type { EventKind, EventRecord } from "./types.js";
+import { bind } from "../db/index";
+import { artifactUrl, type ServiceContext } from "./context";
+import { NotFoundError } from "./errors";
+import type { EventKind, EventRecord } from "./types";
 
 type Row = Record<string, unknown>;
 

@@ -51,12 +51,17 @@ export interface TableSpec {
   sortable: boolean;
 }
 
+export interface RenderOptions {
+  assetBase?: string;
+}
+
 export interface PipelineContext {
   warnings: Warning[];
   embeds: Embed[];
   blocks: Block[];
   frontmatter: Record<string, unknown> | null;
   embedCounter: number;
+  assetBase?: string;
 }
 
 export const CHART_TYPES = ["bar", "line", "area", "pie", "doughnut", "scatter"] as const;

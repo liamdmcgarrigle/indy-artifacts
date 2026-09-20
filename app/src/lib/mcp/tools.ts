@@ -7,12 +7,12 @@ import {
   requireArtifact,
   requireVersion,
   updateArtifact,
-} from "../service/artifacts.js";
-import { createComment, getComment, listComments, patchComment } from "../service/comments.js";
-import { listEvents } from "../service/events.js";
-import { artifactUrl, type ServiceContext } from "../service/context.js";
-import { ServiceError } from "../service/errors.js";
-import { KINDS, LIMITS, type Kind } from "../service/types.js";
+} from "../service/artifacts";
+import { createComment, getComment, listComments, patchComment } from "../service/comments";
+import { listEvents } from "../service/events";
+import { artifactUrl, type ServiceContext } from "../service/context";
+import { ServiceError } from "../service/errors";
+import { KINDS, LIMITS, type Kind, type PublishInput, type UpdateInput } from "../service/types";
 
 export const REFERENCE_URI = "artifacts://reference";
 
@@ -90,7 +90,7 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
       },
       run: async (args) => {
         try {
-          const result = await publishArtifact(ctx, args as never);
+          const result = await publishArtifact(ctx, args as PublishInput);
           return ok(summarise(result), result);
         } catch (err) {
           return fail(err);
@@ -104,18 +104,18 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
         description:
           "Publish a new version of an existing artifact. expected_version must be the version you last saw; a mismatch means the operator edited it, so read it again with artifacts_get first.",
         inputSchema: z.object({
-          slug: z.string(),
-          expected_version: z.number().int().positive(),
           ...PUBLISH_SHAPE,
+          slug: z.string().describe("the artifact to update"),
+          expected_version: z.number().int().positive().describe("the version you last saw"),
         }),
       },
       run: async (args) => {
         try {
-          const { slug, expected_version: expectedVersion, ...rest } = args as Record<string, unknown>;
+          const { slug, expected_version: expected, ...rest } = args;
           const result = await updateArtifact(ctx, String(slug), {
-            ...(rest as never),
-            expectedVersion: Number(expectedVersion),
-          });
+            ...rest,
+            expectedVersion: Number(expected),
+          } as UpdateInput);
           return ok(summarise(result), result);
         } catch (err) {
           return fail(err);

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // before the markup is parsed: jsdom upgrades on insertion, and an element that
 // is already in the tree when its class is defined is not upgraded here.
 // @ts-ignore -- built artefact, present only after `npm run build:primitives`
-import { defineArtifactPrimitives } from "../../packages/primitives/dist/primitives.js";
+import { defineArtifactPrimitives } from "../../packages/primitives/dist/primitives";
 
 /** Let queued custom-element reactions and microtasks settle. */
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));

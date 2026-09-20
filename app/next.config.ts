@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: new URL("..", import.meta.url).pathname,
   allowedDevOrigins: ["agentbox", "agentbox.taila42e4e.ts.net", "100.100.43.42"],
   serverExternalPackages: ["esbuild", "esbuild-svelte", "svelte"],
-  eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: false },
 };
 

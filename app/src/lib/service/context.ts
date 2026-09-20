@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { openDb, type DatabaseSync } from "../db/index.js";
+import { openDb, type DatabaseSync } from "../db/index";
 
 export interface ServiceContext {
   db: DatabaseSync;

@@ -1,0 +1,22 @@
+services:
+  artifacts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: localhost/artifacts:latest
+    container_name: artifacts
+    restart: unless-stopped
+    ports:
+      - "${ARTIFACTS_PORT:-5174}:5174"
+    environment:
+      ARTIFACTS_PUBLIC_URL: "${ARTIFACTS_PUBLIC_URL:-http://agentbox:5174}"
+      ARTIFACTS_ASSET_ROOTS: "/home/liam/work:/home/liam/orca:/tmp"
+    volumes:
+      - ./data:/data:Z
+      - ./themes:/themes:ro,Z
+      # Read-only so an artifact can reference a screenshot by its host path.
+      - /home/liam/work:/home/liam/work:ro
+      - /home/liam/orca:/home/liam/orca:ro
+      - /tmp:/tmp:ro
+    mem_limit: 1g
+    cpus: 2

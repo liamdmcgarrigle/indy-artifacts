@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdown } from "@/lib/pipeline/index.js";
+import { renderMarkdown } from "@/lib/pipeline/index";
 
 /** Decode an HTML attribute value the way a browser would. */
 function attr(html: string, name: string): string {

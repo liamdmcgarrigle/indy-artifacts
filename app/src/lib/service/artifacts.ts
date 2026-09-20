@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 import { customAlphabet } from "nanoid";
 import { createTwoFilesPatch } from "diff";
-import { bind, withTx } from "../db/index.js";
-import { readFrontmatter, normalizeFrontmatter, renderMarkdown } from "../pipeline/index.js";
-import { DEFAULT_THEME, THEMES } from "../pipeline/types.js";
-import { buildArtifact } from "../build/index.js";
-import { artifactUrl, buildDir, type ServiceContext } from "./context.js";
-import { ConflictError, NotFoundError, ValidationError } from "./errors.js";
-import { carryAssets, copyAssets } from "./assets.js";
-import { recordEvent } from "./events.js";
+import { bind, withTx } from "../db/index";
+import { readFrontmatter, normalizeFrontmatter, renderMarkdown } from "../pipeline/index";
+import { DEFAULT_THEME, THEMES } from "../pipeline/types";
+import { buildArtifact } from "../build/index";
+import { artifactUrl, buildDir, type ServiceContext } from "./context";
+import { ConflictError, NotFoundError, ValidationError } from "./errors";
+import { carryAssets, copyAssets } from "./assets";
+import { recordEvent } from "./events";
 import {
   KINDS,
   LIMITS,
@@ -19,7 +19,7 @@ import {
   type PublishResult,
   type UpdateInput,
   type Version,
-} from "./types.js";
+} from "./types";
 
 const id12 = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12);
 const suffix4 = customAlphabet("23456789abcdefghijkmnpqrstuvwxyz", 4);

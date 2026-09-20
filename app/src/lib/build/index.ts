@@ -34,14 +34,20 @@ function packageName(specifier: string): string {
   return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
 }
 
-function nodeModulesDir(): string {
+function nodePathDirs(): string[] {
+  const dirs: string[] = [];
+  // In the container the extra packages artifacts may import (chart.js, d3,
+  // lucide-react) live outside the traced standalone node_modules.
+  const extra = process.env.ARTIFACTS_BUILD_MODULES;
+  if (extra) dirs.push(...extra.split(":").map((d) => d.trim()).filter(Boolean));
   const require = createRequire(import.meta.url);
   try {
     // .../node_modules/react/package.json -> .../node_modules
-    return dirname(dirname(require.resolve("react/package.json")));
+    dirs.push(dirname(dirname(require.resolve("react/package.json"))));
   } catch {
-    return join(process.cwd(), "node_modules");
+    dirs.push(join(process.cwd(), "node_modules"));
   }
+  return [...new Set(dirs)];
 }
 
 /** Reject any bare import from artifact source that is not on the allowlist. */
@@ -134,7 +140,7 @@ export async function buildArtifact(input: BuildInput): Promise<BuildResult> {
       sourcemap: false,
       jsx: "automatic",
       logLevel: "silent",
-      nodePaths: [nodeModulesDir()],
+      nodePaths: nodePathDirs(),
       mainFields: ["svelte", "browser", "module", "main"],
       conditions: ["svelte", "browser"],
       absWorkingDir: root,

@@ -10,7 +10,7 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "artifact-mcp-"));
   process.env.ARTIFACTS_DATA = dir;
   process.env.ARTIFACTS_PUBLIC_URL = "http://agentbox:5174";
-  const mod = await import("@/app/mcp/route.js");
+  const mod = await import("@/app/mcp/route");
   const handler = mod.POST as (req: Request) => Promise<Response>;
 
   post = async (body: unknown) => {
@@ -137,8 +137,8 @@ describe("mcp endpoint", () => {
   });
 
   it("round-trips comments: list, reply, resolve", async () => {
-    const { createComment } = await import("@/lib/service/comments.js");
-    const { getContext } = await import("@/lib/service/context.js");
+    const { createComment } = await import("@/lib/service/comments");
+    const { getContext } = await import("@/lib/service/context");
     const comment = createComment(getContext(), "mcp-demo", {
       body: "this number is wrong",
       authorName: "liam",

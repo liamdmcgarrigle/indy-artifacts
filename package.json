@@ -2,13 +2,18 @@
   "name": "artifacts-root",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["packages/*", "app"],
+  "workspaces": [
+    "packages/*",
+    "app"
+  ],
   "scripts": {
     "build:primitives": "npm run build -w @artifacts/primitives",
     "build": "npm run build:primitives && npm run build -w app",
     "dev": "npm run build:primitives && npm run dev -w app",
-    "test": "npm run build:primitives && npm run test -w app",
+    "test": "npm run build:primitives && npm run vendor -w app && npm run test -w app",
     "typecheck": "npm run typecheck -w app"
   },
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  }
 }
