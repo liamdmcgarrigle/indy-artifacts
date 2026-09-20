@@ -1,0 +1,14 @@
+[Unit]
+Description=Artifacts event poller (delivers comments into agent terminals via Orca)
+After=network-online.target orca.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/work/artifacts/hook/artifacts-hook.py
+Restart=on-failure
+RestartSec=10
+Environment=ARTIFACTS_API=http://127.0.0.1:5174
+
+[Install]
+WantedBy=default.target

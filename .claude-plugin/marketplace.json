@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "artifacts-local",
+  "description": "Local marketplace for the agentbox artifacts system",
+  "owner": {
+    "name": "Liam McGarrigle",
+    "email": "ldmcgarrigle@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "artifacts",
+      "description": "Publish and review versioned, sandboxed visual artifacts on agentbox",
+      "author": {
+        "name": "Liam McGarrigle"
+      },
+      "category": "productivity",
+      "source": "./plugin"
+    }
+  ]
+}

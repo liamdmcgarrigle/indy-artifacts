@@ -1,0 +1,19 @@
+{
+  "name": "artifacts-local",
+  "interface": {
+    "displayName": "Artifacts (local)"
+  },
+  "plugins": [
+    {
+      "name": "artifacts",
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

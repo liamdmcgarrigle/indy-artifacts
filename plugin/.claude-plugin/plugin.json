@@ -1,0 +1,9 @@
+{
+  "name": "artifacts",
+  "version": "0.1.0",
+  "description": "Publish and review versioned, sandboxed visual artifacts on agentbox",
+  "author": {
+    "name": "Liam McGarrigle"
+  },
+  "license": "MIT"
+}
