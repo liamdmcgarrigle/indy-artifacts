@@ -185,9 +185,26 @@ an inline error box in the page and is reported back to the agent in the publish
 
 The pipeline assigns every top-level block (paragraph, heading, list, directive, fence) an id
 `b<index>` and records its source line range. Both are emitted as `data-block` and `data-lines`
-attributes on the rendered element. Comments anchor to `{ block, quote?, lines }`. A `quote` is
-the selected text; when the anchor's block no longer contains the quote on a later version the
-sidebar shows the comment as "anchor moved" and still lists it.
+attributes on the rendered element.
+
+A comment anchor is one of three shapes, all carrying the block id and the block's line range:
+
+| type | stored | placed by |
+|---|---|---|
+| `point` | `{ type: "point", block, offset, context, lines }`: `offset` is a character offset into the block's text content, `context` is 24 characters either side | clicking a spot in the text with the comment tool active; the caret position under the pointer is resolved with `caretPositionFromPoint` |
+| `range` | `{ type: "range", block, start, end, quote, lines }` | selecting text (any time, no tool needed) |
+| `element` | `{ type: "element", block, selector?, x, y, lines }`: `selector` is a CSS path inside a sandbox frame, `x`/`y` are fractions of the element box | clicking a non-text block (chart, card, image, table) or an element inside a sandbox frame with the comment tool active |
+
+`lines` is what the agent acts on. For `point` and `range` anchors in markdown the server refines
+it to the single source line that contains the quote or context, so the agent gets "line 44"
+rather than "lines 40 to 46". For `element` anchors inside compiled or html artifacts the server
+searches the quoted text in the files map and adds `source_hint: { file, line }` when it finds a
+unique match.
+
+Re-anchoring on a later version: `range` and `point` anchors look for `quote` or `context` inside
+the same block id first, then anywhere in the document; `element` anchors look for the block id,
+then the selector. An anchor that cannot be found is shown in the sidebar as "anchor moved" with
+its original excerpt, and its pin is drawn in the margin next to the nearest surviving block.
 
 ## 7. Rendering and sandboxing
 
@@ -353,7 +370,7 @@ and exports it as `GET` and `POST`. Tools call the same service layer as the API
 | `artifacts_get` | `slug`, `version?` | frontmatter, source or files, `author_kind`, `author_name`, `message`, `build_status`, `build_log`, `url` |
 | `artifacts_list` | `project?`, `limit?` | `[ { slug, title, kind, theme, project, current_version, open_comments, url } ]` |
 | `artifacts_diff` | `slug`, `from`, `to` | unified diff |
-| `artifacts_comments` | `slug`, `status?` (default open) | threads with `anchor.lines`, `anchor.quote`, `sent` flag |
+| `artifacts_comments` | `slug`, `status?` (default open) | threads with `anchor.type`, `anchor.lines`, `anchor.quote` or `anchor.context`, `source_hint`, `sent` flag |
 | `artifacts_reply` | `comment_id`, `body`, `agent?` | comment; the reply is marked `author_kind = "agent"` |
 | `artifacts_resolve` | `comment_id` | comment |
 | `artifacts_wait` | `slug`, `after?` (event id from a previous result), `timeout_s` (max 55) | `{ events, last_id }` for that artifact with id greater than `after`, or `{ events: [], last_id }` on timeout |
@@ -367,19 +384,40 @@ it without the skill.
 
 ### 10.1 Comment UI
 
-Right sidebar on every artifact page. A comment is created either from a text selection (the
-shell shows a "Comment" bubble on mouse-up inside the rendered content; anchor gets `block`,
-`quote`, `lines`) or from a block's hover toolbar (anchor gets `block` and `lines`), or unanchored
-from the sidebar's composer. Threads show author, time, version, anchor excerpt, replies, and a
-Resolve toggle. Clicking an anchored thread scrolls to and highlights the block.
+The model follows claude.ai artifacts and Notion: comments live as pins on the content, and the
+sidebar is the list view of the same threads.
+
+Pins: a small round avatar with the author's initials, drawn on an overlay layer above the
+content at the anchor's position. A `point` pin sits at the caret position; a `range` anchor
+draws a highlight over the text (CSS Custom Highlight API, with a wrapping-span fallback) with
+the pin at its end; an `element` pin sits at the stored fraction of the element's box. Positions
+are computed from `Range.getBoundingClientRect` and element boxes on load, on resize, and after
+sandbox frames report a height change; pins inside a sandbox frame use the box the frame reports
+by postMessage. Hover shows the first line of the thread; click opens and focuses the thread in
+the sidebar and the sidebar entry scrolls the page to the pin. Unsent threads use a dashed ring
+on the pin; resolved threads hide their pins unless "show resolved" is on.
+
+Placing a comment:
+
+1. Select text at any time and a "Comment" bubble appears at the end of the selection. Clicking
+   it creates a `range` anchor and opens the composer.
+2. The comment tool (top-bar button, or the `c` key) turns the cursor into a crosshair. Moving
+   over text shows a caret preview; moving over a non-text block or an element inside a sandbox
+   frame outlines it. One click creates a `point` or `element` anchor and opens the composer.
+   Escape leaves the tool. Inside sandbox frames the shell sends `{ type: "art:pick", on: true }`
+   and the injected script outlines elements and reports the clicked element's selector, text and
+   box.
+3. An unanchored comment can be written from the sidebar composer.
+
+Sidebar: threads in document order, each with author, time, version, the anchor excerpt (quote,
+context, or "chart block"), replies, a Resolve toggle, and an "unsent" badge until notified. The
+header shows "Send N comments to agent" whenever unsent open comments exist; clicking it opens a
+one-line optional message and writes one `feedback.sent` event carrying every unsent comment, then
+marks them sent. Resolved threads collapse under a toggle at the bottom.
 
 The composer has a "Notify agent" checkbox, off by default. Off means the comment is saved and
-listed with an "unsent" badge. On means a `comment.created` event is written immediately for that
-one comment. The sidebar header shows "Send N comments to agent" whenever unsent open comments
-exist; clicking it opens a one-line optional message ("done reviewing, please address all of
-these") and writes one `feedback.sent` event carrying every unsent comment, then marks them sent.
-
-The commenter's display name is asked for once and kept in localStorage.
+listed as unsent. On means a `comment.created` event is written immediately for that one
+comment. The commenter's display name is asked for once and kept in localStorage.
 
 ### 10.2 Events
 
@@ -457,7 +495,7 @@ CREATE TABLE comments (
   author_kind TEXT NOT NULL CHECK (author_kind IN ('agent','human')),
   author_name TEXT NOT NULL,
   body TEXT NOT NULL,
-  anchor_json TEXT,                  -- {block, quote?, lines:[start,end]}
+  anchor_json TEXT,                  -- section 6.3: point | range | element
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
   sent_at TEXT,                      -- null until notified or batched
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
