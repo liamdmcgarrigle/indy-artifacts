@@ -116,13 +116,38 @@ function handleCode(node: AnyNode, ctx: PipelineContext, blockHint: string | nul
   }
 }
 
+/**
+ * Put an inline directive back the way it was written.
+ *
+ * A colon in prose is nearly always a colon: a time, a ratio, a namespace. The
+ * directive syntax claims `:name` anyway, so an unrecognised one is returned to
+ * the page as the text the author typed rather than warned about.
+ */
+function literal(node: AnyNode, ctx: PipelineContext) {
+  const start = node.position?.start?.offset;
+  const end = node.position?.end?.offset;
+  const text =
+    ctx.source !== undefined && typeof start === "number" && typeof end === "number"
+      ? ctx.source.slice(start, end)
+      : `:${node.name}`;
+  node.type = "text";
+  node.value = text;
+  delete node.children;
+  delete node.attributes;
+  delete node.name;
+  delete node.data;
+}
+
 export function artifactsDirectives(ctx: PipelineContext) {
   return (tree: AnyNode) => {
     visit(tree, (node: AnyNode, _index: number | undefined, parent: AnyNode) => {
+      if (node.type === "textDirective") {
+        literal(node, ctx);
+        return;
+      }
       if (
         node.type === "containerDirective" ||
-        node.type === "leafDirective" ||
-        node.type === "textDirective"
+        node.type === "leafDirective"
       ) {
         checkParent(node, parent, ctx);
         handleDirective(node, ctx);

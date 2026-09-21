@@ -72,7 +72,7 @@ kbd {
   gap: var(--art-space-3);
   height: 52px;
   padding: 0 var(--art-space-4);
-  background: color-mix(in srgb, var(--art-bg) 82%, transparent);
+  background: color-mix(in srgb, var(--art-bg) 92%, transparent);
   backdrop-filter: saturate(180%) blur(16px);
   border-bottom: 1px solid var(--art-hairline);
 }
@@ -379,10 +379,16 @@ kbd {
   overflow: hidden;
 }
 
+/* A relative time is one word, so it never breaks across lines. */
+.card__foot > span {
+  white-space: nowrap;
+}
+
 .card__foot {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
   margin-top: auto;
   padding-top: var(--art-space-2);
   font-size: 11.5px;
@@ -419,6 +425,9 @@ kbd {
   max-width: 900px;
   margin: 0 auto;
   position: relative;
+  /* Slides left to open a margin for a comment card, then slides back. Only
+     the column moves, so a pin keeps its place against the words. */
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .stage--picking {
@@ -564,13 +573,16 @@ kbd {
   z-index: 25;
   pointer-events: auto;
   font: inherit;
-  font-size: 11.5px;
-  font-weight: 560;
-  color: var(--art-text-muted);
+  font-size: 13px;
+  line-height: 1;
+  color: var(--art-text-faint);
   background: var(--art-surface);
   border: 1px solid var(--art-border);
-  border-radius: var(--art-radius-sm);
-  padding: 3px 8px;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
   cursor: pointer;
   box-shadow: var(--art-shadow-sm);
   opacity: 0;
@@ -655,6 +667,7 @@ kbd {
   z-index: 40;
   width: 312px;
   max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
   pointer-events: auto;
   background: var(--art-surface);
   border: 1px solid var(--art-hairline);
@@ -674,81 +687,124 @@ kbd {
 .pop__card {
   display: flex;
   flex-direction: column;
+  gap: var(--art-space-3);
 }
 
-.pop__head {
+/* The words the comment was left on, so the card is legible on its own. */
+.pop__bar {
   display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 7px;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-.pop__who {
+.pop__quote {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--art-font-serif);
   font-size: 13px;
-  font-weight: 600;
-  margin-right: auto;
-  min-width: 0;
+  line-height: 1.45;
+  color: var(--art-text-muted);
+  border-left: 2px solid var(--art-accent);
+  padding-left: 9px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.pop__anchor {
-  font-family: var(--art-font-mono);
-  font-size: 10.5px;
-  color: var(--art-text-faint);
-  background: var(--art-surface-2);
-  border-radius: var(--art-radius-sm);
-  padding: 3px 7px;
-  margin-bottom: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.pop__thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--art-space-3);
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: 0 calc(var(--art-space-3) * -1);
+  padding: 0 var(--art-space-3);
 }
 
-.pop__head .pop__anchor {
-  margin: 0 auto 0 0;
-  min-width: 0;
+/* Every message has the same shape, first comment and reply alike. */
+.msg {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 9px;
+  align-items: start;
 }
 
-/* ---------- threads ---------- */
-
-.thread__head {
+.msg__meta {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--art-text-muted);
-  margin-bottom: 5px;
+  font-size: 11.5px;
+  color: var(--art-text-faint);
+  margin-bottom: 2px;
   flex-wrap: wrap;
 }
 
-.thread__who {
+.msg__who {
   font-weight: 600;
   color: var(--art-text);
+  font-size: 12.5px;
 }
 
-.thread__body {
+.msg__body {
   font-size: 13.5px;
-  line-height: 1.5;
+  line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.thread__replies {
-  margin-top: 10px;
-  padding-left: 10px;
-  border-left: 2px solid var(--art-border);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.chip {
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--art-surface-2);
+  color: var(--art-text-faint);
 }
 
-.thread__actions {
+/* The reply field is always there, one line until you use it. */
+.reply {
+  border-top: 1px solid var(--art-hairline);
+  padding-top: var(--art-space-3);
   display: flex;
-  gap: 6px;
-  margin-top: 10px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--art-space-2);
+}
+
+.reply textarea {
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--art-text);
+  background: var(--art-surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--art-radius);
+  padding: 7px 10px;
+  resize: none;
+  width: 100%;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.reply textarea::placeholder {
+  color: var(--art-text-faint);
+}
+
+.reply--open textarea {
+  background: var(--art-bg);
+  border-color: var(--art-border);
+}
+
+.reply textarea:focus {
+  outline: none;
+  border-color: var(--art-accent);
+}
+
+.reply__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--art-space-2);
 }
 
 .composer {
@@ -1010,6 +1066,31 @@ kbd {
 
 /* ---------- live editing ---------- */
 
+/* Whether this document is shared right now, said quietly. */
+.livedot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--art-text-faint);
+}
+
+.livedot__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--art-text-faint);
+}
+
+.livedot--on {
+  color: var(--art-good);
+}
+
+.livedot--on .livedot__dot {
+  background: var(--art-good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--art-good) 22%, transparent);
+}
+
 .typist {
   display: inline-flex;
   align-items: center;
@@ -1050,6 +1131,10 @@ kbd {
     height: auto;
     padding: var(--art-space-2) var(--art-space-3);
     flex-wrap: wrap;
+    /* Two rows of controls over a blur is a mess on a phone, and the page
+       shows through the gaps. Solid, and the content stays under it. */
+    background: var(--art-bg);
+    backdrop-filter: none;
   }
 
   /* No room beside a pin, so the card becomes a sheet at the bottom. */

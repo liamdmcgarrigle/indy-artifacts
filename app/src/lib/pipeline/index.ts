@@ -94,6 +94,7 @@ export function renderMarkdown(source: string, fallbackTitle = "Untitled", optio
   // so blocks and comment anchors still point at the source the author sent.
   const normalized = normalizeContainers(source);
   ctx.warnings.push(...normalized.warnings);
+  ctx.source = normalized.source;
 
   const html = String(processor.processSync(normalized.source));
 

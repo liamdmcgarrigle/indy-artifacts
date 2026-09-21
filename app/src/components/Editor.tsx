@@ -295,7 +295,10 @@ export function Editor(props: EditorProps) {
                 {typist.name} is typing
               </span>
             ) : collaborative ? (
-              <span className="tiny">{live === "on" ? "live" : "connecting…"}</span>
+              <span className={live === "on" ? "livedot livedot--on" : "livedot"}>
+                <span className="livedot__dot" />
+                {live === "on" ? "live" : "connecting"}
+              </span>
             ) : dirty ? (
               <span className="tiny">unsaved</span>
             ) : null}

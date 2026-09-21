@@ -164,6 +164,39 @@ async function type(body) {
   }
 }
 
+/**
+ * Replace a document with the text of a version written elsewhere.
+ *
+ * Publishing over MCP or saving in the block editor does not pass through this
+ * process, so without this the shared copy would still hold the old text and
+ * the next editor to open the page would save it back over the new version.
+ */
+async function reset(body) {
+  const slug = String(body.slug ?? "");
+  if (!slug) throw new Error("slug is required");
+  const text = String(body.text ?? "");
+
+  const connection = await server.hocuspocus.openDirectConnection(slug);
+  try {
+    let changed = false;
+    await connection.transact((document) => {
+      const source = document.getText("source");
+      if (source.toString() === text) return;
+      changed = true;
+      if (source.length) source.delete(0, source.length);
+      if (text) source.insert(0, text);
+      document.getMap("typing").delete("who");
+    });
+    // The text now matches the version it came from, so drop the pending
+    // snapshot this edit would otherwise trigger.
+    clearTimeout(pending.get(slug));
+    pending.delete(slug);
+    return { slug, changed };
+  } finally {
+    await connection.disconnect();
+  }
+}
+
 /** The current text of a document, so an agent can read before it writes. */
 async function read(slug) {
   const connection = await server.hocuspocus.openDirectConnection(slug);
@@ -209,7 +242,8 @@ function handle(request, response) {
     );
   }
 
-  if (request.method === "POST" && request.url === "/type") {
+  if (request.method === "POST" && (request.url === "/type" || request.url === "/reset")) {
+    const run = request.url === "/reset" ? reset : type;
     return new Promise((resolve, reject) => {
       let raw = "";
       request.on("data", (part) => {
@@ -224,7 +258,7 @@ function handle(request, response) {
           send(400, { error: { message: "body must be JSON" } });
           return reject();
         }
-        type(body).then(
+        run(body).then(
           (result) => {
             send(200, result);
             reject();

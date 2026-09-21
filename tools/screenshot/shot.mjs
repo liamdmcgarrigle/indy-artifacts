@@ -87,8 +87,33 @@ for (const shot of Array.isArray(shots) ? shots : [shots]) {
       if (!step.wait) await page.waitForTimeout(250);
     }
 
+    let fullPage = shot.full === true;
+    if (fullPage) {
+      // Grow the window until the document fits and take an ordinary shot,
+      // which keeps the page in one piece and loads the frames that only load
+      // when they come into view. Chromium still declines to paint a sandboxed
+      // frame in an oversized window, so a diagram or an embed photographs as
+      // an empty box here: scroll to one with a step and shoot the viewport to
+      // see it, as tools/recipes does for the embeds.
+      const height = await page.evaluate(() => document.documentElement.scrollHeight);
+      // Past a few thousand pixels the browser stops painting frames anyway,
+      // so a document that long falls back to the stitched capture.
+      const tall = Math.max(height + 40, shot.height || 900);
+      if (tall <= 6000) {
+        await page.setViewportSize({ width: shot.width || 1440, height: tall });
+        await page.waitForTimeout(1200);
+        fullPage = false;
+      }
+    }
+
     const file = path.join(outDir, `${shot.name}.png`);
-    await page.screenshot({ path: file, fullPage: shot.full === true });
+    if (shot.only) {
+      // One element, filling the frame. Close design work needs the card, not
+      // the page around it.
+      await page.locator(shot.only).first().screenshot({ path: file });
+    } else {
+      await page.screenshot({ path: file, fullPage });
+    }
     report.push({ name: shot.name, file, problems });
     console.log(`${problems.length ? "!" : "+"} ${shot.name} -> ${file}${problems.length ? ` (${problems.length} console problems)` : ""}`);
     for (const p of problems) console.log(`    ${p}`);

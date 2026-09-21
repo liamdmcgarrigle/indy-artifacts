@@ -137,13 +137,37 @@ export function mermaidDocument(source: string, options: EmbedOptions): string {
     // mermaid stamps the natural size onto the svg as width/height attributes
     // and an inline max-width. Left alone they hold the diagram at that size in
     // the top left of a wider frame, and they inflate the measured height.
+    //
+    // A wide diagram in a narrow column shrinks until the labels are specks, so
+    // below about three quarters of natural size it keeps its size and the
+    // frame scrolls sideways instead.
     function fit() {
       var svg = root.querySelector("svg");
       if (!svg) return;
+      var box = svg.viewBox && svg.viewBox.baseVal;
+      var natural = box && box.width ? box.width : 0;
+      var available = root.clientWidth || document.documentElement.clientWidth;
       svg.removeAttribute("height");
-      svg.setAttribute("width", "100%");
-      svg.style.maxWidth = "100%";
       svg.style.height = "auto";
+
+      // Small diagram: leave it at the size mermaid drew it. Stretching a
+      // seven-node flowchart across the column blows the type up with it.
+      if (!natural || !available || natural <= available) {
+        svg.setAttribute("width", natural ? String(Math.round(natural)) : "100%");
+        svg.style.maxWidth = "100%";
+        return;
+      }
+
+      // Wider than the column: shrink to fit, unless that would make the
+      // labels specks, in which case keep it legible and scroll sideways.
+      if (available / natural >= 0.75) {
+        svg.setAttribute("width", "100%");
+        svg.style.maxWidth = "100%";
+        return;
+      }
+      root.style.overflowX = "auto";
+      svg.setAttribute("width", String(Math.round(natural)));
+      svg.style.maxWidth = "none";
     }
 
     try {

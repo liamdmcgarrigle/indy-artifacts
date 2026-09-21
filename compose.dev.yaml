@@ -12,7 +12,7 @@ services:
     command: sh -c "node collab/server.mjs & cd app && node scripts/build-vendor.mjs && npx next dev --hostname 0.0.0.0 --port 5176"
     ports:
       - "5176:5176"
-      - "5175:5175"
+      - "5177:5177"
     environment:
       ARTIFACTS_PUBLIC_URL: "http://agentbox:5176"
       ARTIFACTS_DATA: "/work/data"
@@ -20,7 +20,8 @@ services:
       ARTIFACTS_ASSET_ROOTS: "/home/liam/work:/home/liam/orca:/tmp"
       ARTIFACTS_TMP: "/work/data/tmp"
       NEXT_TELEMETRY_DISABLED: "1"
-      COLLAB_PORT: "5175"
+      COLLAB_PORT: "5177"
+      ARTIFACTS_COLLAB_PORT: "5177"
       ARTIFACTS_APP_URL: "http://127.0.0.1:5176"
     volumes:
       - .:/work:Z

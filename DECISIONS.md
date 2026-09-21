@@ -89,6 +89,72 @@ done instead, and why.
     centring margin, which grew with the window. The overlay's own box is now the origin. The
     geometry moved into `lib/anchors.ts` as `spotFor`, with tests for the flip and the clamp.
 
+## The overhaul
+
+20. **shadcn and Tailwind were considered and left out.** The operator asked whether shadcn would
+    give us a lot for free. It would give real behaviour for menus, dialogs and tooltips, which is
+    the part of a component library that is genuinely hard. The cost is that shadcn is Tailwind, and
+    this project already has a styling contract: a theme is a file of `--art-*` custom properties
+    that must reach compiled React artifacts, raw HTML artifacts and sandboxed frames, none of which
+    can run our build. Adding Tailwind would mean either two systems styling the same page or
+    rewriting the theme contract as a Tailwind preset, and the artifacts we publish still could not
+    use it. What we took from shadcn is its actual value, which is the Radix behaviour underneath,
+    and only where it was missing: focus rings from one token, keyboard dismissal, reduced-motion
+    honoured. If we ever need a combobox or a date picker, the decision is worth reopening for the
+    app shell alone, never for the artifact surface.
+
+21. **TipTap replaced the editing complaint rather than the editor.** The operator's complaint was
+    that editing felt heavy: open the whole document, scroll to the paragraph, find the line. The
+    fix for that is editing one block where it sits, which is now a pencil in the margin and a text
+    area over the block, posting the block's own line range to `PUT /api/artifacts/:slug/lines`. A
+    TipTap WYSIWYG layer would be a second source of truth for a document whose source is markdown
+    an agent has to read back, and round-tripping our directive blocks through a rich-text schema is
+    where that goes wrong. It is worth revisiting once the block editor has been lived with; the
+    collaboration half of the TipTap ecosystem is what we adopted instead.
+
+22. **Live typing is Yjs and Hocuspocus, not a diff feed.** `artifacts_type` needed to show an agent
+    writing, which means the document must tolerate two writers at once and survive a browser that
+    is halfway through a sentence. A CRDT does that; a "replace the source" endpoint does not. The
+    document is a working copy, not the record: versions stay immutable rows, and the collaboration
+    server asks the app to snapshot one once typing has been quiet for two and a half seconds, and
+    only if the text changed.
+
+23. **Both processes live in one container.** The collaboration server has to call the app to write
+    a version, and the app has to reach the collaboration server for `artifacts_type`. Under rootless
+    podman here, container-to-container DNS did not resolve and `host.containers.internal` timed out.
+    Rather than fight the network, `start.mjs` supervises both processes in the same container and
+    they talk over loopback. If either dies the container dies, which is the behaviour we want.
+
+24. **The viewer follows the document over server-sent events.** Polling from the browser would have
+    been simpler, but a page left open on the Mac is the main way the operator watches an agent work,
+    and a poll interval slow enough to be cheap is slow enough to feel broken. The stream carries a
+    fingerprint of the version number, the comment count and the newest comment timestamp, computed
+    from two indexed reads. Nothing is pushed through it, so a dropped connection cannot wedge a
+    subscriber. It does mean the network is never idle, which is why the screenshot harness waits on
+    `load` rather than `networkidle`.
+
+25. **A screenshot harness, because the box is headless.** Every visual claim until then rested on
+    reading HTML out of curl. Playwright runs in a container against a recipe of URLs, each with a
+    width, a scheme and steps to perform first, and writes PNGs plus a report of console errors. It
+    found three things curl could not see: compiled artifacts rendering blank, a page that had
+    stopped hydrating entirely, and pins landing on the wrong line.
+
+26. **The page slides left when a comment card opens.** At 1440px a centred 900px column leaves
+    270px of margin and a readable card needs 340px, so a card in the margin either covered the text
+    or sat off screen. Docs solves this by moving the page, so we do too: the column translates left
+    by exactly the shortfall, capped so it never runs off the left edge, and slides back when the
+    card closes. The arithmetic runs on offsets rather than rectangles, because a rectangle read
+    during the slide's own transition feeds the slide back into itself.
+
+27. **The thread card was rebuilt from feedback left inside the product.** The operator commented
+    on the artifact itself: the card did not look modern, and a comment got lost when the text
+    around it moved. The card is now one thread with a single shape for every message, the sentence
+    it was left on quoted at the top, resolve and close as icons, and a reply field that is always
+    present rather than hidden behind a button. Re-anchoring gives up characters from whichever end
+    of the stored context changed until the remainder matches again, so a pin holds its place
+    through an edit instead of collapsing to the top of its block, and says so by going hollow when
+    it had to guess.
+
 ## Known limits
 
 - No authentication. Anyone who can reach the port can publish, comment and edit. The port is only

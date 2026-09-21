@@ -237,13 +237,12 @@ export function resolveAnchor(root: HTMLElement, anchor: Anchor): Resolved | nul
     // The stored block first, then the whole page. Block ids are positional, so
     // editing anything above a comment renumbers its block and the id alone
     // would drop the pin in the wrong place. The surrounding text still finds it.
+    const caretAt = Math.min(CONTEXT_CHARS, anchor.context.length);
     for (const scope of block ? [block, root] : [root]) {
-      const text = blockText(scope);
-      const index = text.indexOf(anchor.context);
-      if (index === -1) continue;
-      const offset = index + Math.min(CONTEXT_CHARS, anchor.context.length);
-      const rect = rectOfRange(scope, Math.max(offset - 1, 0), offset);
-      if (rect) return { rect, exact: scope === block };
+      const found = locateContext(blockText(scope), anchor.context, caretAt);
+      if (!found) continue;
+      const rect = rectOfRange(scope, Math.max(found.offset - 1, 0), found.offset);
+      if (rect) return { rect, exact: found.exact && scope === block };
     }
   }
 
@@ -277,6 +276,62 @@ function locateQuote(scope: HTMLElement, quote: string, near?: number): { from: 
     if (index === -1) continue;
     return { from: index, to: index + candidate.length };
   }
+
+  // The quoted words were edited. Keep the part that survived: the longest
+  // prefix of the selection still on the page marks roughly the same spot.
+  const trimmed = quote.trim();
+  for (let length = trimmed.length - STEP; length >= MIN_MATCH; length -= STEP) {
+    const index = text.indexOf(trimmed.slice(0, length));
+    if (index !== -1) return { from: index, to: index + length };
+  }
+  return null;
+}
+
+const MIN_MATCH = 12;
+const STEP = 3;
+
+/**
+ * Find the point an anchor marks inside `text`, given the words that were
+ * around it when the comment was written and where in that run the caret sat.
+ *
+ * An exact hit is the normal case. When the sentence has been edited since,
+ * the stored run no longer appears, so this gives up characters from whichever
+ * side changed until what is left matches again. The pin lands beside the words
+ * that survived rather than collapsing to the top of the block.
+ */
+export function locateContext(
+  text: string,
+  context: string,
+  caretAt: number,
+): { offset: number; exact: boolean } | null {
+  if (!text || !context) return null;
+
+  const at = text.indexOf(context);
+  if (at !== -1) return { offset: at + caretAt, exact: true };
+
+  const lower = text.toLowerCase();
+  const needle = context.toLowerCase();
+  const loose = lower.indexOf(needle);
+  if (loose !== -1) return { offset: loose + caretAt, exact: false };
+
+  // Drop from the tail first, which keeps the words leading up to the caret.
+  for (let end = needle.length - STEP; end > caretAt && end >= MIN_MATCH; end -= STEP) {
+    const index = lower.indexOf(needle.slice(0, end));
+    if (index !== -1) return { offset: index + caretAt, exact: false };
+  }
+
+  // Then exactly the run up to the caret, in case the step above stepped over it.
+  if (caretAt >= MIN_MATCH) {
+    const index = lower.indexOf(needle.slice(0, caretAt));
+    if (index !== -1) return { offset: index + caretAt, exact: false };
+  }
+
+  // Then from the head, which keeps the words just after it.
+  for (let start = STEP; start < caretAt && needle.length - start >= MIN_MATCH; start += STEP) {
+    const index = lower.indexOf(needle.slice(start));
+    if (index !== -1) return { offset: index + (caretAt - start), exact: false };
+  }
+
   return null;
 }
 
@@ -331,9 +386,15 @@ export interface SpotLayout {
   /** Right edge of the text column in viewport coordinates. */
   contentRight: number;
   popWidth?: number;
+  /**
+   * How far left the page has slid to open a margin for the card. Coordinates
+   * here describe the resting layout; the caller applies the slide to the DOM,
+   * so the returned numbers carry it back.
+   */
+  shift?: number;
 }
 
-const PIN_GUTTER = 34;
+const PIN_GUTTER = 42;
 
 /**
  * Turn an anchor's viewport rect into overlay coordinates.
@@ -351,20 +412,25 @@ export function spotFor(
 ): Spot {
   const popWidth = layout.popWidth ?? 312;
   const top = rect.top - origin.top + (type === "range" ? rect.height : 0);
-  const left = Math.max(layout.contentLeft - origin.left - PIN_GUTTER, 2);
+  // The text column often fills its own container, so the gutter the pin wants
+  // is outside it. Let the pin go negative and clamp against the window rather
+  // than the column, which is what keeps it off the words.
+  const left = Math.max(layout.contentLeft - origin.left - PIN_GUTTER, 8 - origin.left);
 
-  const inRightMargin = layout.contentRight + 16;
-  const fitsRight = inRightMargin + popWidth <= layout.viewportWidth - 12;
-  const overText = origin.left + left + PIN_GUTTER;
+  const shift = layout.shift ?? 0;
+  const marginLeft = layout.contentRight - shift + 16;
+  const fitsRight = marginLeft + popWidth <= layout.viewportWidth - 12;
+  const overText = origin.left - shift + left + PIN_GUTTER;
   const clampedOverText = Math.min(overText, layout.viewportWidth - 12 - popWidth);
 
-  const popLeftViewport = fitsRight ? inRightMargin : Math.max(clampedOverText, 12);
+  const onScreen = fitsRight ? marginLeft : Math.max(clampedOverText, 12);
   return {
     top,
     left,
     flipped: !fitsRight,
     popTop: Math.max(top - 14, 4),
-    popLeft: popLeftViewport - origin.left,
+    // Back into the sliding container's own coordinates.
+    popLeft: onScreen + shift - origin.left,
   };
 }
 

@@ -1,5 +1,5 @@
 import { getContext } from "@/lib/service/context";
-import { createHumanVersion, requireArtifact, requireVersion } from "@/lib/service/artifacts";
+import { createHumanVersion, LIVE_EDIT_MESSAGE, requireArtifact, requireVersion } from "@/lib/service/artifacts";
 import { body, fail, json } from "@/lib/api/respond";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export async function POST(request: Request, { params }: Params) {
     const result = await createHumanVersion(ctx, slug, {
       source: text,
       authorName: String(payload.author_name ?? payload.authorName ?? "live edit"),
-      message: "live edit",
+      message: LIVE_EDIT_MESSAGE,
       expectedVersion: artifact.currentVersion,
     });
     return json(result);

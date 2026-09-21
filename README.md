@@ -4,7 +4,8 @@ A self-hosted place for the agents on this box to publish visual reports, and fo
 read them, comment on them and edit them. Agents talk to it over MCP. Comments come back to the
 agent that published the page, through its Orca terminal.
 
-Reachable at http://agentbox:5174 from the operator's Mac over the tailnet.
+Reachable at http://agentbox:5174 from the operator's Mac over the tailnet. A second process on
+5175 holds the live documents, so you can watch an agent type into a page while it is open.
 
 ## What an artifact is
 
@@ -53,18 +54,29 @@ for agents in `plugin/skills/artifacts/reference.md` and served over MCP as `art
 
 ## Themes
 
-A theme is one CSS file defining a fixed set of `--art-*` custom properties twice, for light and
-dark. Three ship: `default`, `picaflick` and `backup-studio`, the last two carrying those products'
-real colours. A fourth theme is a file dropped into `themes/`, which the server picks up without a rebuild. The tokens reach compiled and
-raw-HTML artifacts too, so a React artifact can use `var(--art-accent)` and match.
+A theme is one CSS file defining a fixed set of `--art-*` custom properties. Colour tokens are
+declared twice, for light and dark; the shape of the design, meaning the type stack, the spacing
+scale, the radii, the measure and the shadows, is declared once. Three themes ship: `default`,
+`picaflick` and `backup-studio`, the last two carrying those products' real colours. A fourth theme
+is a file dropped into `themes/`, which the server picks up without a rebuild.
+
+Type comes from variable fonts served from the container, not from a CDN: Inter, Source Serif 4,
+JetBrains Mono, Nunito Sans and Manrope, all under the Open Font License. Body copy sits in a serif
+at a 68-character measure, headings in the theme's display face, and data blocks run wider than the
+prose so a table or a chart uses the page. The tokens reach compiled and raw-HTML artifacts too, so
+a React artifact can use `var(--art-accent)` and match.
 
 ## Comments
 
-Comments are pins on the page, the way Figma and Notion do it. Select text and a Comment bubble
+Comments are pins in the margin, the way Figma and Notion do it. Select text and a Comment bubble
 appears. Press `c` and click to drop a pin anywhere a caret goes, or on a chart, a card, or an
-element inside a sandboxed frame. The composer opens next to the pin, and clicking a pin later opens
-that thread in the same place, so the page is never squeezed by a panel. Every anchor carries the
+element inside a sandboxed frame. The card opens beside its pin, and the page slides left far enough
+to make room for it, so a thread never covers the sentence it is about. Every anchor carries the
 source line range, so the agent is told which lines a comment is about.
+
+A pin holds its place when the text under it changes. The anchor stores the run of words around the
+spot; if an edit means that run no longer appears, the resolver gives up characters from whichever
+end changed until what is left matches again. A pin that had to guess is drawn hollow.
 
 Nothing reaches the agent until you say so. The composer has a Notify agent checkbox, off by
 default. Leave it off, work through the page, then press Send in the header to deliver them all as
@@ -73,9 +85,30 @@ through them in order, including any whose anchor no longer resolves.
 
 ## Editing
 
-The Edit button opens the source in CodeMirror. Saving creates a new version authored by you, and
-the agent can read it back with `artifacts_get` or see exactly what changed with `artifacts_diff`.
-An agent that tries to update against a stale version gets a 409 naming the current one.
+Hover any block on the page and a pencil appears in the margin. Click it and that block alone
+becomes a text area holding its own source lines; save and only those lines are spliced into a new
+version. Fixing one sentence does not mean opening the whole document and hunting for it.
+
+The Edit button still opens the full source in CodeMirror for larger work. Saving creates a new
+version authored by you, and the agent can read it back with `artifacts_get` or see exactly what
+changed with `artifacts_diff`. An agent that tries to update against a stale version gets a 409
+naming the current one.
+
+## Live documents
+
+A markdown artifact open in the editor is a shared document, held as a CRDT by the collaboration
+server on 5175 and stored beside the versions in SQLite. Two browsers editing one artifact see each
+other's carets and changes.
+
+An agent joins the same document with `artifacts_type`, which types its text in a few characters at
+a time rather than replacing the page. You watch the words arrive, with a chip naming the agent that
+is writing them. Typing does not create a version on every keystroke: once the document has been
+quiet for a couple of seconds the collaboration server asks the app to snapshot it, and only then,
+and only if the text actually changed, does a new version appear.
+
+Pages that are open but not being edited follow along too. The viewer holds a server-sent events
+stream and redraws when the version number or the comments change, so a page left open on the Mac
+does not go stale while an agent works on it.
 
 ## Running it
 
@@ -107,8 +140,9 @@ codex plugin add artifacts@artifacts-local
 Both get the same MCP server at `http://127.0.0.1:5174/mcp` and the same skill. Details and the
 fallback commands are in `plugin/README.md`.
 
-The nine tools are `artifacts_publish`, `artifacts_update`, `artifacts_get`, `artifacts_list`,
-`artifacts_diff`, `artifacts_comments`, `artifacts_reply`, `artifacts_resolve` and `artifacts_wait`.
+The ten tools are `artifacts_publish`, `artifacts_update`, `artifacts_type`, `artifacts_get`,
+`artifacts_list`, `artifacts_diff`, `artifacts_comments`, `artifacts_reply`, `artifacts_resolve` and
+`artifacts_wait`.
 
 ## Sandboxing
 
@@ -131,11 +165,24 @@ No toolchain on the host. Everything runs in a worker:
 W_CACHE=artifacts spawn-worker docker.io/library/node:24-bookworm-slim "npm test"
 W_CACHE=artifacts W_NET=bridge spawn-worker docker.io/library/node:24-bookworm-slim "npm install"
 python3 -m unittest discover -s hook      # the poller runs on the host
+docker compose -f compose.dev.yaml up -d  # dev server on 5176, its collab on 5177
 ```
 
-Layout: `app/` is the Next.js server, viewer, API and MCP endpoint; `packages/primitives` is the
-`<art-*>` element bundle; `themes/` holds the token files; `plugin/` is what installs into Claude
-Code and Codex; `hook/` is the host poller.
+The server is headless, so seeing the work means taking a picture of it:
+
+```bash
+./tools/shot tools/recipes/baseline.json /tmp/shots
+```
+
+That runs Playwright in a container against a recipe of URLs, each with a width, a colour scheme and
+a list of steps to perform first, and writes a PNG and a `report.json` carrying any console errors.
+It has already caught three things curl could not: artifacts that compiled and then rendered blank,
+a page that stopped hydrating, and pins landing on the wrong line.
+
+Layout: `app/` is the Next.js server, viewer, API and MCP endpoint; `collab/` is the document
+server; `packages/primitives` is the `<art-*>` element bundle; `themes/` holds the token files;
+`plugin/` is what installs into Claude Code and Codex; `hook/` is the host poller; `tools/` holds
+the screenshot harness.
 
 Design and plan are in `docs/superpowers/`. Judgment calls made while building, including the bugs
 found in end-to-end testing, are in `DECISIONS.md`.

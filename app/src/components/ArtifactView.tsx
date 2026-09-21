@@ -74,6 +74,7 @@ interface Pin extends Spot {
 
 const NAME_KEY = "art-author-name";
 const POP_W = 312;
+const POP_GAP = 16;
 
 function initials(name: string): string {
   const parts = name.trim().split(/[\s._-]+/).filter(Boolean);
@@ -101,6 +102,11 @@ export function ArtifactView(props: ArtifactViewProps) {
   const router = useRouter();
   const hideHover = useRef<number | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLElement | null>(null);
+  const shiftRef = useRef(0);
+  const [shift, setShift] = useState(0);
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const [popNudge, setPopNudge] = useState(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const pageFrameRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -170,6 +176,25 @@ export function ArtifactView(props: ArtifactViewProps) {
     setThreads(data.threads);
   }, [props.slug]);
 
+  // A card anchored near the foot of a long page would open with half of it
+  // below the fold. Measure it on the frame after it appears and lift it back
+  // into the window. Once per card: measuring inside the render pass reads a
+  // rectangle the browser has not laid out yet.
+  useEffect(() => {
+    setPopNudge(0);
+    if (!activeId) return;
+    const frame = requestAnimationFrame(() => {
+      const card = popRef.current;
+      if (!card) return;
+      const rect = card.getBoundingClientRect();
+      let next = 0;
+      if (rect.bottom > window.innerHeight - 10) next = window.innerHeight - 10 - rect.bottom;
+      if (rect.top + next < 10) next = 10 - rect.top;
+      setPopNudge(next);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeId]);
+
   // ---- pin and popover positions ------------------------------------------
 
   const recompute = useCallback(() => {
@@ -178,15 +203,30 @@ export function ArtifactView(props: ArtifactViewProps) {
     if (!content || !inner) return;
     // The overlay is a child of .stage__inner, so that is the origin; measuring
     // against .stage would shift every pin by the stage padding and centring.
+    const stage = stageRef.current;
+    if (!stage) return;
     const origin = inner.getBoundingClientRect();
 
-    const box = content.getBoundingClientRect();
-    const layout = {
-      viewportWidth: window.innerWidth,
-      contentLeft: box.left,
-      contentRight: box.right,
-      popWidth: POP_W,
-    };
+    // Horizontal geometry comes from offsets rather than rectangles. The column
+    // slides with a transform, and a rectangle read halfway through that
+    // animation would feed the slide back into itself and walk off the screen.
+    const stageLeft = stage.getBoundingClientRect().left;
+    const originLeft = stageLeft + inner.offsetLeft;
+    const contentLeft = originLeft + content.offsetLeft;
+    const contentRight = contentLeft + content.offsetWidth;
+    const viewportWidth = window.innerWidth;
+
+    // A card open in the margin needs room the centred column does not leave,
+    // so the page slides left far enough to make it, and only that far.
+    const cardOpen = activeId !== null || draft?.anchor != null;
+    const need = POP_W + POP_GAP + 12 - (viewportWidth - contentRight);
+    const shift = cardOpen ? Math.max(0, Math.min(need, Math.max(contentLeft - 24, 0))) : 0;
+    if (shift !== shiftRef.current) {
+      shiftRef.current = shift;
+      setShift(shift);
+    }
+
+    const layout = { viewportWidth, contentLeft, contentRight, popWidth: POP_W, shift };
 
     const next: Pin[] = [];
     visible.forEach((thread) => {
@@ -196,18 +236,20 @@ export function ArtifactView(props: ArtifactViewProps) {
       next.push({
         thread,
         exact: resolved.exact,
-        ...spotFor(resolved.rect, origin, thread.anchor.type, layout),
+        ...spotFor(resolved.rect, { top: origin.top, left: originLeft }, thread.anchor.type, layout),
       });
     });
     setPins(spreadPins(next));
 
     if (draft?.anchor) {
       const resolved = resolveAnchor(content, draft.anchor);
-      setDraftSpot(resolved ? spotFor(resolved.rect, origin, draft.anchor.type, layout) : null);
+      setDraftSpot(
+        resolved ? spotFor(resolved.rect, { top: origin.top, left: originLeft }, draft.anchor.type, layout) : null,
+      );
     } else {
       setDraftSpot(null);
     }
-  }, [visible, draft?.anchor]);
+  }, [visible, draft?.anchor, activeId]);
 
   // Light up the text a comment points at. Progressive enhancement: browsers
   // without the Custom Highlight API simply show the pins.
@@ -752,8 +794,12 @@ export function ArtifactView(props: ArtifactViewProps) {
         </div>
       ) : null}
 
-      <main className={tool ? "stage stage--picking" : "stage"}>
-        <div className="stage__inner" ref={innerRef}>
+      <main className={tool ? "stage stage--picking" : "stage"} ref={stageRef}>
+        <div
+          className="stage__inner"
+          ref={innerRef}
+          style={shift ? { transform: `translateX(${-shift}px)` } : undefined}
+        >
           {!isLatest ? (
             <div className="warnings" style={{ marginBottom: 16 }}>
               Viewing version {props.versionNumber} of {props.currentVersion}.{" "}
@@ -838,7 +884,11 @@ export function ArtifactView(props: ArtifactViewProps) {
             {/* A thread whose block is gone has no pin, so its card opens at the
                 top of the page rather than nowhere. */}
             {active ? (
-              <div className="pop" style={{ top: activePin?.popTop ?? 8, left: activePin?.popLeft ?? 8 }}>
+              <div
+                className="pop"
+                ref={popRef}
+                style={{ top: (activePin?.popTop ?? 8) + popNudge, left: activePin?.popLeft ?? 8 }}
+              >
                 <ThreadCard
                   thread={active}
                   busy={busy}
@@ -852,10 +902,9 @@ export function ArtifactView(props: ArtifactViewProps) {
             {draft ? (
               <div className="pop" style={{ top: draftSpot?.popTop ?? 8, left: draftSpot?.popLeft ?? 8 }}>
                 <div className="composer">
-                  <div className="pop__head">
-                    <span className={"avatar"}>{initials(author)}</span>
-                    <span className="pop__anchor" title={describeAnchor(draft.anchor)}>
-                      {describeAnchor(draft.anchor)}
+                  <div className="pop__bar">
+                    <span className="pop__quote" title={describeAnchor(draft.anchor)}>
+                      {quoteOf(draft.anchor)}
                     </span>
                     <button className="iconbtn" onClick={() => setDraft(null)} aria-label="Cancel">
                       ✕
@@ -908,8 +957,9 @@ export function ArtifactView(props: ArtifactViewProps) {
               onMouseLeave={dropHover}
               onClick={() => startEdit(hover.lines)}
               title={`Edit lines ${hover.lines[0]}-${hover.lines[1]}`}
+              aria-label={`Edit lines ${hover.lines[0]} to ${hover.lines[1]}`}
             >
-              Edit
+              ✎
             </button>
           ) : null}
 
@@ -986,99 +1036,120 @@ function ThreadCard({
 }) {
   return (
     <div className="pop__card">
-      <div className="pop__head">
-        <span className={thread.authorKind === "agent" ? "avatar avatar--agent" : "avatar"}>
-          {initials(thread.authorName)}
+      <div className="pop__bar">
+        <span className="pop__quote" title={describeAnchor(thread.anchor)}>
+          {quoteOf(thread.anchor)}
         </span>
-        <span className="pop__who">
-          {thread.authorName}
-          <span className="tiny"> · {when(thread.createdAt)} · v{thread.versionNumber}</span>
-        </span>
+        <button
+          className="iconbtn"
+          onClick={() => onStatus(thread.status === "open" ? "resolved" : "open")}
+          disabled={busy}
+          title={thread.status === "open" ? "Resolve" : "Reopen"}
+          aria-label={thread.status === "open" ? "Resolve" : "Reopen"}
+        >
+          {thread.status === "open" ? "✓" : "↺"}
+        </button>
         <button className="iconbtn" onClick={onClose} aria-label="Close">
           ✕
         </button>
       </div>
 
-      <div className="pop__anchor" title={describeAnchor(thread.anchor)}>
-        {describeAnchor(thread.anchor)}
-      </div>
-
-      <div className="thread__body">{thread.body}</div>
-      {thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
-        <div className="tiny">Not sent to the agent yet.</div>
-      ) : null}
-
-      {thread.replies.length > 0 ? (
-        <div className="thread__replies">
-          {thread.replies.map((reply) => (
-            <div key={reply.id}>
-              <div className="thread__head">
-                <span className={reply.authorKind === "agent" ? "avatar avatar--agent" : "avatar"}>
-                  {initials(reply.authorName)}
-                </span>
-                <span className="thread__who">{reply.authorName}</span>
-                <span>{when(reply.createdAt)}</span>
+      <div className="pop__thread">
+        {[thread as Message, ...thread.replies].map((message, index) => (
+          <article className="msg" key={message.id}>
+            <span className={message.authorKind === "agent" ? "avatar avatar--agent" : "avatar"}>
+              {initials(message.authorName)}
+            </span>
+            <div className="msg__main">
+              <div className="msg__meta">
+                <span className="msg__who">{message.authorName}</span>
+                <span>{when(message.createdAt)}</span>
+                {index === 0 && thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
+                  <span className="chip">not sent</span>
+                ) : null}
               </div>
-              <div className="thread__body">{reply.body}</div>
+              <div className="msg__body">{message.body}</div>
             </div>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="thread__actions">
-        <button
-          className="btn btn--ghost"
-          onClick={() => onStatus(thread.status === "open" ? "resolved" : "open")}
-          disabled={busy}
-        >
-          {thread.status === "open" ? "Resolve" : "Reopen"}
-        </button>
-        <ReplyBox onSend={onReply} busy={busy} />
+          </article>
+        ))}
       </div>
+
+      <ReplyBox onSend={onReply} busy={busy} />
     </div>
   );
 }
 
+/** One message in a thread: the comment itself has the same shape as a reply. */
+interface Message {
+  id: string;
+  authorKind: "agent" | "human";
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+/**
+ * The words the comment was left on. A reader recognises the sentence far
+ * faster than a block id, so the card leads with it and keeps the technical
+ * description in the tooltip.
+ */
+function quoteOf(anchor: Anchor | null): string {
+  if (anchor?.quote) return `\u201c${truncate(anchor.quote.replace(/\s+/g, " ").trim(), 90)}\u201d`;
+
+  const text = (anchor?.context ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return anchor?.type === "element" ? "a spot on the page" : "this page";
+
+  // Stored context is a fixed-length slice of the sentence, so both ends
+  // usually land mid-word. Drop the broken halves and say so with an ellipsis.
+  let quote = text;
+  let head = "";
+  let tail = "";
+  if (!/^[A-Z\u201c"([]/.test(quote)) {
+    quote = quote.replace(/^\S+\s+/, "");
+    head = "\u2026";
+  }
+  if (!/[.!?:;,\u201d")\]]$/.test(quote)) {
+    quote = quote.replace(/\s+\S+$/, "");
+    tail = "\u2026";
+  }
+  return `\u201c${head}${truncate(quote, 90)}${tail}\u201d`;
+}
+
 function ReplyBox({ onSend, busy }: { onSend: (text: string) => void; busy: boolean }) {
-  const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  if (!open)
-    return (
-      <button className="btn btn--ghost" onClick={() => setOpen(true)}>
-        Reply
-      </button>
-    );
+  const [focused, setFocused] = useState(false);
+
+  function send() {
+    if (!text.trim()) return;
+    onSend(text);
+    setText("");
+    setFocused(false);
+  }
+
   return (
-    <div className="composer" style={{ width: "100%" }}>
+    <div className={focused || text ? "reply reply--open" : "reply"}>
       <textarea
         value={text}
-        autoFocus
+        rows={focused || text ? 3 : 1}
         placeholder="Reply"
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text.trim()) {
-            onSend(text);
-            setText("");
-            setOpen(false);
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            send();
           }
         }}
       />
-      <div className="composer__row">
-        <button className="btn btn--ghost" onClick={() => setOpen(false)}>
-          Cancel
-        </button>
-        <button
-          className="btn btn--primary"
-          disabled={busy || !text.trim()}
-          onClick={() => {
-            onSend(text);
-            setText("");
-            setOpen(false);
-          }}
-        >
-          Send
-        </button>
-      </div>
+      {focused || text ? (
+        <div className="reply__row">
+          <span className="tiny">Enter sends</span>
+          <button className="btn btn--primary" disabled={busy || !text.trim()} onMouseDown={(e) => e.preventDefault()} onClick={send}>
+            Reply
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

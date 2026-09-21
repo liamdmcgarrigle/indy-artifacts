@@ -285,3 +285,23 @@ describe("container nesting", () => {
     expect(tab.warnings[0].message).toBe('":::tab" is only rendered inside ":::tabs"');
   });
 });
+
+describe("colons in prose", () => {
+  it("leaves a time alone instead of reading it as a directive", () => {
+    const out = renderMarkdown("Tonight at 02:00, same set.", "T");
+    expect(out.warnings).toEqual([]);
+    expect(out.html).toContain("02:00");
+  });
+
+  it("leaves a namespace alone", () => {
+    const out = renderMarkdown("Use `std` then std::vector in prose.", "T");
+    expect(out.warnings).toEqual([]);
+    expect(out.html).toContain("std::vector");
+  });
+
+  it("still renders the block directives it knows", () => {
+    const out = renderMarkdown(":::callout{tone=warn}\nLook here.\n:::", "T");
+    expect(out.warnings).toEqual([]);
+    expect(out.html).toContain("art-callout");
+  });
+});

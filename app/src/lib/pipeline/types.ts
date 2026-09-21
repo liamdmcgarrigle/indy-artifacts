@@ -62,6 +62,8 @@ export interface PipelineContext {
   frontmatter: Record<string, unknown> | null;
   embedCounter: number;
   assetBase?: string;
+  /** The markdown being rendered, for recovering the literal text of a node. */
+  source?: string;
 }
 
 export const CHART_TYPES = ["bar", "line", "area", "pie", "doughnut", "scatter"] as const;

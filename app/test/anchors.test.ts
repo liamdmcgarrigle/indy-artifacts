@@ -7,6 +7,7 @@ import {
   blockText,
   describeAnchor,
   linesOf,
+  locateContext,
   resolveAnchor,
   spotFor,
   spreadPins,
@@ -121,7 +122,7 @@ describe("spotFor", () => {
 
   it("puts the pin in the margin beside the text, not on it", () => {
     const spot = spotFor(rect, origin, "point", wide);
-    expect(spot.left).toBe(390 - 100 - 34);
+    expect(spot.left).toBe(390 - 100 - 42);
   });
 
   it("hangs a range pin at the end of the selection", () => {
@@ -130,15 +131,36 @@ describe("spotFor", () => {
   });
 
   it("keeps the pin on screen when there is no margin", () => {
-    const narrow = { viewportWidth: 420, contentLeft: 104, contentRight: 400, popWidth: 312 };
-    const spot = spotFor(rect, { top: 100, left: 100 }, "point", narrow);
-    expect(spot.left).toBeGreaterThanOrEqual(2);
+    const narrow = { viewportWidth: 420, contentLeft: 16, contentRight: 400, popWidth: 312 };
+    const origin = { top: 100, left: 16 };
+    const spot = spotFor(rect, origin, "point", narrow);
+    expect(origin.left + spot.left).toBeGreaterThanOrEqual(8);
+  });
+
+  it("puts the pin outside a column that fills its own container", () => {
+    // .art-content fills .stage__inner, so the gutter is off the left of it.
+    const full = { viewportWidth: 1440, contentLeft: 270, contentRight: 1170, popWidth: 312 };
+    const spot = spotFor(rect, { top: 0, left: 270 }, "point", full);
+    expect(spot.left).toBe(-42);
+    expect(270 + spot.left).toBe(228);
   });
 
   it("opens the card in the empty right margin when it fits", () => {
     const spot = spotFor(rect, origin, "point", wide);
     expect(spot.flipped).toBe(false);
     expect(origin.left + spot.popLeft).toBe(1050 + 16);
+  });
+
+  it("keeps the card in the margin once the page has slid left", () => {
+    // A 900px column centred in a 1440px window leaves 270px either side,
+    // which is 70px short of a card. The view slides the column that far and
+    // spotFor answers in the sliding container's own coordinates.
+    const snug = { viewportWidth: 1440, contentLeft: 270, contentRight: 1170, popWidth: 312, shift: 70 };
+    const spot = spotFor(rect, { top: 100, left: 270 }, "point", snug);
+    const rendered = 270 + spot.popLeft - 70;
+    expect(spot.flipped).toBe(false);
+    expect(rendered).toBe(1170 - 70 + 16);
+    expect(rendered + 312).toBeLessThanOrEqual(1440 - 12);
   });
 
   it("floats the card over the text when the window is too narrow", () => {
@@ -152,6 +174,36 @@ describe("spotFor", () => {
     const tiny = { viewportWidth: 380, contentLeft: 10, contentRight: 370, popWidth: 312 };
     const spot = spotFor(rect, { top: 0, left: 0 }, "point", tiny);
     expect(spot.popLeft).toBeGreaterThanOrEqual(12);
+  });
+});
+
+describe("locateContext", () => {
+  const line = "The container serves on port 5174, reachable from the Mac at agentbox.";
+  // The comment was left after "5174, ", 24 characters into the stored run.
+  const context = "on port 5174, reachable from the Mac";
+  const caret = 13;
+
+  it("finds the spot it was left on", () => {
+    const found = locateContext(line, context, caret);
+    expect(found).toEqual({ offset: line.indexOf(context) + caret, exact: true });
+  });
+
+  it("holds its place when the words after it change", () => {
+    const edited = "The container serves on port 5174, published to the tailnet.";
+    const found = locateContext(edited, context, caret);
+    expect(found?.exact).toBe(false);
+    expect(edited.slice(0, found!.offset)).toBe("The container serves on port 5174,");
+  });
+
+  it("holds its place when the words before it change", () => {
+    const edited = "Production listens on port 9000, reachable from the Mac at agentbox.";
+    const found = locateContext(edited, context, caret);
+    expect(found?.exact).toBe(false);
+    expect(edited.slice(found!.offset, found!.offset + 10)).toBe(" reachable");
+  });
+
+  it("gives up rather than guessing when the sentence is gone", () => {
+    expect(locateContext("Nothing here resembles the original line at all.", context, caret)).toBeNull();
   });
 });
 

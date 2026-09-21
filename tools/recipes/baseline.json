@@ -1,10 +1,12 @@
 [
   { "name": "01-viewer-light", "url": "http://127.0.0.1:5174/a/artifacts-self-report", "width": 1440, "height": 950, "scheme": "light", "full": true },
   { "name": "02-viewer-dark",  "url": "http://127.0.0.1:5174/a/artifacts-self-report", "width": 1440, "height": 950, "scheme": "dark",  "full": true },
-  { "name": "03-thread-open",  "url": "http://127.0.0.1:5174/a/artifacts-self-report", "width": 1440, "height": 950, "scheme": "light", "steps": [{ "click": ".pin" }, { "wait": 400 }] },
+  { "name": "03-card-open",    "url": "http://127.0.0.1:5174/a/artifacts-self-report", "width": 1440, "height": 950, "scheme": "light", "steps": [{ "click": ".pin" }, { "wait": 700 }] },
   { "name": "04-index",        "url": "http://127.0.0.1:5174/", "width": 1440, "height": 950, "scheme": "light", "full": true },
   { "name": "05-editor",       "url": "http://127.0.0.1:5174/a/artifacts-self-report/edit", "width": 1440, "height": 950, "scheme": "light" },
   { "name": "06-backup-demo",  "url": "http://127.0.0.1:5174/a/backup-run-demo", "width": 1440, "height": 950, "scheme": "light", "full": true },
   { "name": "07-react-demo",   "url": "http://127.0.0.1:5174/a/react-demo", "width": 1440, "height": 950, "scheme": "light" },
-  { "name": "08-phone",        "url": "http://127.0.0.1:5174/a/artifacts-self-report", "width": 420, "height": 860, "scheme": "light", "full": true }
+  { "name": "08-block-edit",   "url": "http://127.0.0.1:5174/a/artifacts-self-report", "width": 1440, "height": 950, "scheme": "light", "steps": [{ "hover": ".art-content p" }, { "wait": 500 }] },
+  { "name": "09-phone",        "url": "http://127.0.0.1:5174/a/artifacts-self-report", "width": 420, "height": 860, "scheme": "light", "full": true },
+  { "name": "10-phone-card",   "url": "http://127.0.0.1:5174/a/artifacts-self-report", "width": 420, "height": 860, "scheme": "dark", "steps": [{ "click": ".pin" }, { "wait": 700 }] }
 ]

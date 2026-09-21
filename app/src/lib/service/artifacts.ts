@@ -8,6 +8,10 @@ import { buildArtifact } from "../build/index";
 import { artifactUrl, buildDir, type ServiceContext } from "./context";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { carryAssets, copyAssets } from "./assets";
+import { resetLiveDocument } from "./collab";
+
+/** The message the document server uses when it snapshots a live edit. */
+export const LIVE_EDIT_MESSAGE = "live edit";
 import { recordEvent } from "./events";
 import {
   KINDS,
@@ -357,6 +361,13 @@ async function writeVersion(
       });
     }
   });
+
+  // The live document is a working copy of the current version, so a version
+  // written anywhere else has to replace it. The snapshot path is the one
+  // exception: that text came from the document in the first place.
+  if (artifact.kind === "markdown" && input.message !== LIVE_EDIT_MESSAGE) {
+    resetLiveDocument(artifact.slug, content.source);
+  }
 
   return {
     slug: artifact.slug,

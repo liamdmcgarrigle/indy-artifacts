@@ -329,6 +329,21 @@ art-error {
   display: block;
 }
 
+/* Giving a custom element an explicit display beats the browser's own rule for
+   the hidden attribute, so the inactive tab panel would stay on the page. */
+art-kpis[hidden],
+art-kpi[hidden],
+art-columns[hidden],
+art-col[hidden],
+art-tabs[hidden],
+art-tab[hidden],
+art-details[hidden],
+art-table[hidden],
+art-chart[hidden],
+art-embed[hidden] {
+  display: none;
+}
+
 /* Card -------------------------------------------------------------------- */
 
 art-card {
@@ -858,9 +873,16 @@ art-error {
     font-size: 1.6em;
   }
 
+  /* A table squeezed into a phone breaks to one word a line and stops being a
+     table. Let the cells keep their width and scroll the whole thing instead. */
   .art-content table {
     display: block;
     overflow-x: auto;
+  }
+
+  .art-content th,
+  .art-content td {
+    white-space: nowrap;
   }
 }
 
