@@ -145,28 +145,28 @@ describe("spotFor", () => {
     expect(270 + spot.left).toBe(228);
   });
 
-  it("opens the card in the empty right margin when it fits", () => {
+  it("opens the card beside the caret it was left on", () => {
     const spot = spotFor(rect, origin, "point", wide);
-    expect(spot.flipped).toBe(false);
-    expect(origin.left + spot.popLeft).toBe(1050 + 16);
+    // The caret rect ends at 400, so the card opens a gap past it.
+    expect(origin.left + spot.popLeft).toBe(400 + 14);
   });
 
-  it("keeps the card in the margin once the page has slid left", () => {
-    // A 900px column centred in a 1440px window leaves 270px either side,
-    // which is 70px short of a card. The view slides the column that far and
-    // spotFor answers in the sliding container's own coordinates.
-    const snug = { viewportWidth: 1440, contentLeft: 270, contentRight: 1170, popWidth: 312, shift: 70 };
-    const spot = spotFor(rect, { top: 100, left: 270 }, "point", snug);
-    const rendered = 270 + spot.popLeft - 70;
-    expect(spot.flipped).toBe(false);
-    expect(rendered).toBe(1170 - 70 + 16);
-    expect(rendered + 312).toBeLessThanOrEqual(1440 - 12);
+  it("hangs the card under a selection, lined up with its first word", () => {
+    const spot = spotFor(rect, origin, "range", wide);
+    expect(origin.left + spot.popLeft).toBe(340);
+    expect(spot.popTop).toBe(140 - 100 + 20 + 8);
   });
 
-  it("floats the card over the text when the window is too narrow", () => {
+  it("opens to the left of a spot near the right edge", () => {
+    const edge = { top: 140, left: 1300, width: 40, height: 20 };
+    const spot = spotFor(edge, origin, "point", wide);
+    expect(origin.left + spot.popLeft).toBe(1440 - 12 - 312);
+  });
+
+  it("keeps the card inside a narrow window", () => {
     const tight = { viewportWidth: 900, contentLeft: 120, contentRight: 780, popWidth: 312 };
     const spot = spotFor(rect, { top: 100, left: 0 }, "point", tight);
-    expect(spot.flipped).toBe(true);
+    expect(spot.popLeft).toBeGreaterThanOrEqual(12);
     expect(spot.popLeft + 312).toBeLessThanOrEqual(900 - 12);
   });
 

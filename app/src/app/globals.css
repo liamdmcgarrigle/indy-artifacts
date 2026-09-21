@@ -425,9 +425,6 @@ kbd {
   max-width: 900px;
   margin: 0 auto;
   position: relative;
-  /* Slides left to open a margin for a comment card, then slides back. Only
-     the column moves, so a pin keeps its place against the words. */
-  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .stage--picking {
@@ -667,7 +664,7 @@ kbd {
   z-index: 40;
   width: 312px;
   max-width: calc(100vw - 24px);
-  max-height: calc(100vh - 24px);
+  max-height: 68vh;
   pointer-events: auto;
   background: var(--art-surface);
   border: 1px solid var(--art-hairline);
@@ -716,7 +713,7 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: var(--art-space-3);
-  max-height: 46vh;
+  max-height: 38vh;
   overflow-y: auto;
   margin: 0 calc(var(--art-space-3) * -1);
   padding: 0 var(--art-space-3);

@@ -139,12 +139,14 @@ done instead, and why.
     found three things curl could not see: compiled artifacts rendering blank, a page that had
     stopped hydrating entirely, and pins landing on the wrong line.
 
-26. **The page slides left when a comment card opens.** At 1440px a centred 900px column leaves
-    270px of margin and a readable card needs 340px, so a card in the margin either covered the text
-    or sat off screen. Docs solves this by moving the page, so we do too: the column translates left
-    by exactly the shortfall, capped so it never runs off the left edge, and slides back when the
-    card closes. The arithmetic runs on offsets rather than rectangles, because a rectangle read
-    during the slide's own transition feeds the slide back into itself.
+26. **The card opens on the spot, and the page does not move.** The first attempt put the card in
+    the right margin and slid the whole column left to make room, the way Docs does. The operator
+    preferred the earlier behaviour: a comment box floating at the place the comment is about. So
+    the card is a popover on the anchor again. A selection gets it underneath, lined up with the
+    first word; a caret gets it beside. When there is no room below, it flips above the spot rather
+    than sliding up the window, which is what kept it next to the words it quotes. The card is
+    capped at 68vh and its thread scrolls, because a long thread was tall enough to force that slide
+    anyway.
 
 27. **The thread card was rebuilt from feedback left inside the product.** The operator commented
     on the artifact itself: the card did not look modern, and a comment got lost when the text

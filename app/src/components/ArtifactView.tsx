@@ -74,6 +74,8 @@ interface Pin extends Spot {
 
 const NAME_KEY = "art-author-name";
 const POP_W = 312;
+/** How far outside the text column the edit pencil sits, and stays alive. */
+const EDIT_GUTTER = 48;
 const POP_GAP = 16;
 
 function initials(name: string): string {
@@ -100,11 +102,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   }
 
   const router = useRouter();
-  const hideHover = useRef<number | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
-  const stageRef = useRef<HTMLElement | null>(null);
-  const shiftRef = useRef(0);
-  const [shift, setShift] = useState(0);
   const popRef = useRef<HTMLDivElement | null>(null);
   const [popNudge, setPopNudge] = useState(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -187,8 +185,15 @@ export function ArtifactView(props: ArtifactViewProps) {
       const card = popRef.current;
       if (!card) return;
       const rect = card.getBoundingClientRect();
+      const floor = window.innerHeight - 10;
       let next = 0;
-      if (rect.bottom > window.innerHeight - 10) next = window.innerHeight - 10 - rect.bottom;
+      if (rect.bottom > floor) {
+        // Sitting below the spot would run off the screen. Put it above the
+        // spot instead, which keeps the card and its words together; only when
+        // there is no room either way does it slide up the window.
+        const above = -(rect.height + 18);
+        next = rect.top + above >= 10 ? above : floor - rect.bottom;
+      }
       if (rect.top + next < 10) next = 10 - rect.top;
       setPopNudge(next);
     });
@@ -203,30 +208,14 @@ export function ArtifactView(props: ArtifactViewProps) {
     if (!content || !inner) return;
     // The overlay is a child of .stage__inner, so that is the origin; measuring
     // against .stage would shift every pin by the stage padding and centring.
-    const stage = stageRef.current;
-    if (!stage) return;
     const origin = inner.getBoundingClientRect();
-
-    // Horizontal geometry comes from offsets rather than rectangles. The column
-    // slides with a transform, and a rectangle read halfway through that
-    // animation would feed the slide back into itself and walk off the screen.
-    const stageLeft = stage.getBoundingClientRect().left;
-    const originLeft = stageLeft + inner.offsetLeft;
-    const contentLeft = originLeft + content.offsetLeft;
-    const contentRight = contentLeft + content.offsetWidth;
-    const viewportWidth = window.innerWidth;
-
-    // A card open in the margin needs room the centred column does not leave,
-    // so the page slides left far enough to make it, and only that far.
-    const cardOpen = activeId !== null || draft?.anchor != null;
-    const need = POP_W + POP_GAP + 12 - (viewportWidth - contentRight);
-    const shift = cardOpen ? Math.max(0, Math.min(need, Math.max(contentLeft - 24, 0))) : 0;
-    if (shift !== shiftRef.current) {
-      shiftRef.current = shift;
-      setShift(shift);
-    }
-
-    const layout = { viewportWidth, contentLeft, contentRight, popWidth: POP_W, shift };
+    const box = content.getBoundingClientRect();
+    const layout = {
+      viewportWidth: window.innerWidth,
+      contentLeft: box.left,
+      contentRight: box.right,
+      popWidth: POP_W,
+    };
 
     const next: Pin[] = [];
     visible.forEach((thread) => {
@@ -236,20 +225,18 @@ export function ArtifactView(props: ArtifactViewProps) {
       next.push({
         thread,
         exact: resolved.exact,
-        ...spotFor(resolved.rect, { top: origin.top, left: originLeft }, thread.anchor.type, layout),
+        ...spotFor(resolved.rect, origin, thread.anchor.type, layout),
       });
     });
     setPins(spreadPins(next));
 
     if (draft?.anchor) {
       const resolved = resolveAnchor(content, draft.anchor);
-      setDraftSpot(
-        resolved ? spotFor(resolved.rect, { top: origin.top, left: originLeft }, draft.anchor.type, layout) : null,
-      );
+      setDraftSpot(resolved ? spotFor(resolved.rect, origin, draft.anchor.type, layout) : null);
     } else {
       setDraftSpot(null);
     }
-  }, [visible, draft?.anchor, activeId]);
+  }, [visible, draft?.anchor]);
 
   // Light up the text a comment points at. Progressive enhancement: browsers
   // without the Custom Highlight API simply show the pins.
@@ -502,28 +489,38 @@ export function ArtifactView(props: ArtifactViewProps) {
   }
 
   /**
-   * The Edit affordance sits outside the content box, so moving the pointer
-   * towards it fires mouseleave. Hold it for a moment instead of yanking it
-   * away under the cursor.
+   * Which block the pointer is over, decided by where the pointer is rather
+   * than what it entered and left.
+   *
+   * The pencil sits in the margin, outside the text column, so a handler that
+   * hid it on mouseleave took it away the moment you set off to click it. This
+   * asks the document what is under the pointer, widened by the gutter the
+   * pencil lives in, which means the button is inside the region that keeps it
+   * on screen.
    */
-  function keepHover() {
-    if (hideHover.current) window.clearTimeout(hideHover.current);
-    hideHover.current = null;
-  }
-
-  function dropHover() {
-    keepHover();
-    hideHover.current = window.setTimeout(() => setHover(null), 220);
-  }
-
-  function onContentMove(event: React.MouseEvent) {
+  function onStageMove(event: React.MouseEvent) {
     if (!canEdit || tool || edit) return;
-    keepHover();
+    const content = contentRef.current;
     const inner = innerRef.current;
-    const block = blockOf(event.target as Node);
-    if (!inner || !block) return setHover(null);
+    if (!content || !inner) return;
+
+    const target = event.target as HTMLElement | null;
+    if (target?.closest(".pop, .panel, .inline-edit, .pin")) return setHover(null);
+
+    const column = content.getBoundingClientRect();
+    const x = event.clientX;
+    const y = event.clientY;
+    if (y < column.top || y > column.bottom) return setHover(null);
+    if (x < column.left - EDIT_GUTTER || x > column.right + EDIT_GUTTER) return setHover(null);
+
+    // Probe inside the column, so a pointer out in the gutter still resolves to
+    // the block it is beside.
+    const probe = Math.min(Math.max(x, column.left + 4), column.right - 4);
+    const block = blockOf(document.elementFromPoint(probe, y));
+    if (!block) return setHover(null);
     const lines = linesOfBlock(block);
     if (!lines) return setHover(null);
+
     const origin = inner.getBoundingClientRect();
     const box = block.getBoundingClientRect();
     setHover({ lines, top: box.top - origin.top + 2, left: box.right - origin.left + 10 });
@@ -539,7 +536,6 @@ export function ArtifactView(props: ArtifactViewProps) {
     const origin = inner.getBoundingClientRect();
     const box = (block ?? content).getBoundingClientRect();
     const text = props.source.split("\n").slice(lines[0] - 1, lines[1]).join("\n");
-    keepHover();
     setHover(null);
     setActiveId(null);
     setEdit({
@@ -794,12 +790,12 @@ export function ArtifactView(props: ArtifactViewProps) {
         </div>
       ) : null}
 
-      <main className={tool ? "stage stage--picking" : "stage"} ref={stageRef}>
-        <div
-          className="stage__inner"
-          ref={innerRef}
-          style={shift ? { transform: `translateX(${-shift}px)` } : undefined}
-        >
+      <main
+        className={tool ? "stage stage--picking" : "stage"}
+        onMouseMove={onStageMove}
+        onMouseLeave={() => setHover(null)}
+      >
+        <div className="stage__inner" ref={innerRef}>
           {!isLatest ? (
             <div className="warnings" style={{ marginBottom: 16 }}>
               Viewing version {props.versionNumber} of {props.currentVersion}.{" "}
@@ -831,8 +827,6 @@ export function ArtifactView(props: ArtifactViewProps) {
             className="art-content"
             ref={contentRef}
             onMouseUp={onContentMouseUp}
-            onMouseMove={onContentMove}
-            onMouseLeave={dropHover}
             onDoubleClick={commentOnBlock}
           >
             {props.framed ? (
@@ -953,9 +947,13 @@ export function ArtifactView(props: ArtifactViewProps) {
             <button
               className="blockedit"
               style={{ top: hover.top, left: hover.left }}
-              onMouseEnter={keepHover}
-              onMouseLeave={dropHover}
-              onClick={() => startEdit(hover.lines)}
+              // On press, not on click: the pointer crossing the gutter keeps
+              // re-rendering this button, and a click needs the press and the
+              // release to land on the same element.
+              onMouseDown={(event) => {
+                event.preventDefault();
+                startEdit(hover.lines);
+              }}
               title={`Edit lines ${hover.lines[0]}-${hover.lines[1]}`}
               aria-label={`Edit lines ${hover.lines[0]} to ${hover.lines[1]}`}
             >

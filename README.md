@@ -70,9 +70,10 @@ a React artifact can use `var(--art-accent)` and match.
 
 Comments are pins in the margin, the way Figma and Notion do it. Select text and a Comment bubble
 appears. Press `c` and click to drop a pin anywhere a caret goes, or on a chart, a card, or an
-element inside a sandboxed frame. The card opens beside its pin, and the page slides left far enough
-to make room for it, so a thread never covers the sentence it is about. Every anchor carries the
-source line range, so the agent is told which lines a comment is about.
+element inside a sandboxed frame. The card opens on the spot: beside the caret, or under the
+selection, lined up with the words it quotes, floating over the page rather than parked at the edge
+of the window. It flips above the spot when there is no room below. Every anchor carries the source
+line range, so the agent is told which lines a comment is about.
 
 A pin holds its place when the text under it changes. The anchor stores the run of words around the
 spot; if an edit means that run no longer appears, the resolver gives up characters from whichever
@@ -85,9 +86,12 @@ through them in order, including any whose anchor no longer resolves.
 
 ## Editing
 
-Hover any block on the page and a pencil appears in the margin. Click it and that block alone
+Hover any block on the page and a pencil appears in the margin. Press it and that block alone
 becomes a text area holding its own source lines; save and only those lines are spliced into a new
 version. Fixing one sentence does not mean opening the whole document and hunting for it.
+
+The pencil is kept alive by where the pointer is rather than by what it entered and left, so setting
+off to click it does not take it away.
 
 The Edit button still opens the full source in CodeMirror for larger work. Saving creates a new
 version authored by you, and the agent can read it back with `artifacts_get` or see exactly what

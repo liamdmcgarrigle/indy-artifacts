@@ -375,7 +375,6 @@ export interface Spot {
   left: number;
   popTop: number;
   popLeft: number;
-  flipped: boolean;
 }
 
 export interface SpotLayout {
@@ -386,23 +385,19 @@ export interface SpotLayout {
   /** Right edge of the text column in viewport coordinates. */
   contentRight: number;
   popWidth?: number;
-  /**
-   * How far left the page has slid to open a margin for the card. Coordinates
-   * here describe the resting layout; the caller applies the slide to the DOM,
-   * so the returned numbers carry it back.
-   */
-  shift?: number;
 }
 
 const PIN_GUTTER = 42;
+const POP_GAP = 14;
 
 /**
  * Turn an anchor's viewport rect into overlay coordinates.
  *
  * Pins live in the margin beside the text rather than on top of it, the way a
  * document's margin notes do, because a pin dropped mid-sentence covers the
- * words it is about. The card prefers the empty margin on the right, and only
- * falls back to floating over the text when the window is too narrow for that.
+ * words it is about. The card is the opposite: it opens on the spot, beside
+ * the words it belongs to, and floats over the page the way a comment does in
+ * Figma. Only the window edges move it.
  */
 export function spotFor(
   rect: { top: number; left: number; width: number; height: number },
@@ -417,20 +412,19 @@ export function spotFor(
   // than the column, which is what keeps it off the words.
   const left = Math.max(layout.contentLeft - origin.left - PIN_GUTTER, 8 - origin.left);
 
-  const shift = layout.shift ?? 0;
-  const marginLeft = layout.contentRight - shift + 16;
-  const fitsRight = marginLeft + popWidth <= layout.viewportWidth - 12;
-  const overText = origin.left - shift + left + PIN_GUTTER;
-  const clampedOverText = Math.min(overText, layout.viewportWidth - 12 - popWidth);
+  // A selection gets its card underneath, lined up with where the words start,
+  // the way a comment hangs off a highlight. A point gets it beside the caret.
+  // Either way it lands on the spot; only the window edges move it.
+  const range = type === "range";
+  const wanted = range ? rect.left : rect.left + rect.width + POP_GAP;
+  const rightmost = Math.max(layout.viewportWidth - 12 - popWidth, 12);
+  const onScreen = Math.min(Math.max(wanted, 12), rightmost);
 
-  const onScreen = fitsRight ? marginLeft : Math.max(clampedOverText, 12);
   return {
     top,
     left,
-    flipped: !fitsRight,
-    popTop: Math.max(top - 14, 4),
-    // Back into the sliding container's own coordinates.
-    popLeft: onScreen + shift - origin.left,
+    popTop: range ? top + 8 : Math.max(top - 10, 4),
+    popLeft: onScreen - origin.left,
   };
 }
 
