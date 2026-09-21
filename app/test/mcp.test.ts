@@ -68,7 +68,7 @@ function jsonOf(response: Record<string, unknown>): unknown {
 }
 
 describe("mcp endpoint", () => {
-  it("lists the nine artifact tools", async () => {
+  it("lists the ten artifact tools", async () => {
     const res = await post({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const names = ((res.result as { tools: { name: string }[] }).tools ?? []).map((t) => t.name).sort();
     expect(names).toEqual([
@@ -79,6 +79,7 @@ describe("mcp endpoint", () => {
       "artifacts_publish",
       "artifacts_reply",
       "artifacts_resolve",
+      "artifacts_type",
       "artifacts_update",
       "artifacts_wait",
     ]);

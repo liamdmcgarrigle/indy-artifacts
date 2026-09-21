@@ -1,0 +1,14 @@
+{
+  "name": "collab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Yjs document server: live editing, and agents typing into an artifact.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@hocuspocus/server": "4.7.0",
+    "yjs": "13.6.32"
+  }
+}

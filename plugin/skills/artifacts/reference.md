@@ -229,3 +229,15 @@ extensions are `png jpg jpeg gif webp svg mp4 webm json csv txt`.
 
 A block that fails to parse does not fail the publish: it renders an error box on the
 page and comes back in `warnings` with a line number.
+
+## Typing live
+
+`artifacts_type` writes into a markdown artifact through the shared document, a few
+characters at a time, so an operator with the page open watches the edit arrive
+instead of seeing a finished version appear. The editor shows who is typing. A new
+version is written automatically once the typing settles.
+
+    artifacts_type slug=<slug> text="..." mode=append|replace speed=fast|natural|slow
+
+Use it when the operator is watching and asked for a change. For ordinary publishing
+use `artifacts_update`: it is one atomic version and does not need anyone to be there.

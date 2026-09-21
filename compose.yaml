@@ -11,9 +11,12 @@ services:
     userns_mode: "keep-id"
     ports:
       - "${ARTIFACTS_PORT:-5174}:5174"
+      # The document server: live editing, and agents typing into an artifact.
+      - "${ARTIFACTS_COLLAB_PORT:-5175}:5175"
     environment:
       ARTIFACTS_PUBLIC_URL: "${ARTIFACTS_PUBLIC_URL:-http://agentbox:5174}"
       ARTIFACTS_ASSET_ROOTS: "/home/liam/work:/home/liam/orca:/tmp"
+      ARTIFACTS_COLLAB_PORT: "${ARTIFACTS_COLLAB_PORT:-5175}"
     volumes:
       - ./data:/data:Z
       - ./themes:/themes:ro,Z

@@ -1008,6 +1008,33 @@ kbd {
   height: 100%;
 }
 
+/* ---------- live editing ---------- */
+
+.typist {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--art-text-muted);
+  background: var(--art-surface-2);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.typist__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  animation: typist-pulse 1s ease-in-out infinite;
+}
+
+@keyframes typist-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 /* ---------- narrow screens ---------- */
 
 @media (max-width: 760px) {

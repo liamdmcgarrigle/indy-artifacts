@@ -11,12 +11,17 @@ import {
 import { createComment, getComment, listComments, patchComment } from "../service/comments";
 import { listEvents } from "../service/events";
 import { artifactUrl, type ServiceContext } from "../service/context";
-import { ServiceError } from "../service/errors";
+import { ServiceError, ValidationError } from "../service/errors";
 import { KINDS, LIMITS, type Kind, type PublishInput, type UpdateInput } from "../service/types";
 
 export const REFERENCE_URI = "artifacts://reference";
 
 type Content = { content: { type: "text"; text: string }[]; isError?: boolean };
+
+/** Where the document server listens. Same host, its own port. */
+function collabUrl(): string {
+  return process.env.ARTIFACTS_COLLAB_URL || `http://127.0.0.1:${process.env.COLLAB_PORT || 5175}`;
+}
 
 function ok(summary: string, data?: unknown): Content {
   const text = data === undefined ? summary : `${summary}\n\n${JSON.stringify(data, null, 2)}`;
@@ -309,6 +314,63 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
         try {
           const comment = patchComment(ctx, String(args.comment_id), { status: "resolved" });
           return ok(`Thread ${comment.id} resolved.`);
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifacts_type",
+      config: {
+        title: "Type into an artifact live",
+        description:
+          "Write into a markdown artifact character by character, through the shared document, so the operator can watch the edit happen on their screen. Use it when they are looking at the artifact and asked for a change; use artifacts_update for ordinary publishing. A new version is written automatically once the typing stops.",
+        inputSchema: z.object({
+          slug: z.string(),
+          text: z.string().describe("what to write"),
+          mode: z
+            .enum(["append", "replace"])
+            .optional()
+            .describe("append to the end (default), or replace the whole document"),
+          speed: z
+            .enum(["fast", "natural", "slow"])
+            .optional()
+            .describe("natural by default; fast for long text"),
+          agent: agentSchema,
+        }),
+      },
+      run: async (args) => {
+        try {
+          const slug = String(args.slug);
+          const artifact = requireArtifact(ctx, slug);
+          if (artifact.kind !== "markdown")
+            return fail(new ValidationError("only markdown artifacts have a live document"));
+
+          const speed = String(args.speed ?? "natural");
+          const pace = speed === "fast" ? { chunk: 6, delay: 12 } : speed === "slow" ? { chunk: 1, delay: 70 } : { chunk: 2, delay: 32 };
+          const append = (args.mode ?? "append") === "append";
+
+          const res = await fetch(`${collabUrl()}/type`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              slug,
+              text: String(args.text ?? ""),
+              // The document server resolves the end of the text itself, so a
+              // huge from/to means "the end" without a round trip to read it.
+              from: append ? Number.MAX_SAFE_INTEGER : 0,
+              to: append ? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
+              chunk: pace.chunk,
+              delay: pace.delay,
+              agent: { name: (args.agent as { name?: string } | undefined)?.name ?? "agent", color: "#7A45D0" },
+            }),
+          });
+          const data = (await res.json()) as { typed?: number; error?: { message?: string } };
+          if (!res.ok) return fail(new ServiceError("collab_failed", data.error?.message ?? "the document server refused that", 502));
+          return ok(
+            `Typed ${data.typed ?? 0} characters into "${slug}" live. A version lands once the typing settles.`,
+            { slug, typed: data.typed ?? 0, url: artifactUrl(ctx, slug) },
+          );
         } catch (err) {
           return fail(err);
         }

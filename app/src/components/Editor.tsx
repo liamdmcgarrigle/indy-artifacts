@@ -12,6 +12,8 @@ export interface EditorProps {
   version: number;
   source: string | null;
   files: Record<string, string> | null;
+  /** Port the document server listens on, or null when it is not configured. */
+  collabPort: number | null;
 }
 
 const NAME_KEY = "art-author-name";
@@ -30,8 +32,13 @@ export function Editor(props: EditorProps) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [live, setLive] = useState<"off" | "connecting" | "on">("off");
+  const [typist, setTypist] = useState<{ name: string; color: string } | null>(null);
 
   const key = props.files ? active : "source";
+  // Markdown only: a compiled artifact is several files, and the live document
+  // holds one text.
+  const collaborative = props.collabPort !== null && !props.files;
 
   useEffect(() => {
     try {
@@ -46,6 +53,7 @@ export function Editor(props: EditorProps) {
   useEffect(() => {
     let cancelled = false;
     let view: { destroy(): void } | null = null;
+    let cleanup: (() => void) | null = null;
 
     (async () => {
       const [{ EditorView, basicSetup }, { markdown }, { html }, { javascript }, { EditorState }] = await Promise.all([
@@ -82,37 +90,75 @@ export function Editor(props: EditorProps) {
         ".cm-selectionMatch": { backgroundColor: "var(--art-warn-wash)" },
       });
 
+      // The live document, when there is one. Text typed here and text typed by
+      // an agent are the same CRDT, so neither clobbers the other.
+      const collab: unknown[] = [];
+      let closeCollab: (() => void) | null = null;
+
+      if (collaborative) {
+        setLive("connecting");
+        const [{ HocuspocusProvider }, Y, { yCollab }] = await Promise.all([
+          import("@hocuspocus/provider"),
+          import("yjs"),
+          import("y-codemirror.next"),
+        ]);
+        if (cancelled || !host.current) return;
+
+        const doc = new Y.Doc();
+        const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:${props.collabPort}`;
+        const hocus = new HocuspocusProvider({ url, name: props.slug, document: doc });
+        hocus.on("status", (event: { status: string }) => setLive(event.status === "connected" ? "on" : "connecting"));
+
+        const typing = doc.getMap("typing");
+        const onTyping = () => {
+          const who = typing.get("who") as { name?: string; color?: string } | undefined;
+          setTypist(who?.name ? { name: who.name, color: who.color ?? "var(--art-accent)" } : null);
+        };
+        typing.observe(onTyping);
+
+        collab.push(yCollab(doc.getText("source"), hocus.awareness));
+        closeCollab = () => {
+          typing.unobserve(onTyping);
+          hocus.destroy();
+          doc.destroy();
+        };
+      }
+
       host.current.innerHTML = "";
       const instance = new EditorView({
         parent: host.current,
         state: EditorState.create({
-          doc: buffers[key] ?? "",
+          // With a live document the text comes from the CRDT, not from props.
+          doc: collaborative ? "" : (buffers[key] ?? ""),
           extensions: [
             basicSetup,
             language,
             themeExtension,
             EditorView.lineWrapping,
+            ...(collab as never[]),
             EditorView.updateListener.of((update) => {
               if (!update.docChanged) return;
               const text = update.state.doc.toString();
               setBuffers((prev) => ({ ...prev, [key]: text }));
-              setDirty(true);
+              if (!collaborative) setDirty(true);
             }),
           ],
         }),
       });
       view = instance;
       viewRef.current = instance as never;
+      cleanup = closeCollab;
     })();
 
     return () => {
       cancelled = true;
+      cleanup?.();
       view?.destroy();
       viewRef.current = null;
     };
     // Rebuilding on `key` swaps the document when the operator picks another file.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, props.kind]);
+  }, [key, props.kind, collaborative, props.slug, props.collabPort]);
 
   async function save() {
     setBusy(true);
@@ -150,11 +196,33 @@ export function Editor(props: EditorProps) {
     }
   }
 
+  /** Write the live document out as a version now, instead of waiting for idle. */
+  async function snapshotNow() {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const text = viewRef.current?.state.doc.toString() ?? "";
+      const res = await fetch(`/api/artifacts/${props.slug}/snapshot`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, author_name: author }),
+      });
+      const data = (await res.json()) as { skipped?: boolean; error?: { message?: string } };
+      if (!res.ok) {
+        setNotice({ kind: "bad", text: data.error?.message ?? "could not save" });
+        return;
+      }
+      window.location.href = `/a/${props.slug}`;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key === "s") {
         event.preventDefault();
-        void save();
+        void (collaborative ? snapshotNow() : save());
       }
     }
     window.addEventListener("keydown", onKey);
@@ -221,13 +289,28 @@ export function Editor(props: EditorProps) {
           />
           <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             {notice ? <span className={notice.kind === "bad" ? "notice notice--bad" : "notice notice--good"}>{notice.text}</span> : null}
-            {dirty ? <span className="tiny">unsaved</span> : null}
+            {typist ? (
+              <span className="typist">
+                <span className="typist__dot" style={{ background: typist.color }} />
+                {typist.name} is typing
+              </span>
+            ) : collaborative ? (
+              <span className="tiny">{live === "on" ? "live" : "connecting…"}</span>
+            ) : dirty ? (
+              <span className="tiny">unsaved</span>
+            ) : null}
             <Link className="btn btn--ghost" href={`/a/${props.slug}`}>
               Cancel
             </Link>
-            <button className="btn btn--primary" onClick={save} disabled={busy || !dirty}>
-              Save as v{props.version + 1}
-            </button>
+            {collaborative ? (
+              <button className="btn btn--primary" onClick={snapshotNow} disabled={busy}>
+                Save a version
+              </button>
+            ) : (
+              <button className="btn btn--primary" onClick={save} disabled={busy || !dirty}>
+                Save as v{props.version + 1}
+              </button>
+            )}
           </span>
         </div>
         <div className="editor__panes">

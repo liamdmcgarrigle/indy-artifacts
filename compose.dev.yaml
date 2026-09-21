@@ -7,9 +7,12 @@ services:
     container_name: artifacts-dev
     userns_mode: "keep-id"
     working_dir: /work
-    command: sh -c "cd app && node scripts/build-vendor.mjs && npx next dev --hostname 0.0.0.0 --port 5176"
+    # Both processes in one container: the document server has to reach the app
+    # over HTTP, and container to container DNS is not dependable here.
+    command: sh -c "node collab/server.mjs & cd app && node scripts/build-vendor.mjs && npx next dev --hostname 0.0.0.0 --port 5176"
     ports:
       - "5176:5176"
+      - "5175:5175"
     environment:
       ARTIFACTS_PUBLIC_URL: "http://agentbox:5176"
       ARTIFACTS_DATA: "/work/data"
@@ -17,8 +20,11 @@ services:
       ARTIFACTS_ASSET_ROOTS: "/home/liam/work:/home/liam/orca:/tmp"
       ARTIFACTS_TMP: "/work/data/tmp"
       NEXT_TELEMETRY_DISABLED: "1"
+      COLLAB_PORT: "5175"
+      ARTIFACTS_APP_URL: "http://127.0.0.1:5176"
     volumes:
       - .:/work:Z
       - /home/liam/orca:/home/liam/orca:ro
     mem_limit: 2g
     cpus: 3
+

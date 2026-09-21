@@ -4,14 +4,16 @@
   "version": "0.1.0",
   "workspaces": [
     "packages/*",
-    "app"
+    "app",
+    "collab"
   ],
   "scripts": {
     "build:primitives": "npm run build -w @artifacts/primitives",
     "build": "npm run build:primitives && npm run build -w app",
     "dev": "npm run build:primitives && npm run dev -w app",
     "test": "npm run build:primitives && npm run vendor -w app && npm run test -w app",
-    "typecheck": "npm run typecheck -w app"
+    "typecheck": "npm run typecheck -w app",
+    "collab": "npm start -w collab"
   },
   "engines": {
     "node": ">=24"
