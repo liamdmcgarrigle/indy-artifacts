@@ -75,6 +75,20 @@ done instead, and why.
 17. **picaflick's light scheme had `--art-link: #5A9AE6`,** a low-contrast blue on white. Changed to
     the darker `#2A71CE`; the dark scheme keeps the lighter value.
 
+## Changes after the first review
+
+18. **The comments sidebar was replaced by cards attached to the pin.** The operator asked for the
+    Figma behaviour: no panel taking a third of the window, the composer and the thread opening at
+    the spot being discussed. The card opens to the right of its pin and flips left when the window
+    has no room. Below 760px it becomes a sheet at the bottom of the window. The list is still
+    reachable from the Threads button in the header, which is also the only way to reach a thread
+    whose anchor no longer resolves, and Send moved into the header next to it.
+
+19. **Pins were measured against the wrong element.** Positions were computed from `.stage` while
+    the overlay sits inside `.stage__inner`, so every pin was off by the stage padding plus the
+    centring margin, which grew with the window. The overlay's own box is now the origin. The
+    geometry moved into `lib/anchors.ts` as `spotFor`, with tests for the flip and the clamp.
+
 ## Known limits
 
 - No authentication. Anyone who can reach the port can publish, comment and edit. The port is only

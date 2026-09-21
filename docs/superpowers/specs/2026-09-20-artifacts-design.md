@@ -63,7 +63,7 @@ public exposure beyond the tailnet, Gemini plugin packaging.
    │  shell (Next.js, trusted)     │        │   └─ plugin: skill + .mcp.json ─────┐    │
    │   ├─ rendered markdown        │        │                                     │    │
    │   ├─ <iframe sandbox> blocks  │        │ hook/artifacts-hook.py (systemd user)│    │
-   │   └─ comments sidebar         │        │   polls /api/events, runs            │    │
+   │   └─ comment pins and cards   │        │   polls /api/events, runs            │    │
    └───────────────┬───────────────┘        │   `orca terminal send`               │    │
                    │ http://agentbox:5174   └────────┬─────────────────────────────┼────┘
    ┌───────────────▼─────────────────────────────────▼─────────────────────────────▼────┐

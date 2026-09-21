@@ -9,8 +9,10 @@ import {
   blockOf,
   describeAnchor,
   resolveAnchor,
+  spotFor,
   truncate,
   type Anchor,
+  type Spot,
 } from "@/lib/anchors";
 import { SchemeToggle } from "./SchemeToggle";
 
@@ -61,15 +63,13 @@ export interface ArtifactViewProps {
   initialThreads: ThreadView[];
 }
 
-interface Pin {
+interface Pin extends Spot {
   thread: ThreadView;
-  top: number;
-  left: number;
   exact: boolean;
-  index: number;
 }
 
 const NAME_KEY = "art-author-name";
+const POP_W = 312;
 
 function initials(name: string): string {
   const parts = name.trim().split(/[\s._-]+/).filter(Boolean);
@@ -94,7 +94,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     (window as unknown as { __ARTIFACT_EMBED_BASE?: string }).__ARTIFACT_EMBED_BASE = props.embedBase;
   }
 
-  const stageRef = useRef<HTMLDivElement | null>(null);
+  const innerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   const [threads, setThreads] = useState<ThreadView[]>(props.initialThreads);
@@ -102,13 +102,14 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [tool, setTool] = useState(false);
   const [draft, setDraft] = useState<{ anchor: Anchor | null; body: string; notify: boolean } | null>(null);
+  const [draftSpot, setDraftSpot] = useState<Spot | null>(null);
   const [bubble, setBubble] = useState<{ top: number; left: number; anchor: Anchor } | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [author, setAuthor] = useState("operator");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
   const [batchMessage, setBatchMessage] = useState("");
-  const [showBatch, setShowBatch] = useState(false);
+  const [panel, setPanel] = useState<"none" | "list" | "send">("none");
 
   const isLatest = props.versionNumber === props.currentVersion;
   const visible = useMemo(
@@ -119,6 +120,8 @@ export function ArtifactView(props: ArtifactViewProps) {
     () => threads.filter((t) => t.status === "open" && t.authorKind === "human" && !t.sentAt).length,
     [threads],
   );
+  const active = useMemo(() => visible.find((t) => t.id === activeId) ?? null, [visible, activeId]);
+  const activePin = useMemo(() => pins.find((p) => p.thread.id === activeId) ?? null, [pins, activeId]);
 
   useEffect(() => {
     try {
@@ -139,6 +142,13 @@ export function ArtifactView(props: ArtifactViewProps) {
     document.head.appendChild(script);
   }, []);
 
+  // Notices fade on their own; there is no sidebar to park them in.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
   const refreshThreads = useCallback(async () => {
     const res = await fetch(`/api/artifacts/${props.slug}/comments?status=all`, { cache: "no-store" });
     if (!res.ok) return;
@@ -146,28 +156,36 @@ export function ArtifactView(props: ArtifactViewProps) {
     setThreads(data.threads);
   }, [props.slug]);
 
-  // ---- pin positions -------------------------------------------------------
+  // ---- pin and popover positions ------------------------------------------
 
   const recompute = useCallback(() => {
     const content = contentRef.current;
-    const stage = stageRef.current;
-    if (!content || !stage) return setPins([]);
-    const origin = stage.getBoundingClientRect();
+    const inner = innerRef.current;
+    if (!content || !inner) return;
+    // The overlay is a child of .stage__inner, so that is the origin; measuring
+    // against .stage would shift every pin by the stage padding and centring.
+    const origin = inner.getBoundingClientRect();
+
     const next: Pin[] = [];
-    visible.forEach((thread, index) => {
+    visible.forEach((thread) => {
       if (!thread.anchor) return;
       const resolved = resolveAnchor(content, thread.anchor);
       if (!resolved) return;
       next.push({
         thread,
-        index: index + 1,
         exact: resolved.exact,
-        top: resolved.rect.top - origin.top + (thread.anchor.type === "range" ? resolved.rect.height : 0),
-        left: resolved.rect.left - origin.left + (thread.anchor.type === "element" ? 0 : resolved.rect.width),
+        ...spotFor(resolved.rect, origin, thread.anchor.type, window.innerWidth, POP_W),
       });
     });
     setPins(next);
-  }, [visible]);
+
+    if (draft?.anchor) {
+      const resolved = resolveAnchor(content, draft.anchor);
+      setDraftSpot(resolved ? spotFor(resolved.rect, origin, draft.anchor.type, window.innerWidth, POP_W) : null);
+    } else {
+      setDraftSpot(null);
+    }
+  }, [visible, draft?.anchor]);
 
   useLayoutEffect(() => {
     let frame = 0;
@@ -203,6 +221,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       if (!block) return;
       setTool(false);
       frames.forEach((f) => f.contentWindow?.postMessage({ type: "art:pick", on: false }, "*"));
+      setActiveId(null);
       setDraft({
         anchor: anchorForBlock(block, {
           selector: data.selector,
@@ -249,7 +268,10 @@ export function ArtifactView(props: ArtifactViewProps) {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) {
+        if (event.key === "Escape") (target as HTMLElement).blur();
+        return;
+      }
       if (event.key === "c" && !event.metaKey && !event.ctrlKey) {
         event.preventDefault();
         toggleTool();
@@ -258,22 +280,41 @@ export function ArtifactView(props: ArtifactViewProps) {
         setFramePicking(false);
         setBubble(null);
         setDraft(null);
+        setActiveId(null);
+        setPanel("none");
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleTool, setFramePicking]);
 
+  // A click outside the open card closes it. The draft composer stays put, so a
+  // half-typed comment is never thrown away by a stray click.
+  useEffect(() => {
+    function onDown(event: MouseEvent) {
+      const el = event.target as HTMLElement | null;
+      if (!el) return;
+      if (el.closest(".pop") || el.closest(".pin") || el.closest(".panel") || el.closest(".panel-btn")) return;
+      setActiveId(null);
+      setPanel("none");
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
   function onContentMouseUp(event: React.MouseEvent) {
     const content = contentRef.current;
-    const stage = stageRef.current;
-    if (!content || !stage) return;
+    const inner = innerRef.current;
+    if (!content || !inner) return;
 
     if (tool) {
       const anchor = anchorFromPoint(content, event.clientX, event.clientY);
       setTool(false);
       setFramePicking(false);
-      if (anchor) setDraft({ anchor, body: "", notify: false });
+      if (anchor) {
+        setActiveId(null);
+        setDraft({ anchor, body: "", notify: false });
+      }
       return;
     }
 
@@ -284,7 +325,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
     const selection = window.getSelection();
     const rect = selection?.getRangeAt(0).getBoundingClientRect();
-    const origin = stage.getBoundingClientRect();
+    const origin = inner.getBoundingClientRect();
     if (!rect) return;
     setBubble({
       anchor,
@@ -296,7 +337,21 @@ export function ArtifactView(props: ArtifactViewProps) {
   function commentOnBlock(event: React.MouseEvent) {
     const block = blockOf(event.target as Node);
     if (!block) return;
+    setActiveId(null);
     setDraft({ anchor: anchorForBlock(block), body: "", notify: false });
+  }
+
+  function openThread(thread: ThreadView) {
+    setActiveId(thread.id);
+    setPanel("none");
+    const content = contentRef.current;
+    if (!content || !thread.anchor) return;
+    const resolved = resolveAnchor(content, thread.anchor);
+    if (!resolved) return;
+    const y = window.scrollY + resolved.rect.top;
+    if (resolved.rect.top < 90 || resolved.rect.bottom > window.innerHeight - 120) {
+      window.scrollTo({ top: y - 160, behavior: "smooth" });
+    }
   }
 
   // ---- writes --------------------------------------------------------------
@@ -332,10 +387,13 @@ export function ArtifactView(props: ArtifactViewProps) {
         setNotice({ kind: "bad", text: err.error?.message ?? "could not save that comment" });
         return;
       }
-      setDraft(null);
-      setBubble(null);
+      if (!parentId) {
+        setDraft(null);
+        setBubble(null);
+        window.getSelection()?.removeAllRanges();
+      }
       await refreshThreads();
-      setNotice(payload.notify ? { kind: "good", text: "Comment sent to the agent." } : null);
+      if (payload.notify) setNotice({ kind: "good", text: "Comment sent to the agent." });
     } finally {
       setBusy(false);
     }
@@ -349,6 +407,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status }),
       });
+      if (status === "resolved") setActiveId(null);
       await refreshThreads();
     } finally {
       setBusy(false);
@@ -368,7 +427,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         setNotice({ kind: "bad", text: data.error?.message ?? "could not send" });
         return;
       }
-      setShowBatch(false);
+      setPanel("none");
       setBatchMessage("");
       await refreshThreads();
       setNotice({
@@ -418,6 +477,22 @@ export function ArtifactView(props: ArtifactViewProps) {
           <button className={tool ? "btn btn--on" : "btn"} onClick={toggleTool} title="Comment tool (c)">
             {tool ? "Click a spot…" : "Comment"}
           </button>
+          <button
+            className={panel === "list" ? "btn btn--on panel-btn" : "btn panel-btn"}
+            onClick={() => setPanel((p) => (p === "list" ? "none" : "list"))}
+            title="All comments"
+          >
+            {visible.length > 0 ? `Threads ${visible.length}` : "Threads"}
+          </button>
+          {unsent > 0 ? (
+            <button
+              className="btn btn--primary panel-btn"
+              onClick={() => setPanel((p) => (p === "send" ? "none" : "send"))}
+              disabled={busy}
+            >
+              Send {unsent}
+            </button>
+          ) : null}
           {isLatest ? (
             <Link className="btn" href={`/a/${props.slug}/edit`}>
               Edit
@@ -427,259 +502,302 @@ export function ArtifactView(props: ArtifactViewProps) {
         </div>
       </header>
 
-      <div className="layout">
-        <main className={tool ? "stage stage--picking" : "stage"} ref={stageRef}>
-          <div className="stage__inner">
-            {!isLatest ? (
-              <div className="warnings" style={{ marginBottom: 16 }}>
-                Viewing version {props.versionNumber} of {props.currentVersion}.{" "}
-                <Link href={`/a/${props.slug}`}>Go to the latest</Link>.
-              </div>
-            ) : null}
-
-            {props.warnings.length > 0 ? (
-              <div className="warnings">
-                <strong>{props.warnings.length} block warning{props.warnings.length === 1 ? "" : "s"}</strong>
-                <ul>
-                  {props.warnings.map((w, i) => (
-                    <li key={i}>
-                      line {w.line}: {w.message}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {props.buildStatus === "error" ? (
-              <>
-                <div className="warnings">This version did not build. The source is unchanged; fix it and publish again.</div>
-                <pre className="buildlog">{props.buildLog}</pre>
-              </>
-            ) : null}
-
-            <div
-              className="art-content"
-              ref={contentRef}
-              onMouseUp={onContentMouseUp}
-              onDoubleClick={commentOnBlock}
-            >
-              {props.framed ? (
-                <div className="framewrap" data-block="b0" data-lines="1-1">
-                  <iframe
-                    src={`${props.embedBase}/page`}
-                    sandbox="allow-scripts"
-                    title={props.title}
-                    style={{ height: 600 }}
-                    onLoad={(e) => {
-                      const frame = e.currentTarget;
-                      const scheme = document.documentElement.getAttribute("data-scheme") ?? "light";
-                      frame.contentWindow?.postMessage({ type: "art:scheme", scheme }, "*");
-                    }}
-                  />
-                </div>
-              ) : (
-                <div dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
-              )}
-            </div>
-
-            <div className="pins">
-              {pins.map((pin) => (
-                <button
-                  key={pin.thread.id}
-                  className={[
-                    "pin",
-                    pin.thread.authorKind === "agent" ? "pin--agent" : "",
-                    !pin.thread.sentAt && pin.thread.status === "open" ? "pin--unsent" : "",
-                    pin.exact ? "" : "pin--moved",
-                    pin.thread.id === activeId ? "pin--active" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  style={{ top: pin.top, left: pin.left }}
-                  title={`${pin.thread.authorName}: ${truncate(pin.thread.body, 80)}`}
-                  onClick={() => setActiveId(pin.thread.id === activeId ? null : pin.thread.id)}
-                >
-                  {initials(pin.thread.authorName)}
-                </button>
-              ))}
-            </div>
-
-            {bubble ? (
-              <div className="bubble" style={{ top: bubble.top, left: bubble.left }}>
-                <button
-                  className="btn btn--primary"
-                  onClick={() => {
-                    setDraft({ anchor: bubble.anchor, body: "", notify: false });
-                    setBubble(null);
-                  }}
-                >
-                  Comment
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </main>
-
-        <aside className="side">
-          <div className="side__head">
-            <span className="side__title">
-              Comments {visible.length > 0 ? `(${visible.length})` : ""}
-            </span>
-            {unsent > 0 ? (
-              <button className="btn btn--primary" onClick={() => setShowBatch((s) => !s)} disabled={busy}>
-                Send {unsent}
-              </button>
-            ) : null}
+      {panel === "list" ? (
+        <div className="panel">
+          <div className="panel__head">
+            <span className="panel__title">Comments</span>
             <button className="btn btn--ghost" onClick={() => setShowResolved((s) => !s)}>
               {showResolved ? "Hide resolved" : "Show resolved"}
             </button>
           </div>
-
-          {showBatch ? (
-            <div className="side__foot">
-              <div className="composer">
-                <input
-                  className="field"
-                  placeholder="Optional note, e.g. done reviewing"
-                  value={batchMessage}
-                  onChange={(e) => setBatchMessage(e.target.value)}
-                />
-                <div className="composer__row">
-                  <span className="tiny">{unsent} unsent comment{unsent === 1 ? "" : "s"}</span>
-                  <span style={{ display: "flex", gap: 6 }}>
-                    <button className="btn btn--ghost" onClick={() => setShowBatch(false)}>
-                      Cancel
-                    </button>
-                    <button className="btn btn--primary" onClick={sendBatch} disabled={busy}>
-                      Send to agent
-                    </button>
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {notice ? (
-            <div className="side__foot">
-              <div className={notice.kind === "bad" ? "notice notice--bad" : "notice notice--good"}>{notice.text}</div>
-            </div>
-          ) : null}
-
-          <div className="side__list">
-            {visible.length === 0 && !draft ? (
-              <p className="muted">
-                Select text to comment on it, or press <strong>c</strong> and click a spot. Nothing is sent to the
-                agent until you tick <em>Notify agent</em> or press Send.
+          <div className="panel__list">
+            {visible.length === 0 ? (
+              <p className="muted" style={{ margin: 0 }}>
+                No comments yet. Select text to comment on it, or press <kbd>c</kbd> and click a spot.
               </p>
-            ) : null}
+            ) : (
+              visible.map((thread) => (
+                <button key={thread.id} className="rowitem" onClick={() => openThread(thread)}>
+                  <span className={thread.authorKind === "agent" ? "avatar avatar--agent" : "avatar"}>
+                    {initials(thread.authorName)}
+                  </span>
+                  <span className="rowitem__text">
+                    <span className="rowitem__head">
+                      {thread.authorName} · {when(thread.createdAt)}
+                      {thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
+                        <span className="badge badge--unsent">unsent</span>
+                      ) : null}
+                      {thread.status === "resolved" ? <span className="badge">resolved</span> : null}
+                    </span>
+                    <span className="rowitem__body">{truncate(thread.body, 90)}</span>
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
 
-            {visible.map((thread, index) => (
-              <div
-                key={thread.id}
+      {panel === "send" ? (
+        <div className="panel panel--narrow">
+          <div className="composer">
+            <div className="tiny">
+              {unsent} comment{unsent === 1 ? "" : "s"} will go to the agent as one message.
+            </div>
+            <input
+              className="field"
+              autoFocus
+              placeholder="Optional note, e.g. done reviewing"
+              value={batchMessage}
+              onChange={(e) => setBatchMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void sendBatch();
+              }}
+            />
+            <div className="composer__row">
+              <button className="btn btn--ghost" onClick={() => setPanel("none")}>
+                Cancel
+              </button>
+              <button className="btn btn--primary" onClick={sendBatch} disabled={busy}>
+                Send to agent
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <main className={tool ? "stage stage--picking" : "stage"}>
+        <div className="stage__inner" ref={innerRef}>
+          {!isLatest ? (
+            <div className="warnings" style={{ marginBottom: 16 }}>
+              Viewing version {props.versionNumber} of {props.currentVersion}.{" "}
+              <Link href={`/a/${props.slug}`}>Go to the latest</Link>.
+            </div>
+          ) : null}
+
+          {props.warnings.length > 0 ? (
+            <div className="warnings">
+              <strong>{props.warnings.length} block warning{props.warnings.length === 1 ? "" : "s"}</strong>
+              <ul>
+                {props.warnings.map((w, i) => (
+                  <li key={i}>
+                    line {w.line}: {w.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {props.buildStatus === "error" ? (
+            <>
+              <div className="warnings">This version did not build. The source is unchanged; fix it and publish again.</div>
+              <pre className="buildlog">{props.buildLog}</pre>
+            </>
+          ) : null}
+
+          <div
+            className="art-content"
+            ref={contentRef}
+            onMouseUp={onContentMouseUp}
+            onDoubleClick={commentOnBlock}
+          >
+            {props.framed ? (
+              <div className="framewrap" data-block="b0" data-lines="1-1">
+                <iframe
+                  src={`${props.embedBase}/page`}
+                  sandbox="allow-scripts"
+                  title={props.title}
+                  style={{ height: 600 }}
+                  onLoad={(e) => {
+                    const frame = e.currentTarget;
+                    const scheme = document.documentElement.getAttribute("data-scheme") ?? "light";
+                    frame.contentWindow?.postMessage({ type: "art:scheme", scheme }, "*");
+                  }}
+                />
+              </div>
+            ) : (
+              <div dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
+            )}
+          </div>
+
+          <div className="pins">
+            {pins.map((pin) => (
+              <button
+                key={pin.thread.id}
                 className={[
-                  "thread",
-                  thread.id === activeId ? "thread--active" : "",
-                  thread.status === "resolved" ? "thread--resolved" : "",
+                  "pin",
+                  pin.thread.authorKind === "agent" ? "pin--agent" : "",
+                  !pin.thread.sentAt && pin.thread.status === "open" ? "pin--unsent" : "",
+                  pin.exact ? "" : "pin--moved",
+                  pin.thread.id === activeId ? "pin--active" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
-                onClick={() => {
-                  setActiveId(thread.id === activeId ? null : thread.id);
-                  const content = contentRef.current;
-                  if (!content || !thread.anchor) return;
-                  const resolved = resolveAnchor(content, thread.anchor);
-                  if (resolved) window.scrollTo({ top: window.scrollY + resolved.rect.top - 140, behavior: "smooth" });
-                }}
+                style={{ top: pin.top, left: pin.left }}
+                title={`${pin.thread.authorName}: ${truncate(pin.thread.body, 80)}`}
+                onClick={() => (pin.thread.id === activeId ? setActiveId(null) : openThread(pin.thread))}
               >
-                <div className="thread__head">
-                  <span className="thread__who">
-                    {index + 1}. {thread.authorName}
-                  </span>
-                  <span>{when(thread.createdAt)}</span>
-                  <span>v{thread.versionNumber}</span>
-                  {thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
-                    <span className="badge badge--unsent">unsent</span>
-                  ) : null}
-                  {thread.status === "resolved" ? <span className="badge">resolved</span> : null}
-                </div>
-                <div className="thread__anchor">{describeAnchor(thread.anchor)}</div>
-                <div className="thread__body">{thread.body}</div>
-
-                {thread.replies.length > 0 ? (
-                  <div className="thread__replies">
-                    {thread.replies.map((reply) => (
-                      <div key={reply.id}>
-                        <div className="thread__head">
-                          <span className="thread__who">{reply.authorName}</span>
-                          <span>{when(reply.createdAt)}</span>
-                          {reply.authorKind === "agent" ? <span className="badge">agent</span> : null}
-                        </div>
-                        <div className="thread__body">{reply.body}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                {thread.id === activeId ? (
-                  <div className="thread__actions" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      className="btn btn--ghost"
-                      onClick={() => setStatus(thread.id, thread.status === "open" ? "resolved" : "open")}
-                      disabled={busy}
-                    >
-                      {thread.status === "open" ? "Resolve" : "Reopen"}
-                    </button>
-                    <ReplyBox onSend={(text) => postComment(thread.id, text)} busy={busy} />
-                  </div>
-                ) : null}
-              </div>
+                {initials(pin.thread.authorName)}
+                {pin.thread.replies.length > 0 ? <span className="pin__count">{pin.thread.replies.length}</span> : null}
+              </button>
             ))}
+
+            {/* A thread whose block is gone has no pin, so its card opens at the
+                top of the page rather than nowhere. */}
+            {active ? (
+              <div className="pop" style={{ top: activePin?.popTop ?? 8, left: activePin?.popLeft ?? 8 }}>
+                <ThreadCard
+                  thread={active}
+                  busy={busy}
+                  onClose={() => setActiveId(null)}
+                  onStatus={(status) => setStatus(active.id, status)}
+                  onReply={(text) => postComment(active.id, text)}
+                />
+              </div>
+            ) : null}
+
+            {draft ? (
+              <div className="pop" style={{ top: draftSpot?.popTop ?? 8, left: draftSpot?.popLeft ?? 8 }}>
+                <div className="composer">
+                  <div className="pop__head">
+                    <span className={"avatar"}>{initials(author)}</span>
+                    <span className="pop__anchor" title={describeAnchor(draft.anchor)}>
+                      {describeAnchor(draft.anchor)}
+                    </span>
+                    <button className="iconbtn" onClick={() => setDraft(null)} aria-label="Cancel">
+                      ✕
+                    </button>
+                  </div>
+                  <textarea
+                    autoFocus
+                    value={draft.body}
+                    placeholder="What should change?"
+                    onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void postComment();
+                    }}
+                  />
+                  <input
+                    className="field"
+                    value={author}
+                    onChange={(e) => rememberName(e.target.value)}
+                    placeholder="Your name"
+                    aria-label="Your name"
+                  />
+                  <div className="composer__row">
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={draft.notify}
+                        onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
+                      />
+                      Notify agent
+                    </label>
+                    <span style={{ display: "flex", gap: 6 }}>
+                      <button className="btn btn--ghost" onClick={() => setDraft(null)}>
+                        Cancel
+                      </button>
+                      <button className="btn btn--primary" onClick={() => postComment()} disabled={busy || !draft.body.trim()}>
+                        Comment
+                      </button>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          {draft ? (
-            <div className="side__foot">
-              <div className="composer">
-                <div className="tiny">New comment on {describeAnchor(draft.anchor)}</div>
-                <textarea
-                  autoFocus
-                  value={draft.body}
-                  placeholder="What should change?"
-                  onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void postComment();
-                  }}
-                />
-                <input
-                  className="field"
-                  value={author}
-                  onChange={(e) => rememberName(e.target.value)}
-                  placeholder="Your name"
-                  aria-label="Your name"
-                />
-                <div className="composer__row">
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={draft.notify}
-                      onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
-                    />
-                    Notify agent
-                  </label>
-                  <span style={{ display: "flex", gap: 6 }}>
-                    <button className="btn btn--ghost" onClick={() => setDraft(null)}>
-                      Cancel
-                    </button>
-                    <button className="btn btn--primary" onClick={() => postComment()} disabled={busy || !draft.body.trim()}>
-                      Comment
-                    </button>
-                  </span>
-                </div>
-              </div>
+          {bubble ? (
+            <div className="bubble" style={{ top: bubble.top, left: bubble.left }}>
+              <button
+                className="btn btn--primary"
+                onClick={() => {
+                  setActiveId(null);
+                  setDraft({ anchor: bubble.anchor, body: "", notify: false });
+                  setBubble(null);
+                }}
+              >
+                Comment
+              </button>
             </div>
           ) : null}
-        </aside>
-      </div>
+        </div>
+      </main>
+
+      {notice ? (
+        <div className={notice.kind === "bad" ? "toast toast--bad" : "toast toast--good"} role="status">
+          {notice.text}
+        </div>
+      ) : null}
     </>
+  );
+}
+
+function ThreadCard({
+  thread,
+  busy,
+  onClose,
+  onStatus,
+  onReply,
+}: {
+  thread: ThreadView;
+  busy: boolean;
+  onClose: () => void;
+  onStatus: (status: "open" | "resolved") => void;
+  onReply: (text: string) => void;
+}) {
+  return (
+    <div className="card">
+      <div className="pop__head">
+        <span className={thread.authorKind === "agent" ? "avatar avatar--agent" : "avatar"}>
+          {initials(thread.authorName)}
+        </span>
+        <span className="pop__who">
+          {thread.authorName}
+          <span className="tiny"> · {when(thread.createdAt)} · v{thread.versionNumber}</span>
+        </span>
+        <button className="iconbtn" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+      </div>
+
+      <div className="pop__anchor" title={describeAnchor(thread.anchor)}>
+        {describeAnchor(thread.anchor)}
+      </div>
+
+      <div className="thread__body">{thread.body}</div>
+      {thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
+        <div className="tiny">Not sent to the agent yet.</div>
+      ) : null}
+
+      {thread.replies.length > 0 ? (
+        <div className="thread__replies">
+          {thread.replies.map((reply) => (
+            <div key={reply.id}>
+              <div className="thread__head">
+                <span className={reply.authorKind === "agent" ? "avatar avatar--agent" : "avatar"}>
+                  {initials(reply.authorName)}
+                </span>
+                <span className="thread__who">{reply.authorName}</span>
+                <span>{when(reply.createdAt)}</span>
+              </div>
+              <div className="thread__body">{reply.body}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="thread__actions">
+        <button
+          className="btn btn--ghost"
+          onClick={() => onStatus(thread.status === "open" ? "resolved" : "open")}
+          disabled={busy}
+        >
+          {thread.status === "open" ? "Resolve" : "Reopen"}
+        </button>
+        <ReplyBox onSend={onReply} busy={busy} />
+      </div>
+    </div>
   );
 }
 
@@ -694,7 +812,19 @@ function ReplyBox({ onSend, busy }: { onSend: (text: string) => void; busy: bool
     );
   return (
     <div className="composer" style={{ width: "100%" }}>
-      <textarea value={text} autoFocus placeholder="Reply" onChange={(e) => setText(e.target.value)} />
+      <textarea
+        value={text}
+        autoFocus
+        placeholder="Reply"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text.trim()) {
+            onSend(text);
+            setText("");
+            setOpen(false);
+          }
+        }}
+      />
       <div className="composer__row">
         <button className="btn btn--ghost" onClick={() => setOpen(false)}>
           Cancel

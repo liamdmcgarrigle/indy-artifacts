@@ -60,14 +60,16 @@ raw-HTML artifacts too, so a React artifact can use `var(--art-accent)` and matc
 
 ## Comments
 
-Comments are pins on the page, the way Claude's artifacts and Notion do it. Select text and a
-Comment bubble appears. Press `c` and click to drop a pin anywhere a caret goes, or on a chart, a
-card, or an element inside a sandboxed frame. Every anchor carries the source line range, so the
-agent is told which lines a comment is about.
+Comments are pins on the page, the way Figma and Notion do it. Select text and a Comment bubble
+appears. Press `c` and click to drop a pin anywhere a caret goes, or on a chart, a card, or an
+element inside a sandboxed frame. The composer opens next to the pin, and clicking a pin later opens
+that thread in the same place, so the page is never squeezed by a panel. Every anchor carries the
+source line range, so the agent is told which lines a comment is about.
 
 Nothing reaches the agent until you say so. The composer has a Notify agent checkbox, off by
-default. Leave it off, work through the page, then press Send in the sidebar to deliver them all as
-one message with an optional note.
+default. Leave it off, work through the page, then press Send in the header to deliver them all as
+one message with an optional note. The Threads button lists every comment when you want to go
+through them in order, including any whose anchor no longer resolves.
 
 ## Editing
 

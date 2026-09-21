@@ -8,6 +8,7 @@ import {
   describeAnchor,
   linesOf,
   resolveAnchor,
+  spotFor,
   truncate,
   type Anchor,
 } from "@/lib/anchors";
@@ -108,5 +109,40 @@ describe("describeAnchor", () => {
   it("truncates long quotes", () => {
     expect(truncate("a".repeat(80), 10)).toHaveLength(10);
     expect(truncate("  spaced   out  ", 40)).toBe("spaced out");
+  });
+});
+
+describe("spotFor", () => {
+  const origin = { top: 100, left: 300 };
+  const rect = { top: 140, left: 340, width: 60, height: 20 };
+
+  it("puts a range pin at the end of the selection", () => {
+    const spot = spotFor(rect, origin, "range", 1400);
+    expect(spot.top).toBe(60);
+    expect(spot.left).toBe(100);
+  });
+
+  it("puts an element pin at the top left of the block", () => {
+    const spot = spotFor(rect, origin, "element", 1400);
+    expect(spot.left).toBe(40);
+  });
+
+  it("opens the card to the right when the window has room", () => {
+    const spot = spotFor(rect, origin, "point", 1400);
+    expect(spot.flipped).toBe(false);
+    expect(spot.popLeft).toBe(spot.left + 20);
+  });
+
+  it("flips the card to the left near the right edge", () => {
+    const spot = spotFor(rect, origin, "point", 700);
+    expect(spot.flipped).toBe(true);
+    expect(spot.popLeft).toBe(spot.left - 312 - 18);
+  });
+
+  it("never pushes the card off the left of the window", () => {
+    const narrow = { top: 100, left: 40 };
+    const spot = spotFor({ top: 140, left: 60, width: 0, height: 20 }, narrow, "point", 400);
+    expect(spot.flipped).toBe(true);
+    expect(narrow.left + spot.popLeft).toBeGreaterThanOrEqual(8);
   });
 });

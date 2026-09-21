@@ -270,7 +270,7 @@ function findQuote(scope: HTMLElement, quote: string, near?: number): DOMRect | 
   return null;
 }
 
-/** One-line description of an anchor, for the sidebar and for the agent. */
+/** One-line description of an anchor, for the comment card and for the agent. */
 export function describeAnchor(anchor: Anchor | null): string {
   if (!anchor) return "whole page";
   const lines = anchor.lines ? `lines ${anchor.lines[0]}-${anchor.lines[1]}` : anchor.block;
@@ -282,4 +282,38 @@ export function describeAnchor(anchor: Anchor | null): string {
 export function truncate(value: string, max: number): string {
   const flat = value.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/** Where a pin sits in the overlay, and where its card opens. */
+export interface Spot {
+  top: number;
+  left: number;
+  popTop: number;
+  popLeft: number;
+  flipped: boolean;
+}
+
+/**
+ * Turn an anchor's viewport rect into overlay coordinates. The card opens to
+ * the right of the pin and flips to the left when the window has no room for
+ * it there, so a comment near the right edge is never cut off.
+ */
+export function spotFor(
+  rect: { top: number; left: number; width: number; height: number },
+  origin: { top: number; left: number },
+  type: AnchorType,
+  viewportWidth: number,
+  popWidth = 312,
+): Spot {
+  const top = rect.top - origin.top + (type === "range" ? rect.height : 0);
+  const left = rect.left - origin.left + (type === "element" ? 0 : rect.width);
+  const flipped = origin.left + left + 22 + popWidth > viewportWidth - 14;
+  const popLeft = flipped ? left - popWidth - 18 : left + 20;
+  return {
+    top,
+    left,
+    flipped,
+    popTop: Math.max(top - 14, 4),
+    popLeft: Math.max(popLeft, 8 - origin.left),
+  };
 }

@@ -287,16 +287,6 @@ a {
 
 /* ---------- artifact layout ---------- */
 
-.layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  align-items: start;
-}
-
-.layout--nosidebar {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .stage {
   position: relative;
   min-width: 0;
@@ -428,70 +418,123 @@ a {
   pointer-events: auto;
 }
 
-/* ---------- sidebar ---------- */
+/* ---------- anchored comment cards ---------- */
 
-.side {
-  position: sticky;
-  top: 52px;
-  height: calc(100vh - 52px);
-  border-left: 1px solid var(--art-border);
+.avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--art-accent);
+  color: var(--art-on-accent);
+  font-size: 9px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.avatar--agent {
+  background: var(--art-surface-2);
+  color: var(--art-text);
+  border: 1px solid var(--art-border-strong);
+}
+
+.pin__count {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
   background: var(--art-surface);
+  color: var(--art-text);
+  border: 1px solid var(--art-border-strong);
+  font-size: 9px;
+  line-height: 12px;
+  font-weight: 700;
+}
+
+/* The card that opens beside a pin, and the composer for a new comment. */
+.pop {
+  position: absolute;
+  z-index: 40;
+  width: 312px;
+  max-width: calc(100vw - 24px);
+  pointer-events: auto;
+  background: var(--art-surface);
+  border: 1px solid var(--art-border-strong);
+  border-radius: var(--art-radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  padding: 11px 12px;
+  animation: pop-in 0.09s ease-out;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.pop__head {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.pop__who {
+  font-size: 13px;
+  font-weight: 620;
+  margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pop__anchor {
+  font-family: var(--art-font-mono);
+  font-size: 11px;
+  color: var(--art-text-faint);
+  background: var(--art-surface-2);
+  border-radius: 5px;
+  padding: 3px 6px;
+  margin-bottom: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pop__head .pop__anchor {
+  margin: 0 auto 0 0;
   min-width: 0;
 }
 
-.side__head {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--art-border);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.side__title {
-  font-weight: 640;
-  font-size: 14px;
-  margin-right: auto;
-}
-
-.side__list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
+.card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
-.side__foot {
-  border-top: 1px solid var(--art-border);
-  padding: 10px 12px;
-  background: var(--art-surface);
-}
-
-.thread {
-  border: 1px solid var(--art-border);
-  border-radius: var(--art-radius);
-  background: var(--art-bg);
-  padding: 10px 11px;
+.iconbtn {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--art-text-faint);
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 4px;
+  border-radius: 5px;
   cursor: pointer;
-  transition: border-color 0.12s ease;
 }
 
-.thread:hover {
-  border-color: var(--art-border-strong);
+.iconbtn:hover {
+  background: var(--art-surface-2);
+  color: var(--art-text);
 }
 
-.thread--active {
-  border-color: var(--art-accent);
-  box-shadow: 0 0 0 2px var(--art-accent-wash);
-}
-
-.thread--resolved {
-  opacity: 0.62;
-}
+/* ---------- comment threads inside a card ---------- */
 
 .thread__head {
   display: flex;
@@ -508,19 +551,6 @@ a {
   color: var(--art-text);
 }
 
-.thread__anchor {
-  font-family: var(--art-font-mono);
-  font-size: 11.5px;
-  color: var(--art-text-faint);
-  background: var(--art-surface-2);
-  border-radius: 5px;
-  padding: 3px 6px;
-  margin-bottom: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .thread__body {
   font-size: 13.5px;
   white-space: pre-wrap;
@@ -528,18 +558,134 @@ a {
 }
 
 .thread__replies {
-  margin-top: 8px;
+  margin-top: 9px;
   padding-left: 10px;
   border-left: 2px solid var(--art-border);
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 9px;
 }
 
 .thread__actions {
   display: flex;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
+  align-items: flex-start;
+}
+
+/* ---------- header panels ---------- */
+
+.panel {
+  position: fixed;
+  top: 54px;
+  right: 14px;
+  z-index: 45;
+  width: 340px;
+  max-width: calc(100vw - 20px);
+  background: var(--art-surface);
+  border: 1px solid var(--art-border-strong);
+  border-radius: var(--art-radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel--narrow {
+  width: 300px;
+  padding: 11px 12px;
+}
+
+.panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--art-border);
+}
+
+.panel__title {
+  font-weight: 640;
+  font-size: 13.5px;
+  margin-right: auto;
+}
+
+.panel__list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(60vh, 460px);
+  overflow-y: auto;
+}
+
+.rowitem {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  text-align: left;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: var(--art-radius);
+  padding: 7px 8px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--art-text);
+}
+
+.rowitem:hover {
+  background: var(--art-surface-2);
+}
+
+.rowitem__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowitem__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--art-text-muted);
+}
+
+.rowitem__body {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- toast ---------- */
+
+.toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: 9px 14px;
+  border-radius: var(--art-radius);
+  font-size: 13px;
+  border: 1px solid transparent;
+  box-shadow: var(--art-shadow);
+  animation: pop-in 0.12s ease-out;
+}
+
+.toast--good {
+  color: var(--art-good);
+  background: var(--art-good-wash);
+  border-color: color-mix(in srgb, var(--art-good) 40%, transparent);
+}
+
+.toast--bad {
+  color: var(--art-bad);
+  background: var(--art-bad-wash);
+  border-color: color-mix(in srgb, var(--art-bad) 40%, transparent);
 }
 
 .composer {
@@ -716,24 +862,21 @@ a {
 
 /* ---------- narrow screens ---------- */
 
-@media (max-width: 900px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .side {
-    position: static;
-    height: auto;
-    max-height: 70vh;
-    border-left: 0;
-    border-top: 1px solid var(--art-border);
-  }
-
+@media (max-width: 760px) {
   .stage {
     padding: 18px 14px 40px;
   }
 
-  .pins {
-    display: none;
+  /* No room beside a pin, so the card becomes a sheet at the bottom. */
+  .pop {
+    position: fixed;
+    top: auto !important;
+    left: 10px !important;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+    max-width: none;
+    max-height: 70vh;
+    overflow-y: auto;
   }
 }
