@@ -46,6 +46,9 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
     buildLog: version.buildLog,
     warnings: rendered?.warnings ?? version.warnings,
     html: rendered?.html ?? null,
+    // The viewer edits one block at a time by splicing source lines, so it
+    // needs the source of the version it is showing.
+    source: version.source,
     embedBase,
     framed,
     versions: listVersions(ctx, artifact.id).map((v) => ({

@@ -1,0 +1,15 @@
+/*
+ * Comment anchor highlights.
+ *
+ * Served static rather than imported: Next's CSS parser (Lightning CSS) does
+ * not know the ::highlight() pseudo-element and fails the whole stylesheet,
+ * which silently stops the page hydrating. Static files are served verbatim.
+ */
+
+::highlight(art-anchor) {
+  background-color: color-mix(in srgb, var(--art-warn) 22%, transparent);
+}
+
+::highlight(art-anchor-active) {
+  background-color: color-mix(in srgb, var(--art-accent) 26%, transparent);
+}

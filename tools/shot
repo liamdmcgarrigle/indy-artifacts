@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Take screenshots of the running viewer.
+#   tools/shot <recipe.json> [outDir]
+# Builds the browser image on first use. Uses host networking so the container
+# reaches the app on 127.0.0.1:5174.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+recipe="${1:?usage: tools/shot <recipe.json> [outDir]}"
+out="${2:-$here/../.shots}"
+mkdir -p "$out"
+
+if ! podman image exists localhost/artifacts-shot:latest; then
+  echo "building the browser image (first run only)..."
+  podman build -t localhost/artifacts-shot:latest "$here/screenshot" >/dev/null
+fi
+
+podman run --rm --network host \
+  -v "$(realpath "$recipe")":/recipe.json:ro,Z \
+  -v "$(realpath "$out")":/out:Z \
+  localhost/artifacts-shot:latest /recipe.json /out

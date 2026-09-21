@@ -9,6 +9,7 @@ import {
   linesOf,
   resolveAnchor,
   spotFor,
+  spreadPins,
   truncate,
   type Anchor,
 } from "@/lib/anchors";
@@ -113,36 +114,81 @@ describe("describeAnchor", () => {
 });
 
 describe("spotFor", () => {
-  const origin = { top: 100, left: 300 };
+  const origin = { top: 100, left: 100 };
   const rect = { top: 140, left: 340, width: 60, height: 20 };
+  // A 660px text column centred in a 1440px window.
+  const wide = { viewportWidth: 1440, contentLeft: 390, contentRight: 1050, popWidth: 312 };
 
-  it("puts a range pin at the end of the selection", () => {
-    const spot = spotFor(rect, origin, "range", 1400);
+  it("puts the pin in the margin beside the text, not on it", () => {
+    const spot = spotFor(rect, origin, "point", wide);
+    expect(spot.left).toBe(390 - 100 - 34);
+  });
+
+  it("hangs a range pin at the end of the selection", () => {
+    const spot = spotFor(rect, origin, "range", wide);
     expect(spot.top).toBe(60);
-    expect(spot.left).toBe(100);
   });
 
-  it("puts an element pin at the top left of the block", () => {
-    const spot = spotFor(rect, origin, "element", 1400);
-    expect(spot.left).toBe(40);
+  it("keeps the pin on screen when there is no margin", () => {
+    const narrow = { viewportWidth: 420, contentLeft: 104, contentRight: 400, popWidth: 312 };
+    const spot = spotFor(rect, { top: 100, left: 100 }, "point", narrow);
+    expect(spot.left).toBeGreaterThanOrEqual(2);
   });
 
-  it("opens the card to the right when the window has room", () => {
-    const spot = spotFor(rect, origin, "point", 1400);
+  it("opens the card in the empty right margin when it fits", () => {
+    const spot = spotFor(rect, origin, "point", wide);
     expect(spot.flipped).toBe(false);
-    expect(spot.popLeft).toBe(spot.left + 20);
+    expect(origin.left + spot.popLeft).toBe(1050 + 16);
   });
 
-  it("flips the card to the left near the right edge", () => {
-    const spot = spotFor(rect, origin, "point", 700);
+  it("floats the card over the text when the window is too narrow", () => {
+    const tight = { viewportWidth: 900, contentLeft: 120, contentRight: 780, popWidth: 312 };
+    const spot = spotFor(rect, { top: 100, left: 0 }, "point", tight);
     expect(spot.flipped).toBe(true);
-    expect(spot.popLeft).toBe(spot.left - 312 - 18);
+    expect(spot.popLeft + 312).toBeLessThanOrEqual(900 - 12);
   });
 
   it("never pushes the card off the left of the window", () => {
-    const narrow = { top: 100, left: 40 };
-    const spot = spotFor({ top: 140, left: 60, width: 0, height: 20 }, narrow, "point", 400);
-    expect(spot.flipped).toBe(true);
-    expect(narrow.left + spot.popLeft).toBeGreaterThanOrEqual(8);
+    const tiny = { viewportWidth: 380, contentLeft: 10, contentRight: 370, popWidth: 312 };
+    const spot = spotFor(rect, { top: 0, left: 0 }, "point", tiny);
+    expect(spot.popLeft).toBeGreaterThanOrEqual(12);
+  });
+});
+
+describe("spreadPins", () => {
+  it("nudges pins apart when they land on the same line", () => {
+    const out = spreadPins([{ top: 100 }, { top: 108 }, { top: 112 }], 30);
+    expect(out.map((p) => p.top)).toEqual([100, 130, 160]);
+  });
+
+  it("leaves pins alone when they already clear each other", () => {
+    const out = spreadPins([{ top: 100 }, { top: 200 }], 30);
+    expect(out.map((p) => p.top)).toEqual([100, 200]);
+  });
+});
+
+describe("anchors that outlive an edit", () => {
+  it("finds a point anchor whose block was renumbered", () => {
+    // The comment was left on b1, but a later edit made that same sentence b3.
+    const anchor: Anchor = {
+      type: "point",
+      block: "b1",
+      context: "Second paragraph with the word marker",
+      offset: 10,
+    };
+    const resolved = resolveAnchor(root, anchor);
+    expect(resolved).not.toBeNull();
+    // Found by its surrounding text, so it is flagged as a moved anchor.
+    expect(resolved?.exact).toBe(false);
+  });
+
+  it("keeps a point anchor exact when its own block still holds the text", () => {
+    const anchor: Anchor = {
+      type: "point",
+      block: "b3",
+      context: "Second paragraph with the word marker",
+      offset: 10,
+    };
+    expect(resolveAnchor(root, anchor)?.exact).toBe(true);
   });
 });

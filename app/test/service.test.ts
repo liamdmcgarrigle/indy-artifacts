@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { makeContext, type ServiceContext } from "@/lib/service/context";
 import {
   createHumanVersion,
+  patchLines,
   diffVersions,
   listArtifacts,
   listVersions,
@@ -177,6 +178,72 @@ describe("human edits", () => {
     await updateArtifact(ctx, "run", { expectedVersion: 1, source: md("Run", "agent moved on") });
     await expect(
       createHumanVersion(ctx, "run", { source: md("Run", "stale"), authorName: "liam", expectedVersion: 1 }),
+    ).rejects.toThrow(ConflictError);
+  });
+});
+
+describe("editing one block", () => {
+  // Four lines of frontmatter, a blank, then the body starts at line 6.
+  const doc = ["---", "title: Run", "---", "", "First paragraph.", "", "Second paragraph.", ""].join("\n");
+
+  it("replaces only the lines the block occupies", async () => {
+    await publishArtifact(ctx, { slug: "run", source: doc });
+    const res = await patchLines(ctx, "run", {
+      from: 7,
+      to: 7,
+      text: "Rewritten paragraph.",
+      authorName: "liam",
+      expectedVersion: 1,
+    });
+    expect(res.version).toBe(2);
+    const v = requireVersion(ctx, requireArtifact(ctx, "run"), 2);
+    expect(v.source).toContain("First paragraph.");
+    expect(v.source).toContain("Rewritten paragraph.");
+    expect(v.source).not.toContain("Second paragraph.");
+    expect(v.authorKind).toBe("human");
+    expect(v.message).toBe("edited line 7");
+  });
+
+  it("can grow a block from one line to several", async () => {
+    await publishArtifact(ctx, { slug: "run", source: doc });
+    await patchLines(ctx, "run", {
+      from: 5,
+      to: 5,
+      text: "One.\n\nTwo.",
+      authorName: "liam",
+      expectedVersion: 1,
+    });
+    const v = requireVersion(ctx, requireArtifact(ctx, "run"), 2);
+    expect(v.source?.split("\n").length).toBe(doc.split("\n").length + 2);
+    expect(v.source).toContain("Second paragraph.");
+  });
+
+  it("refuses a range that starts past the end of the document", async () => {
+    await publishArtifact(ctx, { slug: "run", source: doc });
+    await expect(
+      patchLines(ctx, "run", { from: 99, to: 99, text: "x", authorName: "liam", expectedVersion: 1 }),
+    ).rejects.toThrow(/past the end/);
+  });
+
+  it("refuses an upside down range", async () => {
+    await publishArtifact(ctx, { slug: "run", source: doc });
+    await expect(
+      patchLines(ctx, "run", { from: 7, to: 2, text: "x", authorName: "liam", expectedVersion: 1 }),
+    ).rejects.toThrow(/low to high/);
+  });
+
+  it("refuses to patch a compiled artifact", async () => {
+    await publishArtifact(ctx, { slug: "app", kind: "react", title: "App", files: { "App.tsx": "export default () => null;" } });
+    await expect(
+      patchLines(ctx, "app", { from: 1, to: 1, text: "x", authorName: "liam", expectedVersion: 1 }),
+    ).rejects.toThrow(/markdown/);
+  });
+
+  it("refuses to save over a newer version", async () => {
+    await publishArtifact(ctx, { slug: "run", source: doc });
+    await updateArtifact(ctx, "run", { expectedVersion: 1, source: doc + "\nmore\n" });
+    await expect(
+      patchLines(ctx, "run", { from: 5, to: 5, text: "x", authorName: "liam", expectedVersion: 1 }),
     ).rejects.toThrow(ConflictError);
   });
 });

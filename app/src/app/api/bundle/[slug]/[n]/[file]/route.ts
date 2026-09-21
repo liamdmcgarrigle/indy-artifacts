@@ -27,6 +27,9 @@ export async function GET(
         "content-type": type,
         "cache-control": "public, max-age=31536000, immutable",
         "x-content-type-options": "nosniff",
+        // The frame that loads this has an opaque origin, so the module script
+        // fetch is a cross-origin one and needs an allow header to run at all.
+        "access-control-allow-origin": "*",
       },
     });
   } catch {

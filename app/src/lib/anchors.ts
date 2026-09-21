@@ -183,19 +183,26 @@ export interface Resolved {
   exact: boolean;
 }
 
-function rectOfRange(block: HTMLElement, from: number, to: number): DOMRect | null {
+/** A live DOM Range over a character span of a block, or null if it cannot be built. */
+function makeRange(block: HTMLElement, from: number, to: number): Range | null {
   const start = positionAt(block, from);
   const end = positionAt(block, to);
   if (!start || !end) return null;
-
-  let range: Range;
   try {
-    range = document.createRange();
+    const range = document.createRange();
     range.setStart(start.node, Math.min(start.offset, start.node.data.length));
     range.setEnd(end.node, Math.min(end.offset, end.node.data.length));
+    return range;
   } catch {
     return null;
   }
+}
+
+function rectOfRange(block: HTMLElement, from: number, to: number): DOMRect | null {
+  const range = makeRange(block, from, to);
+  if (!range) return null;
+  const end = positionAt(block, to) ?? positionAt(block, from);
+  const start = positionAt(block, from);
 
   // jsdom and other non-layout engines have no Range geometry; fall back to the
   // element that holds the text, which is close enough to hang a pin on.
@@ -205,7 +212,7 @@ function rectOfRange(block: HTMLElement, from: number, to: number): DOMRect | nu
     const rect = range.getBoundingClientRect();
     if (rect && (rect.width || rect.height || rect.top || rect.left)) return rect as DOMRect;
   }
-  const holder = end.node.parentElement ?? start.node.parentElement ?? block;
+  const holder = end?.node.parentElement ?? start?.node.parentElement ?? block;
   return holder.getBoundingClientRect();
 }
 
@@ -226,20 +233,23 @@ export function resolveAnchor(root: HTMLElement, anchor: Anchor): Resolved | nul
     }
   }
 
-  if (anchor.type === "point") {
-    if (block && anchor.context) {
-      const text = blockText(block);
+  if (anchor.type === "point" && anchor.context) {
+    // The stored block first, then the whole page. Block ids are positional, so
+    // editing anything above a comment renumbers its block and the id alone
+    // would drop the pin in the wrong place. The surrounding text still finds it.
+    for (const scope of block ? [block, root] : [root]) {
+      const text = blockText(scope);
       const index = text.indexOf(anchor.context);
-      if (index !== -1) {
-        const offset = index + Math.min(CONTEXT_CHARS, anchor.context.length);
-        const rect = rectOfRange(block, Math.max(offset - 1, 0), offset);
-        if (rect) return { rect, exact: true };
-      }
+      if (index === -1) continue;
+      const offset = index + Math.min(CONTEXT_CHARS, anchor.context.length);
+      const rect = rectOfRange(scope, Math.max(offset - 1, 0), offset);
+      if (rect) return { rect, exact: scope === block };
     }
-    if (block && typeof anchor.offset === "number") {
-      const rect = rectOfRange(block, Math.max(anchor.offset - 1, 0), anchor.offset);
-      if (rect) return { rect, exact: false };
-    }
+  }
+
+  if (anchor.type === "point" && block && typeof anchor.offset === "number") {
+    const rect = rectOfRange(block, Math.max(anchor.offset - 1, 0), anchor.offset);
+    if (rect) return { rect, exact: false };
   }
 
   if (block) {
@@ -254,7 +264,8 @@ export function resolveAnchor(root: HTMLElement, anchor: Anchor): Resolved | nul
   return null;
 }
 
-function findQuote(scope: HTMLElement, quote: string, near?: number): DOMRect | null {
+/** Where the stored quote sits in a block's text, as character offsets. */
+function locateQuote(scope: HTMLElement, quote: string, near?: number): { from: number; to: number } | null {
   const text = blockText(scope);
   if (!text) return null;
 
@@ -264,8 +275,27 @@ function findQuote(scope: HTMLElement, quote: string, near?: number): DOMRect | 
     let index = typeof near === "number" ? text.indexOf(candidate, Math.max(near - 40, 0)) : -1;
     if (index === -1) index = text.indexOf(candidate);
     if (index === -1) continue;
-    const rect = rectOfRange(scope, index, index + candidate.length);
-    if (rect) return rect;
+    return { from: index, to: index + candidate.length };
+  }
+  return null;
+}
+
+function findQuote(scope: HTMLElement, quote: string, near?: number): DOMRect | null {
+  const at = locateQuote(scope, quote, near);
+  return at ? rectOfRange(scope, at.from, at.to) : null;
+}
+
+/**
+ * A live Range over the text a comment points at, for the CSS Custom Highlight
+ * API. Only range anchors light up; a point anchor has nothing to paint.
+ */
+export function rangeForAnchor(root: HTMLElement, anchor: Anchor): Range | null {
+  if (anchor.type !== "range" || !anchor.quote) return null;
+  const block = anchor.block ? blockElement(root, anchor.block) : null;
+  for (const scope of [block, root]) {
+    if (!scope) continue;
+    const at = locateQuote(scope, anchor.quote, scope === block ? anchor.start : undefined);
+    if (at) return makeRange(scope, at.from, at.to);
   }
   return null;
 }
@@ -293,27 +323,61 @@ export interface Spot {
   flipped: boolean;
 }
 
+export interface SpotLayout {
+  /** Viewport width, for keeping the card on screen. */
+  viewportWidth: number;
+  /** Left edge of the text column in viewport coordinates. */
+  contentLeft: number;
+  /** Right edge of the text column in viewport coordinates. */
+  contentRight: number;
+  popWidth?: number;
+}
+
+const PIN_GUTTER = 34;
+
 /**
- * Turn an anchor's viewport rect into overlay coordinates. The card opens to
- * the right of the pin and flips to the left when the window has no room for
- * it there, so a comment near the right edge is never cut off.
+ * Turn an anchor's viewport rect into overlay coordinates.
+ *
+ * Pins live in the margin beside the text rather than on top of it, the way a
+ * document's margin notes do, because a pin dropped mid-sentence covers the
+ * words it is about. The card prefers the empty margin on the right, and only
+ * falls back to floating over the text when the window is too narrow for that.
  */
 export function spotFor(
   rect: { top: number; left: number; width: number; height: number },
   origin: { top: number; left: number },
   type: AnchorType,
-  viewportWidth: number,
-  popWidth = 312,
+  layout: SpotLayout,
 ): Spot {
+  const popWidth = layout.popWidth ?? 312;
   const top = rect.top - origin.top + (type === "range" ? rect.height : 0);
-  const left = rect.left - origin.left + (type === "element" ? 0 : rect.width);
-  const flipped = origin.left + left + 22 + popWidth > viewportWidth - 14;
-  const popLeft = flipped ? left - popWidth - 18 : left + 20;
+  const left = Math.max(layout.contentLeft - origin.left - PIN_GUTTER, 2);
+
+  const inRightMargin = layout.contentRight + 16;
+  const fitsRight = inRightMargin + popWidth <= layout.viewportWidth - 12;
+  const overText = origin.left + left + PIN_GUTTER;
+  const clampedOverText = Math.min(overText, layout.viewportWidth - 12 - popWidth);
+
+  const popLeftViewport = fitsRight ? inRightMargin : Math.max(clampedOverText, 12);
   return {
     top,
     left,
-    flipped,
+    flipped: !fitsRight,
     popTop: Math.max(top - 14, 4),
-    popLeft: Math.max(popLeft, 8 - origin.left),
+    popLeft: popLeftViewport - origin.left,
   };
+}
+
+/**
+ * Nudge pins apart when two anchors land on the same line, so a stack of
+ * comments in one paragraph stays clickable.
+ */
+export function spreadPins<T extends { top: number }>(pins: T[], minGap = 30): T[] {
+  const sorted = [...pins].sort((a, b) => a.top - b.top);
+  let last = -Infinity;
+  for (const pin of sorted) {
+    if (pin.top - last < minGap) pin.top = last + minGap;
+    last = pin.top;
+  }
+  return sorted;
 }

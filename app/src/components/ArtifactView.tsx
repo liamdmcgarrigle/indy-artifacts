@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   anchorForBlock,
@@ -8,8 +9,10 @@ import {
   anchorFromSelection,
   blockOf,
   describeAnchor,
+  rangeForAnchor,
   resolveAnchor,
   spotFor,
+  spreadPins,
   truncate,
   type Anchor,
   type Spot,
@@ -57,6 +60,7 @@ export interface ArtifactViewProps {
   buildLog: string | null;
   warnings: { line: number; message: string }[];
   html: string | null;
+  source: string | null;
   embedBase: string;
   framed: boolean;
   versions: VersionStub[];
@@ -94,8 +98,11 @@ export function ArtifactView(props: ArtifactViewProps) {
     (window as unknown as { __ARTIFACT_EMBED_BASE?: string }).__ARTIFACT_EMBED_BASE = props.embedBase;
   }
 
+  const router = useRouter();
+  const hideHover = useRef<number | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const pageFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   const [threads, setThreads] = useState<ThreadView[]>(props.initialThreads);
   const [showResolved, setShowResolved] = useState(false);
@@ -110,6 +117,13 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
   const [batchMessage, setBatchMessage] = useState("");
   const [panel, setPanel] = useState<"none" | "list" | "send">("none");
+  const [frameHeight, setFrameHeight] = useState(600);
+  const [hover, setHover] = useState<{ lines: [number, number]; top: number; left: number } | null>(null);
+  const [edit, setEdit] = useState<{
+    lines: [number, number];
+    text: string;
+    box: { top: number; left: number; width: number; minHeight: number };
+  } | null>(null);
 
   const isLatest = props.versionNumber === props.currentVersion;
   const visible = useMemo(
@@ -166,6 +180,14 @@ export function ArtifactView(props: ArtifactViewProps) {
     // against .stage would shift every pin by the stage padding and centring.
     const origin = inner.getBoundingClientRect();
 
+    const box = content.getBoundingClientRect();
+    const layout = {
+      viewportWidth: window.innerWidth,
+      contentLeft: box.left,
+      contentRight: box.right,
+      popWidth: POP_W,
+    };
+
     const next: Pin[] = [];
     visible.forEach((thread) => {
       if (!thread.anchor) return;
@@ -174,18 +196,46 @@ export function ArtifactView(props: ArtifactViewProps) {
       next.push({
         thread,
         exact: resolved.exact,
-        ...spotFor(resolved.rect, origin, thread.anchor.type, window.innerWidth, POP_W),
+        ...spotFor(resolved.rect, origin, thread.anchor.type, layout),
       });
     });
-    setPins(next);
+    setPins(spreadPins(next));
 
     if (draft?.anchor) {
       const resolved = resolveAnchor(content, draft.anchor);
-      setDraftSpot(resolved ? spotFor(resolved.rect, origin, draft.anchor.type, window.innerWidth, POP_W) : null);
+      setDraftSpot(resolved ? spotFor(resolved.rect, origin, draft.anchor.type, layout) : null);
     } else {
       setDraftSpot(null);
     }
   }, [visible, draft?.anchor]);
+
+  // Light up the text a comment points at. Progressive enhancement: browsers
+  // without the Custom Highlight API simply show the pins.
+  useEffect(() => {
+    const content = contentRef.current;
+    const api = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const Ctor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
+    if (!content || !api || !Ctor) return;
+
+    const quiet: Range[] = [];
+    const loud: Range[] = [];
+    for (const thread of visible) {
+      if (!thread.anchor) continue;
+      const range = rangeForAnchor(content, thread.anchor);
+      if (!range) continue;
+      (thread.id === activeId ? loud : quiet).push(range);
+    }
+
+    if (quiet.length) api.set("art-anchor", new Ctor(...quiet));
+    else api.delete("art-anchor");
+    if (loud.length) api.set("art-anchor-active", new Ctor(...loud));
+    else api.delete("art-anchor-active");
+
+    return () => {
+      api.delete("art-anchor");
+      api.delete("art-anchor-active");
+    };
+  }, [visible, activeId, threads]);
 
   useLayoutEffect(() => {
     let frame = 0;
@@ -210,8 +260,23 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      const data = event.data as { type?: string; selector?: string; text?: string; point?: { x: number; y: number } };
+      const data = event.data as {
+        type?: string;
+        selector?: string;
+        text?: string;
+        px?: number;
+        point?: { x: number; y: number };
+      };
       if (!data || typeof data !== "object") return;
+
+      // A whole-page artifact sizes itself, the way an embedded block does,
+      // rather than sitting in a fixed box with dead space under it.
+      if (data.type === "art:height" && event.source === pageFrameRef.current?.contentWindow) {
+        const px = Number(data.px);
+        if (Number.isFinite(px)) setFrameHeight(Math.min(Math.max(px, 240), 4000));
+        return;
+      }
+
       if (data.type !== "art:picked" || !contentRef.current) return;
 
       const frames = Array.from(contentRef.current.querySelectorAll("iframe"));
@@ -235,7 +300,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [props.framed]);
 
   // Keep frames in step with the colour scheme.
   useEffect(() => {
@@ -282,6 +347,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         setDraft(null);
         setActiveId(null);
         setPanel("none");
+        setHover(null);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -351,6 +417,98 @@ export function ArtifactView(props: ArtifactViewProps) {
     const y = window.scrollY + resolved.rect.top;
     if (resolved.rect.top < 90 || resolved.rect.bottom > window.innerHeight - 120) {
       window.scrollTo({ top: y - 160, behavior: "smooth" });
+    }
+  }
+
+  // ---- editing one block ---------------------------------------------------
+
+  const canEdit = isLatest && props.kind === "markdown" && props.source !== null;
+
+  function linesOfBlock(el: HTMLElement): [number, number] | null {
+    const raw = el.dataset.lines;
+    if (!raw) return null;
+    const [from, to] = raw.split("-").map(Number);
+    return Number.isFinite(from) && Number.isFinite(to) ? [from, to] : null;
+  }
+
+  /**
+   * The Edit affordance sits outside the content box, so moving the pointer
+   * towards it fires mouseleave. Hold it for a moment instead of yanking it
+   * away under the cursor.
+   */
+  function keepHover() {
+    if (hideHover.current) window.clearTimeout(hideHover.current);
+    hideHover.current = null;
+  }
+
+  function dropHover() {
+    keepHover();
+    hideHover.current = window.setTimeout(() => setHover(null), 220);
+  }
+
+  function onContentMove(event: React.MouseEvent) {
+    if (!canEdit || tool || edit) return;
+    keepHover();
+    const inner = innerRef.current;
+    const block = blockOf(event.target as Node);
+    if (!inner || !block) return setHover(null);
+    const lines = linesOfBlock(block);
+    if (!lines) return setHover(null);
+    const origin = inner.getBoundingClientRect();
+    const box = block.getBoundingClientRect();
+    setHover({ lines, top: box.top - origin.top + 2, left: box.right - origin.left + 10 });
+  }
+
+  function startEdit(lines: [number, number]) {
+    const inner = innerRef.current;
+    const content = contentRef.current;
+    if (!inner || !content || props.source === null) return;
+    const block = Array.from(content.querySelectorAll<HTMLElement>("[data-lines]")).find(
+      (el) => el.dataset.lines === `${lines[0]}-${lines[1]}`,
+    );
+    const origin = inner.getBoundingClientRect();
+    const box = (block ?? content).getBoundingClientRect();
+    const text = props.source.split("\n").slice(lines[0] - 1, lines[1]).join("\n");
+    keepHover();
+    setHover(null);
+    setActiveId(null);
+    setEdit({
+      lines,
+      text,
+      box: {
+        top: box.top - origin.top - 8,
+        left: box.left - origin.left - 10,
+        width: box.width + 20,
+        minHeight: box.height + 16,
+      },
+    });
+  }
+
+  async function saveEdit() {
+    if (!edit) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/artifacts/${props.slug}/lines`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          from: edit.lines[0],
+          to: edit.lines[1],
+          text: edit.text,
+          author_name: author,
+          expected_version: props.versionNumber,
+        }),
+      });
+      const data = (await res.json()) as { error?: { message?: string } };
+      if (!res.ok) {
+        setNotice({ kind: "bad", text: data.error?.message ?? "could not save that block" });
+        return;
+      }
+      setEdit(null);
+      setNotice({ kind: "good", text: "Saved as a new version." });
+      router.refresh();
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -599,19 +757,26 @@ export function ArtifactView(props: ArtifactViewProps) {
             className="art-content"
             ref={contentRef}
             onMouseUp={onContentMouseUp}
+            onMouseMove={onContentMove}
+            onMouseLeave={dropHover}
             onDoubleClick={commentOnBlock}
           >
             {props.framed ? (
               <div className="framewrap" data-block="b0" data-lines="1-1">
                 <iframe
+                  ref={pageFrameRef}
                   src={`${props.embedBase}/page`}
                   sandbox="allow-scripts"
                   title={props.title}
-                  style={{ height: 600 }}
+                  style={{ height: frameHeight }}
                   onLoad={(e) => {
                     const frame = e.currentTarget;
                     const scheme = document.documentElement.getAttribute("data-scheme") ?? "light";
                     frame.contentWindow?.postMessage({ type: "art:scheme", scheme }, "*");
+                    // A frame reports its height once and then only when it
+                    // changes, so a first report that landed before this
+                    // listener existed would leave the frame at its default.
+                    frame.contentWindow?.postMessage({ type: "art:measure" }, "*");
                   }}
                 />
               </div>
@@ -707,6 +872,51 @@ export function ArtifactView(props: ArtifactViewProps) {
             ) : null}
           </div>
 
+          {hover && !edit ? (
+            <button
+              className="blockedit"
+              style={{ top: hover.top, left: hover.left }}
+              onMouseEnter={keepHover}
+              onMouseLeave={dropHover}
+              onClick={() => startEdit(hover.lines)}
+              title={`Edit lines ${hover.lines[0]}-${hover.lines[1]}`}
+            >
+              Edit
+            </button>
+          ) : null}
+
+          {edit ? (
+            <div
+              className="inline-edit"
+              style={{ top: edit.box.top, left: edit.box.left, width: edit.box.width }}
+            >
+              <textarea
+                autoFocus
+                spellCheck
+                value={edit.text}
+                style={{ minHeight: edit.box.minHeight }}
+                onChange={(e) => setEdit({ ...edit, text: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void saveEdit();
+                  if (e.key === "Escape") setEdit(null);
+                }}
+              />
+              <div className="inline-edit__bar">
+                <span className="tiny">
+                  lines {edit.lines[0]}-{edit.lines[1]} · saves a new version
+                </span>
+                <span style={{ display: "flex", gap: 6 }}>
+                  <button className="btn btn--ghost" onClick={() => setEdit(null)}>
+                    Cancel
+                  </button>
+                  <button className="btn btn--primary" onClick={saveEdit} disabled={busy}>
+                    Save
+                  </button>
+                </span>
+              </div>
+            </div>
+          ) : null}
+
           {bubble ? (
             <div className="bubble" style={{ top: bubble.top, left: bubble.left }}>
               <button
@@ -747,7 +957,7 @@ function ThreadCard({
   onReply: (text: string) => void;
 }) {
   return (
-    <div className="card">
+    <div className="pop__card">
       <div className="pop__head">
         <span className={thread.authorKind === "agent" ? "avatar avatar--agent" : "avatar"}>
           {initials(thread.authorName)}

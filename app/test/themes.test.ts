@@ -7,13 +7,18 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const themesDir = resolve(repoRoot, "themes");
 const primitivesCss = resolve(repoRoot, "packages/primitives/src/primitives.css");
 
-/** The token contract every theme has to define, in both schemes. */
-const TOKENS = [
+/**
+ * Tokens that change with the colour scheme. Every theme declares these twice,
+ * once light and once dark.
+ */
+const SCHEME_TOKENS = [
   "--art-bg",
   "--art-surface",
   "--art-surface-2",
+  "--art-surface-3",
   "--art-border",
   "--art-border-strong",
+  "--art-hairline",
   "--art-text",
   "--art-text-muted",
   "--art-text-faint",
@@ -22,6 +27,8 @@ const TOKENS = [
   "--art-accent-wash",
   "--art-on-accent",
   "--art-link",
+  "--art-focus",
+  "--art-selection",
   "--art-good",
   "--art-good-wash",
   "--art-warn",
@@ -30,12 +37,10 @@ const TOKENS = [
   "--art-bad-wash",
   "--art-info",
   "--art-info-wash",
-  "--art-font-sans",
-  "--art-font-mono",
-  "--art-font-size",
-  "--art-radius",
-  "--art-radius-lg",
+  "--art-shadow-sm",
   "--art-shadow",
+  "--art-shadow-md",
+  "--art-shadow-lg",
   "--art-chart-1",
   "--art-chart-2",
   "--art-chart-3",
@@ -43,6 +48,33 @@ const TOKENS = [
   "--art-chart-5",
   "--art-chart-6",
 ];
+
+/**
+ * Type, rhythm and shape. A colour scheme does not change these, so they are
+ * declared once on :root and the dark block inherits them.
+ */
+const SHAPE_TOKENS = [
+  "--art-font-sans",
+  "--art-font-serif",
+  "--art-font-mono",
+  "--art-font-display",
+  "--art-font-body",
+  "--art-font-size",
+  "--art-line-height",
+  "--art-measure",
+  "--art-space-1",
+  "--art-space-2",
+  "--art-space-3",
+  "--art-space-4",
+  "--art-space-5",
+  "--art-space-6",
+  "--art-radius-sm",
+  "--art-radius",
+  "--art-radius-lg",
+  "--art-radius-xl",
+];
+
+const TOKENS = [...SCHEME_TOKENS, ...SHAPE_TOKENS];
 
 /** Tokens the primitives set themselves rather than taking from a theme. */
 const LOCAL_TOKENS = ["--art-cols"];
@@ -92,9 +124,9 @@ describe("themes", () => {
       expect([...TOKENS].filter((t) => !names.has(t))).toEqual([]);
     });
 
-    it("defines the full token contract in the dark block", () => {
+    it("defines every scheme token in the dark block", () => {
       const names = declared(dark ?? "");
-      expect([...TOKENS].filter((t) => !names.has(t))).toEqual([]);
+      expect([...SCHEME_TOKENS].filter((t) => !names.has(t))).toEqual([]);
     });
 
     it("declares color-scheme in both blocks", () => {

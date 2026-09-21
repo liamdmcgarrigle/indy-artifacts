@@ -1,43 +1,74 @@
-/* Theme: picaflick — the product's own palette, lifted from its Flutter theme.
-   Picaflick is dark-first, but the file keeps the same shape as every other
-   theme: light on :root, dark under [data-scheme="dark"]. */
+/* Theme: picaflick — the product's own palette and typeface, lifted from its
+   Flutter theme. Picaflick is dark-first, but the file keeps the same shape as
+   every other theme: light on :root, dark under [data-scheme="dark"]. */
 
 :root {
   color-scheme: light;
 
+  /* --- type ------------------------------------------------------------ */
+  --art-font-sans: "Nunito Sans", system-ui, -apple-system, sans-serif;
+  --art-font-serif: "Source Serif 4", Georgia, serif;
+  --art-font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --art-font-display: var(--art-font-sans);
+  /* A product UI, not a document: one sans throughout. */
+  --art-font-body: var(--art-font-sans);
+  --art-font-size: 15.5px;
+  --art-line-height: 1.6;
+  --art-measure: 72ch;
+
+  /* --- rhythm and shape ------------------------------------------------ */
+  --art-space-1: 4px;
+  --art-space-2: 8px;
+  --art-space-3: 12px;
+  --art-space-4: 16px;
+  --art-space-5: 24px;
+  --art-space-6: 40px;
+
+  --art-radius-sm: 8px;
+  --art-radius: 12px;
+  --art-radius-lg: 16px;
+  --art-radius-xl: 22px;
+
+  /* --- surfaces -------------------------------------------------------- */
   --art-bg: #F4F7FB;
   --art-surface: #FFFFFF;
   --art-surface-2: #E9EEF5;
+  --art-surface-3: #DDE5F0;
   --art-border: rgba(13, 17, 23, 0.10);
   --art-border-strong: rgba(13, 17, 23, 0.20);
+  --art-hairline: rgba(13, 17, 23, 0.07);
 
+  /* --- ink ------------------------------------------------------------- */
   --art-text: #0D1117;
   --art-text-muted: rgba(13, 17, 23, 0.70);
   --art-text-faint: rgba(13, 17, 23, 0.45);
 
+  /* --- accent ---------------------------------------------------------- */
   --art-accent: #2A71CE;
-  --art-accent-hover: #5A9AE6;
-  --art-accent-wash: rgba(42, 113, 206, 0.15);
+  --art-accent-hover: #1F5AA8;
+  --art-accent-wash: rgba(42, 113, 206, 0.13);
   --art-on-accent: #FFFFFF;
   --art-link: #2A71CE;
+  --art-focus: #2A71CE;
+  --art-selection: rgba(42, 113, 206, 0.22);
 
-  --art-good: #4CAF7D;
+  /* --- status ---------------------------------------------------------- */
+  --art-good: #2E8B5D;
   --art-good-wash: rgba(76, 175, 125, 0.15);
-  --art-warn: #E5A84C;
-  --art-warn-wash: rgba(229, 168, 76, 0.15);
-  --art-bad: #E55050;
+  --art-warn: #9A6B18;
+  --art-warn-wash: rgba(229, 168, 76, 0.18);
+  --art-bad: #C33B3B;
   --art-bad-wash: rgba(229, 80, 80, 0.15);
-  --art-info: #5A9AE6;
+  --art-info: #2A71CE;
   --art-info-wash: rgba(90, 154, 230, 0.15);
 
-  --art-font-sans: "Nunito Sans", system-ui, -apple-system, sans-serif;
-  --art-font-mono: ui-monospace, Menlo, Consolas, monospace;
-  --art-font-size: 15px;
+  /* --- elevation ------------------------------------------------------- */
+  --art-shadow-sm: 0 1px 2px rgba(13, 17, 23, 0.06);
+  --art-shadow: 0 1px 2px rgba(13, 17, 23, 0.06), 0 3px 8px -3px rgba(13, 17, 23, 0.12);
+  --art-shadow-md: 0 2px 6px -2px rgba(13, 17, 23, 0.08), 0 12px 28px -10px rgba(13, 17, 23, 0.18);
+  --art-shadow-lg: 0 8px 16px -8px rgba(13, 17, 23, 0.12), 0 32px 60px -18px rgba(13, 17, 23, 0.28);
 
-  --art-radius: 12px;
-  --art-radius-lg: 16px;
-  --art-shadow: 0 1px 2px rgba(13, 17, 23, .06), 0 10px 24px -16px rgba(13, 17, 23, .25);
-
+  /* --- data ------------------------------------------------------------ */
   --art-chart-1: #2A71CE;
   --art-chart-2: #4CAF7D;
   --art-chart-3: #E5A84C;
@@ -52,18 +83,22 @@
   --art-bg: #000000;
   --art-surface: #0D1117;
   --art-surface-2: #151B23;
+  --art-surface-3: #1D242E;
   --art-border: rgba(255, 255, 255, 0.08);
   --art-border-strong: rgba(255, 255, 255, 0.16);
+  --art-hairline: rgba(255, 255, 255, 0.06);
 
   --art-text: #FFFFFF;
   --art-text-muted: rgba(255, 255, 255, 0.70);
   --art-text-faint: rgba(255, 255, 255, 0.45);
 
-  --art-accent: #2A71CE;
-  --art-accent-hover: #5A9AE6;
-  --art-accent-wash: rgba(42, 113, 206, 0.15);
-  --art-on-accent: #FFFFFF;
+  --art-accent: #5A9AE6;
+  --art-accent-hover: #7FB4EF;
+  --art-accent-wash: rgba(42, 113, 206, 0.22);
+  --art-on-accent: #04101F;
   --art-link: #5A9AE6;
+  --art-focus: #5A9AE6;
+  --art-selection: rgba(90, 154, 230, 0.28);
 
   --art-good: #4CAF7D;
   --art-good-wash: rgba(76, 175, 125, 0.15);
@@ -74,18 +109,15 @@
   --art-info: #5A9AE6;
   --art-info-wash: rgba(90, 154, 230, 0.15);
 
-  --art-font-sans: "Nunito Sans", system-ui, -apple-system, sans-serif;
-  --art-font-mono: ui-monospace, Menlo, Consolas, monospace;
-  --art-font-size: 15px;
+  --art-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.50);
+  --art-shadow: 0 1px 2px rgba(0, 0, 0, 0.50), 0 3px 10px -3px rgba(0, 0, 0, 0.70);
+  --art-shadow-md: 0 2px 8px -2px rgba(0, 0, 0, 0.60), 0 14px 32px -12px rgba(0, 0, 0, 0.80);
+  --art-shadow-lg: 0 10px 20px -10px rgba(0, 0, 0, 0.70), 0 36px 68px -20px rgba(0, 0, 0, 0.90);
 
-  --art-radius: 12px;
-  --art-radius-lg: 16px;
-  --art-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 28px -16px rgba(0, 0, 0, .8);
-
-  --art-chart-1: #2A71CE;
+  --art-chart-1: #5A9AE6;
   --art-chart-2: #4CAF7D;
   --art-chart-3: #E5A84C;
-  --art-chart-4: #5A9AE6;
+  --art-chart-4: #9B7BE6;
   --art-chart-5: #E55050;
   --art-chart-6: #8A8F98;
 }

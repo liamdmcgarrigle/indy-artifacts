@@ -1,89 +1,124 @@
-/* Theme: default — warm-grey paper, blue accent. */
+/* Theme: default — warm paper, ink blue accent, editorial type.
+   Shape, rhythm and typeface tokens are declared once on :root and inherited by
+   the dark block, which redefines only what a colour scheme actually changes. */
 
 :root {
   color-scheme: light;
 
-  --art-bg: #F7F7F5;
+  /* --- type ------------------------------------------------------------ */
+  /* Served from this origin, see app/public/fonts. Sandbox frames have no
+     network, so a webfont has to come from here or not at all. */
+  --art-font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --art-font-serif: "Source Serif 4", Iowan Old Style, Georgia, serif;
+  --art-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --art-font-display: var(--art-font-sans);
+  --art-font-body: var(--art-font-serif);
+  --art-font-size: 16.5px;
+  --art-line-height: 1.62;
+  --art-measure: 68ch;
+
+  /* --- rhythm and shape ------------------------------------------------ */
+  --art-space-1: 4px;
+  --art-space-2: 8px;
+  --art-space-3: 12px;
+  --art-space-4: 16px;
+  --art-space-5: 24px;
+  --art-space-6: 40px;
+
+  --art-radius-sm: 6px;
+  --art-radius: 10px;
+  --art-radius-lg: 14px;
+  --art-radius-xl: 20px;
+
+  /* --- surfaces -------------------------------------------------------- */
+  --art-bg: #FAF9F7;
   --art-surface: #FFFFFF;
-  --art-surface-2: #F0F0EE;
-  --art-border: #E3E3E0;
-  --art-border-strong: #CFCFCB;
+  --art-surface-2: #F2F0EC;
+  --art-surface-3: #E9E6E0;
+  --art-border: #E6E2DA;
+  --art-border-strong: #D2CDC2;
+  --art-hairline: rgba(25, 24, 20, 0.07);
 
-  --art-text: #1B1B1A;
-  --art-text-muted: #5F5F5B;
-  --art-text-faint: #8A8A85;
+  /* --- ink ------------------------------------------------------------- */
+  --art-text: #191814;
+  --art-text-muted: #666158;
+  --art-text-faint: #948E82;
 
-  --art-accent: #2563EB;
-  --art-accent-hover: #1D4ED8;
-  --art-accent-wash: #E6EDFD;
+  /* --- accent ---------------------------------------------------------- */
+  --art-accent: #2A50D6;
+  --art-accent-hover: #1E3EB4;
+  --art-accent-wash: #EBEFFD;
   --art-on-accent: #FFFFFF;
-  --art-link: #2563EB;
+  --art-link: #2148CC;
+  --art-focus: #2A50D6;
+  --art-selection: #D9E2FB;
 
-  --art-good: #15803D;
-  --art-good-wash: #E4F2E8;
-  --art-warn: #B45309;
-  --art-warn-wash: #FBF0DF;
-  --art-bad: #B91C1C;
-  --art-bad-wash: #FBE7E7;
-  --art-info: #1D4ED8;
-  --art-info-wash: #E6EDFD;
+  /* --- status ---------------------------------------------------------- */
+  --art-good: #1D7A4C;
+  --art-good-wash: #E4F3EA;
+  --art-warn: #9A5B04;
+  --art-warn-wash: #FAEEDC;
+  --art-bad: #B3251D;
+  --art-bad-wash: #FBE9E7;
+  --art-info: #2148CC;
+  --art-info-wash: #EBEFFD;
 
-  --art-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --art-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --art-font-size: 15px;
+  /* --- elevation ------------------------------------------------------- */
+  --art-shadow-sm: 0 1px 2px rgba(25, 24, 20, 0.06);
+  --art-shadow: 0 1px 2px rgba(25, 24, 20, 0.05), 0 2px 6px -2px rgba(25, 24, 20, 0.08);
+  --art-shadow-md: 0 2px 4px -2px rgba(25, 24, 20, 0.06), 0 10px 24px -8px rgba(25, 24, 20, 0.12);
+  --art-shadow-lg: 0 6px 12px -6px rgba(25, 24, 20, 0.10), 0 28px 56px -16px rgba(25, 24, 20, 0.20);
 
-  --art-radius: 8px;
-  --art-radius-lg: 12px;
-  --art-shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 8px 24px -16px rgba(0, 0, 0, .18);
-
-  --art-chart-1: #2563EB;
-  --art-chart-2: #0D9488;
-  --art-chart-3: #D97706;
-  --art-chart-4: #7C3AED;
-  --art-chart-5: #DB2777;
-  --art-chart-6: #64748B;
+  /* --- data ------------------------------------------------------------ */
+  --art-chart-1: #2A50D6;
+  --art-chart-2: #0F8A7E;
+  --art-chart-3: #C77A00;
+  --art-chart-4: #7A45D0;
+  --art-chart-5: #C0407A;
+  --art-chart-6: #5E6672;
 }
 
 :root[data-scheme="dark"] {
   color-scheme: dark;
 
-  --art-bg: #111113;
-  --art-surface: #1A1A1E;
-  --art-surface-2: #232329;
-  --art-border: #2E2E36;
-  --art-border-strong: #3C3C46;
+  --art-bg: #0E0E10;
+  --art-surface: #151518;
+  --art-surface-2: #1D1D22;
+  --art-surface-3: #26262C;
+  --art-border: #28282F;
+  --art-border-strong: #3A3A44;
+  --art-hairline: rgba(255, 255, 255, 0.07);
 
-  --art-text: #EDEDEF;
-  --art-text-muted: #A0A0A8;
-  --art-text-faint: #71717A;
+  --art-text: #ECEAE6;
+  --art-text-muted: #A19C94;
+  --art-text-faint: #75716A;
 
-  --art-accent: #5B8DEF;
-  --art-accent-hover: #7BA4F5;
-  --art-accent-wash: #1B2740;
-  --art-on-accent: #0B1220;
-  --art-link: #7BA4F5;
+  --art-accent: #7E9CFF;
+  --art-accent-hover: #9BB2FF;
+  --art-accent-wash: #1A2040;
+  --art-on-accent: #0B1020;
+  --art-link: #94ACFF;
+  --art-focus: #7E9CFF;
+  --art-selection: #23305C;
 
-  --art-good: #4ADE80;
-  --art-good-wash: #14301F;
-  --art-warn: #FBBF24;
-  --art-warn-wash: #33270B;
-  --art-bad: #F87171;
-  --art-bad-wash: #3A1A1A;
-  --art-info: #7BA4F5;
-  --art-info-wash: #1B2740;
+  --art-good: #4FCE8A;
+  --art-good-wash: #10301F;
+  --art-warn: #F0B34A;
+  --art-warn-wash: #33260C;
+  --art-bad: #F08078;
+  --art-bad-wash: #391A18;
+  --art-info: #94ACFF;
+  --art-info-wash: #1A2040;
 
-  --art-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --art-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --art-font-size: 15px;
+  --art-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --art-shadow: 0 1px 2px rgba(0, 0, 0, 0.40), 0 2px 8px -2px rgba(0, 0, 0, 0.55);
+  --art-shadow-md: 0 2px 6px -2px rgba(0, 0, 0, 0.50), 0 12px 28px -10px rgba(0, 0, 0, 0.70);
+  --art-shadow-lg: 0 8px 16px -8px rgba(0, 0, 0, 0.55), 0 32px 64px -20px rgba(0, 0, 0, 0.85);
 
-  --art-radius: 8px;
-  --art-radius-lg: 12px;
-  --art-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 28px -16px rgba(0, 0, 0, .7);
-
-  --art-chart-1: #5B8DEF;
-  --art-chart-2: #2DD4BF;
-  --art-chart-3: #FBBF24;
-  --art-chart-4: #A78BFA;
-  --art-chart-5: #F472B6;
-  --art-chart-6: #94A3B8;
+  --art-chart-1: #7E9CFF;
+  --art-chart-2: #2FD4BE;
+  --art-chart-3: #F0B34A;
+  --art-chart-4: #B79BFF;
+  --art-chart-5: #F284B4;
+  --art-chart-6: #97A0AC;
 }

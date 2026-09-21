@@ -17,7 +17,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: SCHEME_BOOT }} />
+        {/* Themes name typefaces; this is what actually loads them. Served from
+            this origin because sandbox frames have no network. */}
+        <link rel="preconnect" href="/fonts" />
+        <link rel="stylesheet" href="/fonts/fonts.css" />
         <link rel="stylesheet" href="/primitives/primitives.css" />
+        <link rel="stylesheet" href="/highlight.css" />
       </head>
       <body>{children}</body>
     </html>

@@ -1,24 +1,56 @@
-/* Theme: backup-studio — warm paper stock, oxblood accent. */
+/* Theme: backup-studio — warm paper stock, oxblood accent, grotesk headings
+   over a serif text face. Built for long operational reports. */
 
 :root {
   color-scheme: light;
 
+  /* --- type ------------------------------------------------------------ */
+  --art-font-sans: "Manrope", "Helvetica Neue", Arial, sans-serif;
+  --art-font-serif: "Source Serif 4", Iowan Old Style, Georgia, serif;
+  --art-font-mono: "JetBrains Mono", Menlo, Consolas, monospace;
+  --art-font-display: var(--art-font-sans);
+  --art-font-body: var(--art-font-serif);
+  --art-font-size: 16.5px;
+  --art-line-height: 1.65;
+  --art-measure: 66ch;
+
+  /* --- rhythm and shape ------------------------------------------------ */
+  --art-space-1: 4px;
+  --art-space-2: 8px;
+  --art-space-3: 12px;
+  --art-space-4: 16px;
+  --art-space-5: 24px;
+  --art-space-6: 40px;
+
+  --art-radius-sm: 4px;
+  --art-radius: 7px;
+  --art-radius-lg: 10px;
+  --art-radius-xl: 14px;
+
+  /* --- surfaces -------------------------------------------------------- */
   --art-bg: #F3EEE4;
   --art-surface: #FAF7F1;
   --art-surface-2: #EDE6D9;
+  --art-surface-3: #E3DACA;
   --art-border: #DDD5C6;
   --art-border-strong: #C9BFAC;
+  --art-hairline: rgba(35, 32, 28, 0.09);
 
+  /* --- ink ------------------------------------------------------------- */
   --art-text: #22201C;
   --art-text-muted: #6F685A;
   --art-text-faint: #938B7B;
 
+  /* --- accent ---------------------------------------------------------- */
   --art-accent: #5D0B0B;
   --art-accent-hover: #4A0909;
   --art-accent-wash: #F0DDD9;
   --art-on-accent: #F3EEE4;
   --art-link: #5D0B0B;
+  --art-focus: #5D0B0B;
+  --art-selection: #EBD8CF;
 
+  /* --- status ---------------------------------------------------------- */
   --art-good: #395D0B;
   --art-good-wash: #E3E8D6;
   --art-warn: #8A5A0B;
@@ -28,14 +60,13 @@
   --art-info: #3B4A5D;
   --art-info-wash: #DFE5EC;
 
-  --art-font-sans: "Manrope", "Helvetica Neue", Arial, sans-serif;
-  --art-font-mono: "DM Mono", Menlo, Consolas, monospace;
-  --art-font-size: 15px;
+  /* --- elevation ------------------------------------------------------- */
+  --art-shadow-sm: 0 1px 2px rgba(35, 32, 28, 0.07);
+  --art-shadow: 0 1px 2px rgba(35, 32, 28, 0.06), 0 2px 6px -2px rgba(35, 32, 28, 0.10);
+  --art-shadow-md: 0 2px 5px -2px rgba(35, 32, 28, 0.08), 0 10px 24px -8px rgba(35, 32, 28, 0.16);
+  --art-shadow-lg: 0 6px 14px -6px rgba(35, 32, 28, 0.12), 0 28px 56px -16px rgba(35, 32, 28, 0.26);
 
-  --art-radius: 8px;
-  --art-radius-lg: 10px;
-  --art-shadow: 0 1px 2px rgba(35, 32, 28, 0.06), 0 10px 24px -14px rgba(35, 32, 28, 0.22);
-
+  /* --- data ------------------------------------------------------------ */
   --art-chart-1: #5D0B0B;
   --art-chart-2: #395D0B;
   --art-chart-3: #8A5A0B;
@@ -50,39 +81,40 @@
   --art-bg: #1C1916;
   --art-surface: #262220;
   --art-surface-2: #302A26;
+  --art-surface-3: #3A332D;
   --art-border: #3D3631;
   --art-border-strong: #4E463F;
+  --art-hairline: rgba(241, 235, 224, 0.08);
 
   --art-text: #F1EBE0;
   --art-text-muted: #A79E90;
   --art-text-faint: #7E766A;
 
-  --art-accent: #7A1C1C;
-  --art-accent-hover: #8E2424;
+  --art-accent: #C56B63;
+  --art-accent-hover: #D88179;
   --art-accent-wash: #3A201F;
-  --art-on-accent: #F3EEE4;
+  --art-on-accent: #1C1916;
   --art-link: #E39C96;
+  --art-focus: #C56B63;
+  --art-selection: #4A2B28;
 
-  --art-good: #4A7413;
+  --art-good: #8CB84A;
   --art-good-wash: #243019;
-  --art-warn: #B98A2E;
+  --art-warn: #D9A548;
   --art-warn-wash: #33280F;
   --art-bad: #E39C96;
   --art-bad-wash: #3A201F;
   --art-info: #8FA3BD;
   --art-info-wash: #1F2833;
 
-  --art-font-sans: "Manrope", "Helvetica Neue", Arial, sans-serif;
-  --art-font-mono: "DM Mono", Menlo, Consolas, monospace;
-  --art-font-size: 15px;
+  --art-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --art-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 3px 10px -3px rgba(0, 0, 0, 0.55);
+  --art-shadow-md: 0 2px 6px -2px rgba(0, 0, 0, 0.45), 0 14px 32px -12px rgba(0, 0, 0, 0.70);
+  --art-shadow-lg: 0 10px 20px -10px rgba(0, 0, 0, 0.55), 0 36px 64px -20px rgba(0, 0, 0, 0.85);
 
-  --art-radius: 8px;
-  --art-radius-lg: 10px;
-  --art-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
-
-  --art-chart-1: #A34A4A;
-  --art-chart-2: #6F9E2E;
-  --art-chart-3: #B98A2E;
+  --art-chart-1: #C56B63;
+  --art-chart-2: #8CB84A;
+  --art-chart-3: #D9A548;
   --art-chart-4: #8FA3BD;
   --art-chart-5: #B57BA0;
   --art-chart-6: #A79E90;

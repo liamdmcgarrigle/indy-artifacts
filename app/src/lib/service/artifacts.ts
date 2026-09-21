@@ -475,6 +475,44 @@ export async function createHumanVersion(
   );
 }
 
+/**
+ * Replace one run of source lines and publish the result as a new version.
+ *
+ * This is what editing a single block on the page does. Only the lines the
+ * block occupies are rewritten, so the rest of the document keeps its exact
+ * bytes and a diff shows the one change rather than a reformat.
+ */
+export async function patchLines(
+  ctx: ServiceContext,
+  slug: string,
+  input: { from: number; to: number; text: string; authorName: string; expectedVersion: number },
+): Promise<PublishResult> {
+  const artifact = requireArtifact(ctx, slug);
+  if (artifact.kind !== "markdown")
+    throw new ValidationError("only markdown artifacts can be edited a block at a time");
+
+  const previous = requireVersion(ctx, artifact);
+  const source = previous.source ?? "";
+  const lines = source.split("\n");
+
+  const from = Math.floor(input.from);
+  const to = Math.floor(input.to);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < from)
+    throw new ValidationError("line range must be two positive line numbers, low to high");
+  if (from > lines.length)
+    throw new ValidationError(`this artifact has ${lines.length} lines; line ${from} is past the end`);
+
+  const replacement = input.text.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n");
+  const next = [...lines.slice(0, from - 1), ...replacement, ...lines.slice(Math.min(to, lines.length))];
+
+  return createHumanVersion(ctx, slug, {
+    source: next.join("\n"),
+    message: from === to ? `edited line ${from}` : `edited lines ${from}-${to}`,
+    authorName: input.authorName,
+    expectedVersion: input.expectedVersion,
+  });
+}
+
 export function versionText(version: Version): string {
   if (version.source !== null) return version.source;
   if (!version.files) return "";

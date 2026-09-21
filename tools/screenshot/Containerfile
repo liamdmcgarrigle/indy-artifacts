@@ -1,0 +1,8 @@
+# Headless Chromium for looking at the viewer. The Playwright image ships the
+# browsers and has an arm64 manifest, which the host needs.
+FROM mcr.microsoft.com/playwright:v1.56.0-noble
+WORKDIR /app
+# A local install, not -g: ESM resolution walks up from /app/shot.mjs.
+RUN npm init -y >/dev/null && npm install playwright@1.56.0
+COPY shot.mjs /app/shot.mjs
+ENTRYPOINT ["node", "/app/shot.mjs"]
