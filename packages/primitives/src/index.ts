@@ -441,26 +441,59 @@ class ArtChart extends ArtElement {
           ]
         : spec.y.map((key, i) => {
             const color = palette[i % palette.length];
+            const bar = type === "bar";
+            // In a stack only the segment on top gets the rounded cap,
+            // otherwise every joint in the column shows a notch.
+            const stacked = bar && spec.stacked === true;
+            const capped = !stacked || i === spec.y.length - 1;
             return {
               label: key,
               data:
                 spec.type === "scatter"
                   ? spec.data.map((row) => ({ x: toNumber(row[spec.x]), y: toNumber(row[key]) }))
                   : spec.data.map((row) => toNumber(row[key])),
-              borderColor: color,
-              backgroundColor: type === "bar" || isArea ? translucent(color) : color,
-              borderWidth: 2,
+              borderColor: bar ? "transparent" : color,
+              // A solid bar reads as one shape; an outlined wash reads as a box
+              // with something in it.
+              backgroundColor: bar ? color : isArea ? translucent(color) : color,
+              borderWidth: bar ? 0 : 2,
+              borderRadius: bar && capped ? { topLeft: 5, topRight: 5, bottomLeft: 0, bottomRight: 0 } : 0,
+              borderSkipped: false,
+              maxBarThickness: 52,
+              categoryPercentage: 0.74,
+              barPercentage: 0.86,
               fill: isArea,
-              tension: isArea || type === "line" ? 0.25 : 0,
-              pointRadius: type === "line" ? 2 : 3,
+              tension: isArea || type === "line" ? 0.32 : 0,
+              pointRadius: type === "line" || isArea ? 0 : 3,
+              pointHoverRadius: 4,
+              hoverBackgroundColor: bar ? color : undefined,
+              hoverBorderColor: color,
             };
           });
 
-      const axis = {
-        stacked: spec.stacked === true,
-        ticks: { color: muted, font: { family: font } },
-        grid: { color: border, drawBorder: false },
-        border: { color: border },
+      // Grid lines are scaffolding, not content: keep the horizontal ones as
+      // hairlines, drop the vertical ones and the axis frame entirely.
+      const tickFont = { family: font, size: 11, weight: 500 as const };
+      const scales = {
+        x: {
+          stacked: spec.stacked === true,
+          ticks: { color: muted, font: tickFont, padding: 6, autoSkipPadding: 12 },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          stacked: spec.stacked === true,
+          beginAtZero: true,
+          ticks: {
+            color: muted,
+            font: tickFont,
+            padding: 8,
+            maxTicksLimit: 6,
+            callback: (value: unknown) => `${value}${unit}`,
+          },
+          grid: { color: border, lineWidth: 1, drawTicks: false },
+          border: { display: false, dash: [3, 4] },
+        },
       };
 
       const { default: Chart } = await import("chart.js/auto");
@@ -472,10 +505,22 @@ class ArtChart extends ArtElement {
           responsive: true,
           maintainAspectRatio: false,
           animation: false,
+          layout: { padding: { top: 4, right: 4 } },
+          interaction: { mode: "index" as const, intersect: false },
           plugins: {
             legend: {
               display: isRound || spec.y.length > 1,
-              labels: { color: muted, font: { family: font }, boxWidth: 12, usePointStyle: true },
+              position: "top" as const,
+              align: "start" as const,
+              labels: {
+                color: muted,
+                font: { family: font, size: 11.5 },
+                boxWidth: 7,
+                boxHeight: 7,
+                padding: 14,
+                usePointStyle: true,
+                pointStyle: "circle" as const,
+              },
             },
             tooltip: {
               backgroundColor: surface,
@@ -483,6 +528,14 @@ class ArtChart extends ArtElement {
               bodyColor: muted,
               borderColor: border,
               borderWidth: 1,
+              padding: 10,
+              cornerRadius: 8,
+              titleFont: { family: font, size: 12, weight: 600 as const },
+              bodyFont: { family: font, size: 12 },
+              bodySpacing: 5,
+              boxWidth: 7,
+              boxHeight: 7,
+              usePointStyle: true,
               callbacks: {
                 label: (item: { dataset?: { label?: string }; label?: string; formattedValue: string }) => {
                   const name = isRound ? item.label : item.dataset?.label;
@@ -491,7 +544,7 @@ class ArtChart extends ArtElement {
               },
             },
           },
-          scales: isRound ? undefined : { x: axis, y: axis },
+          scales: isRound ? undefined : scales,
         } as never,
       }) as unknown as { destroy?: () => void };
     } catch {
@@ -503,7 +556,9 @@ class ArtChart extends ArtElement {
 
 /* ------------------------------------------------------------------- embed */
 
-const EMBED_MIN = 60;
+// The frame reports the height of its content, so the floor only has to keep a
+// frame that reported nothing from collapsing out of sight.
+const EMBED_MIN = 24;
 const EMBED_MAX = 4000;
 
 class ArtEmbed extends ArtElement {
@@ -535,6 +590,12 @@ class ArtEmbed extends ArtElement {
     frame.style.height = "120px";
     frame.style.border = "0";
     frame.style.display = "block";
+    // The frame reports its height once and then only when it changes, so ask
+    // again on load rather than trusting the first report to have found a
+    // listener.
+    frame.addEventListener("load", () => {
+      frame.contentWindow?.postMessage({ type: "art:measure" }, "*");
+    });
 
     this.#frame = frame;
     this.appendChild(frame);

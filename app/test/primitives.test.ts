@@ -361,7 +361,7 @@ describe("art-embed", () => {
     expect(frame.style.height).toBe("320px");
 
     post({ type: "art:height", px: 10 });
-    expect(frame.style.height).toBe("60px");
+    expect(frame.style.height).toBe("24px");
 
     post({ type: "art:height", px: 99999 });
     expect(frame.style.height).toBe("4000px");

@@ -9,18 +9,27 @@
 
 /* ------------------------------------------------------------ content base */
 
+/*
+ * Two widths, one column. Prose is held at the measure because long lines are
+ * hard to read; tables, charts, counters and column layouts run to the full
+ * width because squeezing data into a text column wastes the page. Everything
+ * shares a left edge, so the comment pins in the margin stay beside the text.
+ */
 .art-content {
   box-sizing: border-box;
-  max-width: 74ch;
+  max-width: 900px;
   margin-inline: auto;
   padding-inline: 16px;
-  font-family: var(--art-font-sans);
+  /* Prose runs in the theme's body face; chrome, data and labels stay sans. */
+  font-family: var(--art-font-body);
   font-size: var(--art-font-size);
-  line-height: 1.6;
+  line-height: var(--art-line-height);
   color: var(--art-text);
   overflow-wrap: break-word;
   -webkit-text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
+  font-optical-sizing: auto;
+  font-variant-numeric: proportional-nums;
 }
 
 .art-content *,
@@ -37,45 +46,75 @@
   margin-bottom: 0;
 }
 
+/* Held at the measure. */
+.art-content > p,
+.art-content > h1,
+.art-content > h2,
+.art-content > h3,
+.art-content > h4,
+.art-content > ul,
+.art-content > ol,
+.art-content > blockquote,
+.art-content > art-callout,
+.art-content > art-card,
+.art-content > art-details,
+.art-content > pre:not(:has(> art-chart)):not(:has(> art-table)):not(:has(> art-embed)) {
+  max-width: var(--art-measure);
+}
+
 /* Headings ---------------------------------------------------------------- */
 
+/* A heading belongs to what follows it, so the space above is roughly three
+   times the space below. No rules under headings: weight and air do that job. */
 .art-content h1,
 .art-content h2,
 .art-content h3,
 .art-content h4 {
-  margin: 1.8em 0 0.6em;
-  font-weight: 650;
-  line-height: 1.25;
-  letter-spacing: -0.012em;
+  font-family: var(--art-font-display);
+  margin: 1.9em 0 0.55em;
+  font-weight: 620;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   color: var(--art-text);
+  text-wrap: balance;
 }
 
 .art-content h1 {
-  font-size: 1.85em;
-  letter-spacing: -0.02em;
+  font-size: 2em;
+  letter-spacing: -0.032em;
+  margin-top: 0.2em;
 }
 
 .art-content h2 {
-  font-size: 1.4em;
-  padding-bottom: 0.3em;
-  border-bottom: 1px solid var(--art-border);
+  font-size: 1.45em;
+  letter-spacing: -0.026em;
 }
 
 .art-content h3 {
-  font-size: 1.15em;
+  font-size: 1.12em;
+  letter-spacing: -0.016em;
 }
 
 .art-content h4 {
-  font-size: 1em;
-  color: var(--art-text-muted);
+  font-size: 0.78em;
+  font-weight: 640;
+  color: var(--art-text-faint);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.7em;
+}
+
+.art-content h1 + p,
+.art-content h2 + p,
+.art-content h3 + p {
+  margin-top: 0;
 }
 
 /* Text -------------------------------------------------------------------- */
 
 .art-content p {
-  margin: 0 0 1em;
+  margin: 0 0 1.05em;
+  text-wrap: pretty;
 }
 
 .art-content a {
@@ -155,22 +194,24 @@
 /* Code -------------------------------------------------------------------- */
 
 .art-content code {
-  padding: 0.14em 0.36em;
+  padding: 0.12em 0.34em;
   font-family: var(--art-font-mono);
-  font-size: 0.88em;
+  font-size: 0.85em;
+  font-variant-ligatures: none;
   background: var(--art-surface-2);
-  border: 1px solid var(--art-border);
-  border-radius: 5px;
+  border: 1px solid var(--art-hairline);
+  border-radius: var(--art-radius-sm);
 }
 
 .art-content pre {
-  margin: 1.2em 0;
-  padding: 14px 16px;
+  margin: 1.4em 0;
+  padding: var(--art-space-4);
   overflow-x: auto;
   background: var(--art-surface-2);
-  border: 1px solid var(--art-border);
+  border: 1px solid var(--art-hairline);
   border-radius: var(--art-radius);
-  line-height: 1.5;
+  line-height: 1.55;
+  scrollbar-width: thin;
 }
 
 .art-content pre code {
@@ -181,6 +222,23 @@
   border-radius: 0;
 }
 
+/* A chart, table or embed reaches the page inside the <pre> the pipeline emits
+   for the fence it was written as. The element inside draws the container, so
+   the wrapper sheds its code-block skin. Without this every one of them sits in
+   a box inside a box, and a table inherits the <pre>'s monospace font. */
+.art-content pre:has(> art-chart),
+.art-content pre:has(> art-table),
+.art-content pre:has(> art-embed) {
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font: inherit;
+  white-space: normal;
+}
+
 /* GFM tables -------------------------------------------------------------- */
 
 /* The table stays in normal flow so its sticky header works; corner radii are
@@ -189,39 +247,46 @@
 .art-content table {
   width: 100%;
   max-width: 100%;
-  margin: 1.2em 0;
+  margin: 1.5em 0;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.95em;
-  border: 1px solid var(--art-border);
+  font-family: var(--art-font-sans);
+  font-size: 0.88em;
+  line-height: 1.45;
+  background: var(--art-surface);
+  border: 1px solid var(--art-hairline);
   border-radius: var(--art-radius);
+  box-shadow: var(--art-shadow-sm);
 }
 
 .art-content th,
 .art-content td {
-  padding: 8px 12px;
+  padding: 9px 14px;
   text-align: left;
-  border-bottom: 1px solid var(--art-border);
+  border-bottom: 1px solid var(--art-hairline);
 }
 
 .art-content thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  font-weight: 600;
-  color: var(--art-text-muted);
-  background: var(--art-surface-2);
-  border-bottom: 1px solid var(--art-border-strong);
+  font-size: 0.86em;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--art-text-faint);
+  background: var(--art-surface);
+  border-bottom: 1px solid var(--art-border);
   white-space: nowrap;
+}
+
+.art-content tbody tr:hover {
+  background: var(--art-surface-2);
 }
 
 .art-content tbody tr:last-child th,
 .art-content tbody tr:last-child td {
   border-bottom: 0;
-}
-
-.art-content tbody tr:nth-child(even) {
-  background: var(--art-surface-2);
 }
 
 .art-content thead th:first-child {
@@ -267,20 +332,23 @@ art-error {
 /* Card -------------------------------------------------------------------- */
 
 art-card {
-  margin: 1.2em 0;
-  padding: 18px 20px;
+  margin: 1.5em 0;
+  padding: var(--art-space-5);
   background: var(--art-surface);
-  border: 1px solid var(--art-border);
+  border: 1px solid var(--art-hairline);
   border-radius: var(--art-radius-lg);
+  box-shadow: var(--art-shadow-sm);
 }
 
 .art-card__head {
-  margin-bottom: 12px;
+  margin-bottom: var(--art-space-3);
 }
 
 .art-card__title {
-  font-size: 1.05em;
-  font-weight: 650;
+  font-family: var(--art-font-display);
+  font-size: 1em;
+  font-weight: 620;
+  letter-spacing: -0.014em;
   line-height: 1.3;
   color: var(--art-text);
 }
@@ -303,19 +371,20 @@ art-card {
 
 art-callout {
   display: flex;
-  gap: 12px;
-  margin: 1.2em 0;
-  padding: 14px 16px;
-  border: 1px solid var(--art-border);
+  gap: var(--art-space-3);
+  margin: 1.5em 0;
+  padding: var(--art-space-4) var(--art-space-4) var(--art-space-4) var(--art-space-5);
+  border: 0;
   border-left: 3px solid var(--art-info);
-  border-radius: var(--art-radius);
+  border-radius: var(--art-radius-sm) var(--art-radius) var(--art-radius) var(--art-radius-sm);
   background: var(--art-info-wash);
+  color: var(--art-text);
 }
 
 .art-callout__icon {
   flex: 0 0 auto;
-  width: 1.35em;
-  height: 1.35em;
+  width: 1.3em;
+  height: 1.3em;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -333,8 +402,11 @@ art-callout {
 }
 
 .art-callout__title {
-  margin-bottom: 2px;
-  font-weight: 650;
+  font-family: var(--art-font-sans);
+  margin-bottom: 3px;
+  font-size: 0.92em;
+  font-weight: 640;
+  letter-spacing: -0.008em;
   color: var(--art-text);
 }
 
@@ -375,42 +447,49 @@ art-callout {
 
 /* KPIs -------------------------------------------------------------------- */
 
+/* Numbers are the point, so they get the space: a tinted tile, the figure
+   large in the display face, the label small and quiet underneath. */
 art-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
-  margin: 1.2em 0;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: var(--art-space-2);
+  margin: 1.5em 0;
 }
 
 art-kpi {
-  padding: 14px 16px;
-  background: var(--art-surface);
-  border: 1px solid var(--art-border);
+  padding: var(--art-space-4);
+  background: var(--art-surface-2);
+  border: 0;
   border-radius: var(--art-radius);
 }
 
 .art-kpi__value {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  font-size: 1.6em;
-  font-weight: 650;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  gap: 7px;
+  font-family: var(--art-font-display);
+  font-size: 1.75em;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
   font-variant-numeric: tabular-nums;
   color: var(--art-text);
 }
 
 .art-kpi__delta {
-  font-size: 0.5em;
-  font-weight: 600;
+  font-size: 0.42em;
+  font-weight: 620;
   letter-spacing: 0;
   color: var(--art-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .art-kpi__label {
-  margin-top: 4px;
-  font-size: 0.82em;
+  font-family: var(--art-font-sans);
+  margin-top: 6px;
+  font-size: 0.76em;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   color: var(--art-text-muted);
 }
 
@@ -574,11 +653,15 @@ art-table {
   overflow-x: auto;
 }
 
+/* Body text in a cell is prose, so it reads in the sans token like the rest of
+   the page. Only the tabular-nums figures on numeric columns are typographic. */
 .art-table__table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  font-family: var(--art-font-sans);
   font-size: 0.95em;
+  line-height: 1.5;
   color: var(--art-text);
   background: var(--art-surface);
   border: 1px solid var(--art-border);
@@ -608,7 +691,7 @@ art-table {
   padding: 8px 12px;
 }
 
-.art-table__table tbody tr:nth-child(even) {
+.art-table__table tbody tr:hover {
   background: var(--art-surface-2);
 }
 
@@ -684,18 +767,21 @@ art-table {
 /* Chart ------------------------------------------------------------------- */
 
 art-chart {
-  margin: 1.2em 0;
-  padding: 14px 16px;
+  margin: 1.5em 0;
+  padding: var(--art-space-4) var(--art-space-4) var(--art-space-3);
   background: var(--art-surface);
-  border: 1px solid var(--art-border);
+  border: 1px solid var(--art-hairline);
   border-radius: var(--art-radius-lg);
+  box-shadow: var(--art-shadow-sm);
 }
 
 .art-chart__title {
-  margin-bottom: 10px;
-  font-size: 0.95em;
-  font-weight: 650;
-  color: var(--art-text);
+  font-family: var(--art-font-sans);
+  margin-bottom: var(--art-space-4);
+  font-size: 0.82em;
+  font-weight: 620;
+  letter-spacing: 0.02em;
+  color: var(--art-text-muted);
 }
 
 .art-chart__canvas {
@@ -713,18 +799,21 @@ art-chart {
 /* Embed ------------------------------------------------------------------- */
 
 art-embed {
-  margin: 1.2em 0;
+  margin: 1.5em 0;
   overflow: hidden;
   background: var(--art-surface);
   border: 1px solid var(--art-border);
   border-radius: var(--art-radius);
 }
 
+/* No colour-scheme of its own. A frame whose scheme differs from the document
+   inside it is painted on an opaque browser canvas, which puts a second
+   surface inside the container; matching it lets the container's own
+   background show through the frame. */
 art-embed iframe {
   display: block;
   width: 100%;
   border: 0;
-  color-scheme: normal;
 }
 
 /* Error ------------------------------------------------------------------- */

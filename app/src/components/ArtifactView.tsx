@@ -256,6 +256,34 @@ export function ArtifactView(props: ArtifactViewProps) {
     };
   }, [recompute]);
 
+  // Follow the artifact while it is open. An agent publishing a new version or
+  // answering a comment should show up here without a reload. A refresh is held
+  // back while something is half typed, so nothing under the cursor moves.
+  const pendingRefresh = useRef(false);
+  const busyEditingRef = useRef(false);
+  const busyEditing = draft !== null || edit !== null;
+
+  useEffect(() => {
+    const source = new EventSource(`/api/live/${props.slug}`);
+    source.addEventListener("changed", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as { version: number };
+      if (data.version !== props.versionNumber) {
+        if (busyEditingRef.current) pendingRefresh.current = true;
+        else router.refresh();
+      }
+      void refreshThreads();
+    });
+    return () => source.close();
+  }, [props.slug, props.versionNumber, refreshThreads, router]);
+
+  useEffect(() => {
+    busyEditingRef.current = busyEditing;
+    if (!busyEditing && pendingRefresh.current) {
+      pendingRefresh.current = false;
+      router.refresh();
+    }
+  }, [busyEditing, router]);
+
   // ---- messages from sandbox frames ---------------------------------------
 
   useEffect(() => {

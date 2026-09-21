@@ -9,15 +9,52 @@
 
   var lastHeight = 0;
 
-  function measure() {
-    var doc = document.documentElement;
+  /* Elements that occupy no space but would still be measured. */
+  var WEIGHTLESS = { SCRIPT: 1, STYLE: 1, LINK: 1, TEMPLATE: 1, NOSCRIPT: 1 };
+
+  /**
+   * The height of what is drawn, which is not the height of the document.
+   * documentElement.scrollHeight is never less than the viewport, and the
+   * viewport here IS the iframe we are trying to size: measuring it pins the
+   * frame at whatever height it already has, so a frame can only ever grow. A
+   * 100px diagram in a frame that opened at 400px stays in a 400px frame.
+   *
+   * Walking the body's own children and taking the lowest edge measures the
+   * content, which lets a frame shrink to fit as well as grow.
+   */
+  function contentHeight() {
     var body = document.body;
-    var height = Math.max(
-      doc ? doc.scrollHeight : 0,
-      body ? body.scrollHeight : 0,
-      body ? body.offsetHeight : 0,
-    );
-    if (!height || Math.abs(height - lastHeight) < 2) return;
+    if (!body) return 0;
+    var offset = window.pageYOffset || 0;
+    var kids = body.children;
+    var bottom = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      if (WEIGHTLESS[el.tagName]) continue;
+      var rect = el.getBoundingClientRect();
+      if (!rect.width && !rect.height) continue;
+      var edge = rect.bottom + offset + (parseFloat(getComputedStyle(el).marginBottom) || 0);
+      if (edge > bottom) bottom = edge;
+    }
+    if (!bottom) return 0;
+    var style = getComputedStyle(body);
+    bottom += parseFloat(style.paddingBottom) || 0;
+    bottom += parseFloat(style.marginBottom) || 0;
+    return Math.ceil(bottom);
+  }
+
+  /**
+   * `force` repeats the current height even when it has not changed. A frame
+   * can finish loading before the page around it has hydrated and started
+   * listening, and a height reported into that gap is simply lost — the frame
+   * then keeps its placeholder size forever, because nothing changes again.
+   */
+  function measure(force) {
+    // body.scrollHeight is the fallback for a document whose children are all
+    // positioned out of flow; it tracks content rather than the viewport.
+    var height = contentHeight() || (document.body ? document.body.scrollHeight : 0);
+    if (!height) return;
+    if (!force && Math.abs(height - lastHeight) < 2) return;
     lastHeight = height;
     try {
       parent.postMessage({ type: "art:height", px: height }, "*");
@@ -103,7 +140,7 @@
 
   function applyScheme(scheme) {
     document.documentElement.setAttribute("data-scheme", scheme === "dark" ? "dark" : "light");
-    measure();
+    measure(true);
   }
 
   window.addEventListener("message", function (event) {
@@ -111,10 +148,7 @@
     if (!data || typeof data !== "object") return;
     if (data.type === "art:pick") setPicking(data.on === true);
     else if (data.type === "art:scheme") applyScheme(data.scheme);
-    else if (data.type === "art:measure") {
-      lastHeight = 0;
-      measure();
-    }
+    else if (data.type === "art:measure") measure(true);
   });
 
   document.addEventListener("mousemove", onMove, true);
@@ -125,14 +159,33 @@
 
   if (window.ResizeObserver) {
     try {
-      new ResizeObserver(measure).observe(document.documentElement);
+      // The body, not documentElement: documentElement is the frame viewport,
+      // which changes only because we asked the parent to resize it.
+      var observer = new ResizeObserver(function () {
+        measure();
+      });
+      var watch = function () {
+        if (document.body) observer.observe(document.body);
+      };
+      watch();
+      document.addEventListener("DOMContentLoaded", watch);
     } catch (e) {
       /* older engine */
     }
   }
-  window.addEventListener("load", measure);
-  document.addEventListener("DOMContentLoaded", measure);
-  setTimeout(measure, 50);
-  setTimeout(measure, 400);
-  setInterval(measure, 1500);
+  var announce = function () {
+    measure(true);
+  };
+
+  // The first few reports are repeated whether or not the height changed, to
+  // outlast a parent that is still hydrating; after that a report costs
+  // nothing unless the content actually moved.
+  var repeats = 8;
+  window.addEventListener("load", announce);
+  document.addEventListener("DOMContentLoaded", announce);
+  setTimeout(announce, 50);
+  setTimeout(announce, 400);
+  setInterval(function () {
+    measure(repeats-- > 0);
+  }, 1500);
 })();

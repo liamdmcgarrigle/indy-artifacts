@@ -65,7 +65,9 @@ for (const shot of Array.isArray(shots) ? shots : [shots]) {
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
 
   try {
-    await page.goto(shot.url, { waitUntil: "networkidle", timeout: 30000 });
+    // Not networkidle: the viewer holds a server-sent events connection open,
+    // so the network is never idle and the wait would always time out.
+    await page.goto(shot.url, { waitUntil: "load", timeout: 30000 });
     // Charts and custom elements upgrade a frame or two after load.
     await page.waitForTimeout(shot.settle ?? 600);
 

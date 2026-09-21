@@ -78,6 +78,46 @@ ${scripts}
 </html>`;
 }
 
+/**
+ * mermaid theme variable -> the --art-* custom property it is read from.
+ *
+ * mermaid's own palette is a fixed lavender that belongs to no theme on this
+ * box, and themeVariables take resolved values rather than custom properties.
+ * So the frame reads the theme's tokens with getComputedStyle at run time and
+ * hands mermaid the values. A token that resolves to nothing is left out, and
+ * mermaid falls back to its own default: no colour is written here.
+ *
+ * theme: "base" is what makes themeVariables apply at all — the named themes
+ * ignore most of them.
+ */
+export const MERMAID_THEME_TOKENS: Readonly<Record<string, string>> = {
+  primaryColor: "--art-accent-wash",
+  primaryTextColor: "--art-text",
+  primaryBorderColor: "--art-accent",
+  lineColor: "--art-text-muted",
+  secondaryColor: "--art-surface-2",
+  tertiaryColor: "--art-surface",
+  background: "--art-surface",
+  mainBkg: "--art-accent-wash",
+  textColor: "--art-text",
+  nodeBorder: "--art-accent",
+  edgeLabelBackground: "--art-surface",
+  clusterBkg: "--art-surface-2",
+  clusterBorder: "--art-border",
+  titleColor: "--art-text",
+  fontFamily: "--art-font-sans",
+  fontSize: "--art-font-size",
+};
+
+/* The rendered diagram fills the frame width and takes its height from the
+   viewBox, so the frame has no blank margin under it to size around. The <pre>
+   mermaid renders into keeps a browser default margin otherwise. */
+const MERMAID_STYLE = `
+<style>
+  #root .mermaid { margin: 0; }
+  #root .mermaid svg { display: block; width: 100%; max-width: 100%; height: auto; }
+</style>`;
+
 /** A mermaid diagram. mermaid is vendored locally; sandbox frames have no network. */
 export function mermaidDocument(source: string, options: EmbedOptions): string {
   return shell(
@@ -86,20 +126,47 @@ export function mermaidDocument(source: string, options: EmbedOptions): string {
     `<script src="/vendor/mermaid.js"></script>
 <script>
   (function () {
-    try {
-      var dark = document.documentElement.getAttribute("data-scheme") === "dark";
-      window.mermaid.initialize({
-        startOnLoad: true,
-        securityLevel: "strict",
-        theme: dark ? "dark" : "default",
-        fontFamily: getComputedStyle(document.body).fontFamily,
-      });
-    } catch (err) {
-      document.getElementById("root").innerHTML =
+    var root = document.getElementById("root");
+    var TOKENS = ${JSON.stringify(MERMAID_THEME_TOKENS)};
+
+    function fail(err) {
+      root.innerHTML =
         '<div class="art-embed-error">mermaid failed: ' + String(err && err.message ? err.message : err) + "</div>";
+    }
+
+    // mermaid stamps the natural size onto the svg as width/height attributes
+    // and an inline max-width. Left alone they hold the diagram at that size in
+    // the top left of a wider frame, and they inflate the measured height.
+    function fit() {
+      var svg = root.querySelector("svg");
+      if (!svg) return;
+      svg.removeAttribute("height");
+      svg.setAttribute("width", "100%");
+      svg.style.maxWidth = "100%";
+      svg.style.height = "auto";
+    }
+
+    try {
+      var css = getComputedStyle(document.documentElement);
+      var vars = {};
+      for (var key in TOKENS) {
+        var value = (css.getPropertyValue(TOKENS[key]) || "").trim();
+        if (value) vars[key] = value;
+      }
+      window.mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: "base",
+        themeVariables: vars,
+        fontFamily: vars.fontFamily,
+      });
+      window.mermaid.run({ querySelector: ".mermaid" }).then(fit, fail);
+    } catch (err) {
+      fail(err);
     }
   })();
 </script>`,
+    MERMAID_STYLE,
   );
 }
 

@@ -76,6 +76,46 @@ describe("embed documents", () => {
     expect(html).toContain("/embed-bridge.js");
   });
 
+  it("gives mermaid theme variables read from the --art-* tokens", async () => {
+    const { MERMAID_THEME_TOKENS } = await import("@/lib/embed/document");
+    const html = await (await get("embed-md", 1, "e0")).text();
+
+    // theme "base" is the only one that honours themeVariables.
+    expect(html).toContain('theme: "base"');
+    expect(html).toContain("themeVariables: vars");
+    expect(html).not.toContain('theme: dark ? "dark" : "default"');
+
+    // Every variable the diagram needs is mapped to a token, and the values
+    // are resolved in the frame rather than written into the document.
+    for (const key of [
+      "primaryColor",
+      "primaryTextColor",
+      "primaryBorderColor",
+      "lineColor",
+      "secondaryColor",
+      "tertiaryColor",
+      "background",
+      "mainBkg",
+      "fontFamily",
+      "fontSize",
+    ]) {
+      expect(MERMAID_THEME_TOKENS[key], `${key} has no token`).toMatch(/^--art-/);
+      expect(html).toContain(`"${key}":"${MERMAID_THEME_TOKENS[key]}"`);
+    }
+    expect(html).toContain("getComputedStyle(document.documentElement)");
+    // No literal colour survives into the document: the tokens carry them.
+    expect(html).not.toMatch(/themeVariables[\s\S]{0,400}#[0-9a-fA-F]{3,8}/);
+  });
+
+  it("scales the rendered diagram to the frame width", async () => {
+    const html = await (await get("embed-md", 1, "e0")).text();
+    expect(html).toContain("#root .mermaid svg { display: block; width: 100%; max-width: 100%; height: auto; }");
+    // mermaid stamps a natural size on the svg; the frame takes it back off.
+    expect(html).toContain('svg.removeAttribute("height")');
+    expect(html).toContain('svg.setAttribute("width", "100%")');
+    expect(html).toContain("startOnLoad: false");
+  });
+
   it("serves a raw html block verbatim inside the frame", async () => {
     const html = await (await get("embed-md", 1, "e1")).text();
     expect(html).toContain('<b id=probe>raw</b>');
