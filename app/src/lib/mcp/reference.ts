@@ -25,6 +25,10 @@ tags: [backup, nightly]
 \`:::tabs\` containing \`:::tab{label="First"}\` blocks
 \`:::details{summary="More"}\` ... \`:::\`
 
+Containers nest with three colons at every level: a \`:::card\` can hold \`:::columns\`, which hold
+\`:::col\` blocks. Each opener takes its own \`:::\` closer, innermost first. A container you never
+close comes back in \`warnings\` with its line number.
+
 ## Fenced blocks
 \`\`\`chart\` YAML: type (bar|line|area|pie|doughnut|scatter), title, x, y (key or list), data (list of objects), stacked, unit, height
 \`\`\`table\` CSV with a header row (optional first line \`# sortable\`), or YAML with columns and rows

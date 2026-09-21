@@ -30,9 +30,11 @@ For the other kinds the same fields are tool arguments instead.
 
 ## Container directives
 
-Syntax is `:::name{attr="value"}` on its own line, content, then `:::` to close. They
-nest, so a card can hold columns that hold charts. A directive body is parsed as
-markdown.
+Syntax is `:::name{attr="value"}` on its own line, content, then `:::` to close. Write
+three colons at every level when you nest them: a card can hold columns that hold
+charts, and each opener takes its own `:::` closer, innermost first. A directive body is
+parsed as markdown. A container you never close comes back in `warnings` with its line
+number.
 
 ### `:::card{title, subtitle}`
 

@@ -11,6 +11,7 @@ import { visit } from "unist-util-visit";
 
 import { artifactsDirectives } from "./directives";
 import { assignBlocks } from "./blocks";
+import { normalizeContainers } from "./normalize";
 import { schema } from "./sanitize";
 import { DEFAULT_THEME, THEMES, type Frontmatter, type PipelineContext, type RenderOptions, type RenderResult } from "./types";
 
@@ -89,7 +90,12 @@ export function renderMarkdown(source: string, fallbackTitle = "Untitled", optio
     .use(rehypeSanitize, schema as never)
     .use(rehypeStringify);
 
-  const html = String(processor.processSync(source));
+  // Widen nested container fences before remark sees them. Line numbers survive,
+  // so blocks and comment anchors still point at the source the author sent.
+  const normalized = normalizeContainers(source);
+  ctx.warnings.push(...normalized.warnings);
+
+  const html = String(processor.processSync(normalized.source));
 
   return {
     frontmatter: normalizeFrontmatter(ctx.frontmatter, fallbackTitle),

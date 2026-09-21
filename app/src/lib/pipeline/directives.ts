@@ -47,6 +47,16 @@ function kpiChildren(node: AnyNode) {
   return items;
 }
 
+/** Directives that only mean anything inside a particular parent. */
+const REQUIRED_PARENT: Record<string, string> = { col: "columns", tab: "tabs" };
+
+function checkParent(node: AnyNode, parent: AnyNode, ctx: PipelineContext) {
+  const required = REQUIRED_PARENT[node.name];
+  if (!required) return;
+  if (parent?.type === "containerDirective" && parent.name === required) return;
+  warn(ctx, node, `":::${node.name}" is only rendered inside ":::${required}"`);
+}
+
 function handleDirective(node: AnyNode, ctx: PipelineContext) {
   const attrs: Record<string, string> = node.attributes || {};
   switch (node.name) {
@@ -108,12 +118,13 @@ function handleCode(node: AnyNode, ctx: PipelineContext, blockHint: string | nul
 
 export function artifactsDirectives(ctx: PipelineContext) {
   return (tree: AnyNode) => {
-    visit(tree, (node: AnyNode) => {
+    visit(tree, (node: AnyNode, _index: number | undefined, parent: AnyNode) => {
       if (
         node.type === "containerDirective" ||
         node.type === "leafDirective" ||
         node.type === "textDirective"
       ) {
+        checkParent(node, parent, ctx);
         handleDirective(node, ctx);
       } else if (node.type === "code") {
         handleCode(node, ctx, null);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderMarkdown } from "@/lib/pipeline/index";
+import { normalizeContainers } from "@/lib/pipeline/normalize";
 
 /** Decode an HTML attribute value the way a browser would. */
 function attr(html: string, name: string): string {
@@ -178,5 +179,109 @@ describe("sanitizing", () => {
   it("allows relative image sources for assets", () => {
     const r = renderMarkdown("![shot](assets/shot.png)");
     expect(r.html).toContain('src="assets/shot.png"');
+  });
+});
+
+describe("container nesting", () => {
+  it("nests columns and cols written with three colons at every level", () => {
+    const r = renderMarkdown(
+      [":::columns{n=2}", ":::col", "one", ":::", ":::col", "two", ":::", ":::"].join("\n"),
+    );
+    expect(r.warnings).toEqual([]);
+    expect(r.html).not.toContain(":::");
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0]).toMatchObject({ kind: "art-columns", lines: [1, 8] });
+    expect(r.html.match(/<art-col>/g)).toHaveLength(2);
+    // Both cols live inside the columns element, not after it.
+    expect(r.html.indexOf("</art-columns>")).toBeGreaterThan(r.html.lastIndexOf("</art-col>"));
+  });
+
+  it("nests three levels deep", () => {
+    const r = renderMarkdown(
+      [
+        ':::card{title="T"}',
+        ":::columns{n=2}",
+        ":::col",
+        "one",
+        ":::",
+        ":::col",
+        "two",
+        ":::",
+        ":::",
+        ":::",
+      ].join("\n"),
+    );
+    expect(r.warnings).toEqual([]);
+    expect(r.html).not.toContain(":::");
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0]).toMatchObject({ kind: "art-card", lines: [1, 10] });
+    expect(r.html.match(/<art-col>/g)).toHaveLength(2);
+    expect(r.html.indexOf("<art-columns")).toBeGreaterThan(r.html.indexOf("<art-card"));
+  });
+
+  it("nests tabs and tab the same way", () => {
+    const r = renderMarkdown(
+      [":::tabs", ':::tab{label="First"}', "a", ":::", ':::tab{label="Second"}', "b", ":::", ":::"].join("\n"),
+    );
+    expect(r.warnings).toEqual([]);
+    expect(r.blocks).toHaveLength(1);
+    expect(r.html.match(/<art-tab label=/g)).toHaveLength(2);
+  });
+
+  it("leaves ::: inside a fenced code block alone", () => {
+    const src = ["```md", ":::columns{n=2}", ":::col", "one", ":::", ":::", "```"].join("\n");
+    expect(normalizeContainers(src).source).toBe(src);
+    const r = renderMarkdown(src);
+    expect(r.html).toContain(":::columns{n=2}");
+    expect(r.html).not.toContain("art-columns");
+  });
+
+  it("leaves a source that already counts its colons unchanged", () => {
+    const src = ["::::columns{n=2}", ":::col", "one", ":::", ":::col", "two", ":::", "::::"].join("\n");
+    expect(normalizeContainers(src).source).toBe(src);
+    const r = renderMarkdown(src);
+    expect(r.warnings).toEqual([]);
+    expect(r.html.match(/<art-col>/g)).toHaveLength(2);
+  });
+
+  it("warns about an unclosed container and leaves it as written", () => {
+    const src = ["intro", "", ':::card{title="T"}', "body"].join("\n");
+    const out = normalizeContainers(src);
+    expect(out.source).toBe(src);
+    expect(out.warnings).toEqual([{ line: 3, message: 'container ":::card" opened on line 3 is never closed' }]);
+    expect(renderMarkdown(src).warnings[0].message).toContain("never closed");
+  });
+
+  it("keeps the block map's line numbers where the author put them", () => {
+    const src = [
+      "intro",
+      "",
+      ":::columns{n=2}",
+      ":::col",
+      "one",
+      ":::",
+      ":::col",
+      "two",
+      ":::",
+      ":::",
+      "",
+      "outro",
+    ].join("\n");
+    expect(normalizeContainers(src).source.split("\n")).toHaveLength(src.split("\n").length);
+    const r = renderMarkdown(src);
+    expect(r.blocks.map((b) => b.lines)).toEqual([
+      [1, 1],
+      [3, 10],
+      [12, 12],
+    ]);
+    expect(r.html).toContain('data-lines="12-12"');
+  });
+
+  it("warns when a col or tab is outside its parent", () => {
+    const col = renderMarkdown([":::col", "one", ":::"].join("\n"));
+    expect(col.warnings).toHaveLength(1);
+    expect(col.warnings[0].message).toBe('":::col" is only rendered inside ":::columns"');
+    const tab = renderMarkdown([':::tab{label="x"}', "a", ":::"].join("\n"));
+    expect(tab.warnings[0].message).toBe('":::tab" is only rendered inside ":::tabs"');
   });
 });
