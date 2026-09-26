@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   try {
     const ctx = getContext();
-    requireMember(ctx, request);
-    return json({ responses: listResponses(ctx, (await params).slug) });
+    const who = requireMember(ctx, request);
+    return json({ responses: listResponses(ctx, (await params).slug, { agent: who.kind === "agent" }) });
   } catch (err) {
     return fail(err);
   }

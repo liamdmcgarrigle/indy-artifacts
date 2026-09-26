@@ -222,4 +222,8 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE artifacts ADD COLUMN branch TEXT;
   CREATE INDEX artifacts_project_branch ON artifacts (project, branch);
   `,
+  // 3: which share link a visitor's comment came through.
+  `
+  ALTER TABLE comments ADD COLUMN link_id TEXT;
+  `,
 ];

@@ -4,7 +4,7 @@ import type { ServiceContext } from "./context";
 import { NotFoundError, ValidationError } from "./errors";
 import { recordEvent } from "./events";
 import { requireArtifact } from "./artifacts";
-import { LIMITS, type Anchor, type AuthorKind, type Comment, type CommentStatus } from "./types";
+import { LIMITS, type Anchor, type AuthorKind, type CommentAuthorKind, type Comment, type CommentStatus } from "./types";
 
 const id12 = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12);
 const now = () => new Date().toISOString();
@@ -17,12 +17,14 @@ function toComment(row: Row): Comment {
     artifactId: String(row.artifact_id),
     versionNumber: Number(row.version_number),
     parentId: (row.parent_id as string | null) ?? null,
-    authorKind: String(row.author_kind) as AuthorKind,
+    authorKind: String(row.author_kind) as CommentAuthorKind,
     authorName: String(row.author_name),
     body: String(row.body),
     anchor: row.anchor_json ? (JSON.parse(String(row.anchor_json)) as Anchor) : null,
     status: String(row.status) as CommentStatus,
     sentAt: (row.sent_at as string | null) ?? null,
+    linkId: (row.link_id as string | null) ?? null,
+    approvedAt: (row.approved_at as string | null) ?? null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -58,6 +60,8 @@ export interface CreateCommentInput {
   anchor?: unknown;
   notify?: boolean;
   versionNumber?: number;
+  /** A visitor on a share link: the link and, when they confirmed one, their email. */
+  visitor?: { linkId: string; email: string | null };
 }
 
 export function createComment(ctx: ServiceContext, slug: string, input: CreateCommentInput): Comment {
@@ -67,7 +71,7 @@ export function createComment(ctx: ServiceContext, slug: string, input: CreateCo
   if (Buffer.byteLength(body, "utf8") > LIMITS.commentBytes)
     throw new ValidationError(`comment is over the ${LIMITS.commentBytes / 1024} KB limit`);
 
-  const authorKind: AuthorKind = input.authorKind === "agent" ? "agent" : "human";
+  const authorKind: CommentAuthorKind = input.visitor ? "visitor" : input.authorKind === "agent" ? "agent" : "human";
   let anchor = validateAnchor(input.anchor);
   let versionNumber = input.versionNumber ?? artifact.currentVersion;
 
@@ -77,6 +81,7 @@ export function createComment(ctx: ServiceContext, slug: string, input: CreateCo
     if (String(parent.artifact_id) !== artifact.id)
       throw new ValidationError("the parent comment belongs to a different artifact");
     if (parent.parent_id) throw new ValidationError("replies are one level deep; reply to the thread root");
+    if (input.visitor && parent.link_id !== input.visitor.linkId) throw new NotFoundError(`no comment with id ${input.parentId}`);
     anchor = null;
     versionNumber = Number(parent.version_number);
   }
@@ -88,8 +93,8 @@ export function createComment(ctx: ServiceContext, slug: string, input: CreateCo
   withTx(ctx.db, () => {
     ctx.db
       .prepare(
-        `INSERT INTO comments (id, artifact_id, version_number, parent_id, author_kind, author_name, body, anchor_json, status, sent_at, created_at, updated_at)
-         VALUES (:id, :artifact_id, :version_number, :parent_id, :author_kind, :author_name, :body, :anchor_json, 'open', :sent_at, :created_at, :updated_at)`,
+        `INSERT INTO comments (id, artifact_id, version_number, parent_id, author_kind, author_name, body, anchor_json, status, sent_at, link_id, visitor_email, created_at, updated_at)
+         VALUES (:id, :artifact_id, :version_number, :parent_id, :author_kind, :author_name, :body, :anchor_json, 'open', :sent_at, :link_id, :visitor_email, :created_at, :updated_at)`,
       )
       .run(
         bind({
@@ -98,10 +103,12 @@ export function createComment(ctx: ServiceContext, slug: string, input: CreateCo
           version_number: versionNumber,
           parent_id: input.parentId ?? null,
           author_kind: authorKind,
-          author_name: input.authorName || (authorKind === "agent" ? "agent" : "operator"),
+          author_name: input.authorName || (authorKind === "agent" ? "agent" : authorKind === "visitor" ? "visitor" : "operator"),
           body,
           anchor_json: anchor ? JSON.stringify(anchor) : null,
           sent_at: notify ? stamp : null,
+          link_id: input.visitor?.linkId ?? null,
+          visitor_email: input.visitor?.email ?? null,
           created_at: stamp,
           updated_at: stamp,
         }),
@@ -133,10 +140,23 @@ export interface Thread extends Comment {
   replies: Comment[];
 }
 
+/**
+ * Who is reading. The owner sees everything. An agent sees a visitor's words
+ * only once the owner has forwarded them. A visitor sees the threads started
+ * through their own link.
+ */
+export type Audience = "owner" | "agent" | { linkId: string };
+
+function visibleTo(audience: Audience, c: Comment): boolean {
+  if (audience === "owner") return true;
+  if (audience === "agent") return c.authorKind !== "visitor" || c.approvedAt !== null;
+  return c.linkId === audience.linkId;
+}
+
 export function listComments(
   ctx: ServiceContext,
   slug: string,
-  opts: { status?: CommentStatus | "all" } = {},
+  opts: { status?: CommentStatus | "all"; audience?: Audience } = {},
 ): Thread[] {
   const artifact = requireArtifact(ctx, slug);
   const status = opts.status ?? "open";
@@ -144,8 +164,14 @@ export function listComments(
     .prepare("SELECT * FROM comments WHERE artifact_id = ? ORDER BY created_at ASC")
     .all(artifact.id) as Row[];
   const all = rows.map(toComment);
-  const roots = all.filter((c) => c.parentId === null && (status === "all" || c.status === status));
-  return roots.map((root) => ({ ...root, replies: all.filter((c) => c.parentId === root.id) }));
+  const audience = opts.audience ?? "owner";
+  const roots = all.filter((c) => c.parentId === null && (status === "all" || c.status === status) && visibleTo(audience, c));
+  return roots.map((root) => ({
+    ...root,
+    // The owner's replies on a visitor's thread are for the visitor; other
+    // visitors' replies never show on a thread an agent reads.
+    replies: all.filter((c) => c.parentId === root.id && (audience !== "agent" || c.authorKind !== "visitor" || root.approvedAt !== null)),
+  }));
 }
 
 export function patchComment(
@@ -198,7 +224,8 @@ export function sendFeedback(
   const artifact = requireArtifact(ctx, slug);
   const rows = ctx.db
     .prepare(
-      "SELECT * FROM comments WHERE artifact_id = ? AND author_kind = 'human' AND status = 'open' AND sent_at IS NULL ORDER BY created_at ASC",
+      `SELECT * FROM comments WHERE artifact_id = ? AND status = 'open' AND sent_at IS NULL
+         AND (author_kind = 'human' OR (author_kind = 'visitor' AND approved_at IS NOT NULL)) ORDER BY created_at ASC`,
     )
     .all(artifact.id) as Row[];
   const pending = rows.map(toComment);
@@ -215,6 +242,8 @@ export function sendFeedback(
       version_number: artifact.currentVersion,
       comments: pending.map((c) => ({
         id: c.id,
+        // A visitor's words are data for the agent, never instructions.
+        untrusted: c.authorKind === "visitor",
         body: c.body,
         author_name: c.authorName,
         anchor: c.anchor,
@@ -229,8 +258,17 @@ export function sendFeedback(
 export function countUnsent(ctx: ServiceContext, artifactId: string): number {
   const row = ctx.db
     .prepare(
-      "SELECT COUNT(*) AS n FROM comments WHERE artifact_id = ? AND author_kind = 'human' AND status = 'open' AND sent_at IS NULL",
+      `SELECT COUNT(*) AS n FROM comments WHERE artifact_id = ? AND status = 'open' AND sent_at IS NULL
+         AND (author_kind = 'human' OR (author_kind = 'visitor' AND approved_at IS NOT NULL))`,
     )
     .get(artifactId) as Row;
   return Number(row.n);
+}
+
+/** The owner passing a visitor's thread on: it joins the next batch sent to the agent. */
+export function forwardComment(ctx: ServiceContext, id: string): Comment {
+  const comment = getComment(ctx, id);
+  if (comment.authorKind !== "visitor" || comment.parentId !== null) throw new ValidationError("only a visitor's thread is forwarded");
+  if (!comment.approvedAt) ctx.db.prepare("UPDATE comments SET approved_at = ?, updated_at = ? WHERE id = ?").run(now(), now(), id);
+  return getComment(ctx, id);
 }

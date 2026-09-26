@@ -21,6 +21,8 @@ export interface FormResponse {
   respondentKind: "owner" | "visitor";
   email: string | null;
   answers: Answers;
+  /** When the owner passed it on to agents; the owner's own answers count as passed on. */
+  approvedAt: string | null;
   createdAt: string;
 }
 
@@ -56,8 +58,10 @@ export function submitResponse(
     respondentKind: who.kind,
     email: who.email ?? null,
     answers,
+    approvedAt: null,
     createdAt: new Date().toISOString(),
   };
+  if (who.kind === "owner") response.approvedAt = response.createdAt;
   ctx.db
     .prepare(
       `INSERT INTO responses (id, artifact_id, version_number, respondent_kind, email, link_id, data_json, approved_at, created_at)
@@ -81,10 +85,13 @@ export function submitResponse(
   return response;
 }
 
-export function listResponses(ctx: ServiceContext, slug: string): FormResponse[] {
+/** Every response, or for an agent only those the owner has passed on. */
+export function listResponses(ctx: ServiceContext, slug: string, opts: { agent?: boolean } = {}): FormResponse[] {
   const artifact = requireArtifact(ctx, slug);
   const rows = ctx.db
-    .prepare("SELECT * FROM responses WHERE artifact_id = ? ORDER BY created_at DESC")
+    .prepare(
+      `SELECT * FROM responses WHERE artifact_id = ?${opts.agent ? " AND approved_at IS NOT NULL" : ""} ORDER BY created_at DESC`,
+    )
     .all(artifact.id) as Record<string, unknown>[];
   return rows.map((r) => ({
     id: String(r.id),
@@ -92,8 +99,18 @@ export function listResponses(ctx: ServiceContext, slug: string): FormResponse[]
     respondentKind: r.respondent_kind as "owner" | "visitor",
     email: (r.email as string | null) ?? null,
     answers: JSON.parse(String(r.data_json)) as Answers,
+    approvedAt: (r.approved_at as string | null) ?? null,
     createdAt: String(r.created_at),
   }));
+}
+
+/** The owner passing a visitor's answers on to agents. */
+export function forwardResponse(ctx: ServiceContext, slug: string, id: string): void {
+  const artifact = requireArtifact(ctx, slug);
+  const done = ctx.db
+    .prepare("UPDATE responses SET approved_at = COALESCE(approved_at, ?) WHERE id = ? AND artifact_id = ?")
+    .run(new Date().toISOString(), id, artifact.id);
+  if (Number(done.changes) === 0) throw new ValidationError(`no response ${id} on this page`);
 }
 
 export function countResponses(ctx: ServiceContext, artifactId: string): number {

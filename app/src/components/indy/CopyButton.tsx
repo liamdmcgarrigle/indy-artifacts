@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/clipboard";
 
 export function CopyButton({ text, label = "Copy", className, size = "sm" }: { text: string; label?: string; className?: string; size?: "sm" | "default" }) {
   const [done, setDone] = useState(false);
@@ -14,7 +15,7 @@ export function CopyButton({ text, label = "Copy", className, size = "sm" }: { t
       size={size}
       className={cn("gap-1.5", className)}
       onClick={async () => {
-        await navigator.clipboard.writeText(text).catch(() => undefined);
+        if (!(await copyText(text))) return;
         setDone(true);
         setTimeout(() => setDone(false), 1400);
       }}

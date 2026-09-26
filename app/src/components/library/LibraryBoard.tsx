@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { ShapeThumb } from "./ShapeThumb";
 import { saveNavList } from "./nav-list";
 import { OrganiseDialog } from "./OrganiseDialog";
+import { copyText } from "@/lib/clipboard";
 
 export interface BoardSection {
   id: string;
@@ -120,7 +121,7 @@ function RowMenu({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {
-            void navigator.clipboard.writeText(`${window.location.origin}/a/${row.slug}`);
+            void copyText(`${window.location.origin}/a/${row.slug}`);
             toast("Link copied");
           }}
         >

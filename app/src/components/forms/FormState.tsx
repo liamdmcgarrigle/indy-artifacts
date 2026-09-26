@@ -29,12 +29,15 @@ export function FormProvider({
   slug,
   fields,
   settings,
+  submitUrl,
   onSent,
   children,
 }: {
   slug: string;
   fields: FieldSpec[];
   settings: FormSettings;
+  /** Where answers go; a visitor's go through their share link. */
+  submitUrl?: string;
   onSent?: () => void;
   children: React.ReactNode;
 }) {
@@ -67,7 +70,7 @@ export function FormProvider({
     }
     setStatus("sending");
     try {
-      const res = await fetch(`/api/artifacts/${slug}/responses`, {
+      const res = await fetch(submitUrl ?? `/api/artifacts/${slug}/responses`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ answers }),
@@ -84,7 +87,7 @@ export function FormProvider({
       setErrors({ _form: "That did not send. Check the connection and try again." });
       setStatus("open");
     }
-  }, [answers, fields, slug, onSent]);
+  }, [answers, fields, slug, submitUrl, onSent]);
 
   const reset = useCallback(() => {
     setAnswers({});

@@ -10,10 +10,10 @@ type Params = { params: Promise<{ slug: string }> };
 
 export async function GET(request: Request, { params }: Params) {
   try {
-    requireMember(getContext(), request);
+    const who = requireMember(getContext(), request);
     const { slug } = await params;
     const status = (new URL(request.url).searchParams.get("status") ?? "open") as CommentStatus | "all";
-    return json({ threads: listComments(getContext(), slug, { status }) });
+    return json({ threads: listComments(getContext(), slug, { status, audience: who.kind === "agent" ? "agent" : "owner" }) });
   } catch (err) {
     return fail(err);
   }

@@ -6,9 +6,11 @@ import { capability } from "./auth/accounts";
 import { docForView } from "./doc";
 import { countResponses, formOf } from "./service/responses";
 import type { ArtifactViewProps, ThreadView } from "@/components/ArtifactView";
+import type { Audience } from "./service/comments";
+import { activeLink } from "./service/sharing";
 
 /** Everything the viewer needs for one version of one artifact. */
-export function loadView(slug: string, versionNumber?: number): ArtifactViewProps {
+export function loadView(slug: string, versionNumber?: number, opts: { audience?: Audience } = {}): ArtifactViewProps {
   const ctx = getContext();
   const artifact = requireArtifact(ctx, slug);
   const version = requireVersion(ctx, artifact, versionNumber);
@@ -18,7 +20,7 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
   const assetBase = `/api/assets/${cap}/${artifact.slug}/${version.number}`;
   const rendered = framed ? null : renderVersion(version, artifact.title, assetBase);
 
-  const threads: ThreadView[] = listComments(ctx, slug, { status: "all" }).map((t) => ({
+  const threads: ThreadView[] = listComments(ctx, slug, { status: "all", audience: opts.audience ?? "owner" }).map((t) => ({
     id: t.id,
     authorKind: t.authorKind,
     authorName: t.authorName,
@@ -26,6 +28,7 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
     anchor: t.anchor,
     status: t.status,
     sentAt: t.sentAt,
+    approvedAt: t.approvedAt,
     versionNumber: t.versionNumber,
     createdAt: t.createdAt,
     replies: t.replies.map((r) => ({
@@ -77,5 +80,6 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
       buildStatus: v.buildStatus,
     })),
     initialThreads: threads,
+    sharing: activeLink(ctx, slug)?.mode ?? "private",
   };
 }

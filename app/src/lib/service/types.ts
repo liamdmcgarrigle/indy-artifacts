@@ -1,5 +1,7 @@
 export type Kind = "markdown" | "react" | "svelte" | "html";
 export type AuthorKind = "agent" | "human";
+/** Who wrote a comment: an author, or a visitor on a share link. */
+export type CommentAuthorKind = AuthorKind | "visitor";
 export type BuildStatus = "none" | "ok" | "error";
 export type CommentStatus = "open" | "resolved";
 export type EventKind = "comment.created" | "feedback.sent" | "version.created" | "response.created";
@@ -119,12 +121,15 @@ export interface Comment {
   artifactId: string;
   versionNumber: number;
   parentId: string | null;
-  authorKind: AuthorKind;
+  authorKind: CommentAuthorKind;
   authorName: string;
   body: string;
   anchor: Anchor | null;
   status: CommentStatus;
   sentAt: string | null;
+  /** Visitors only: the share link it came through, and when the owner forwarded it. */
+  linkId: string | null;
+  approvedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

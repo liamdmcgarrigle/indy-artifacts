@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Check, GitBranch, ListChecks, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send } from "lucide-react";
+import { ArrowLeft, Check, GitBranch, History, ListChecks, ChevronDown, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send, Share2, Globe, AtSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -50,6 +50,8 @@ export function ViewerHeader({
   onThreads,
   onSend,
   onEdit,
+  onShare,
+  sharing = "private",
   editing,
   menu,
 }: {
@@ -76,11 +78,13 @@ export function ViewerHeader({
   onThreads: () => void;
   onSend: () => void;
   onEdit?: () => void;
+  onShare?: () => void;
+  /** Who can open the page, so the Share button can say so. */
+  sharing?: "private" | "link" | "email";
   /** Set while the page is being edited: the bar becomes Cancel and Done. */
   editing?: { dirty: boolean; saving: boolean; onCancel: () => void; onDone: () => void } | null;
   menu?: React.ReactNode;
 }) {
-  const first = versions[versions.length - 1]?.number ?? 1;
   if (editing) {
     return (
       <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-hairline bg-background px-3 md:h-[52px] md:bg-background/92 md:px-4 md:backdrop-blur">
@@ -163,44 +167,7 @@ export function ViewerHeader({
       ) : null}
 
       <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-1.5">
-        <div className="flex h-8 items-center rounded-lg border border-border bg-card max-md:hidden">
-          <Tip label="Older version" keys="[">
-            <Button variant="ghost" size="icon" className={cn(iconButton, "rounded-r-none")} aria-label="Older version" disabled={version.number <= first} onClick={() => onVersion(version.number - 1)}>
-              <ChevronLeft className="size-4" />
-            </Button>
-          </Tip>
-          <DropdownMenu>
-            <DropdownMenuTrigger className="h-7 px-1.5 font-mono text-[12px] outline-none hover:text-foreground">
-              v{version.number}
-              <span className="text-muted-foreground">
-                {" "}
-                of {latest} · {version.authorName} · {ago(version.createdAt)}
-              </span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-[360px] w-[260px] overflow-y-auto">
-              {versions.map((v) => (
-                <DropdownMenuItem key={v.number} onSelect={() => onVersion(v.number)} className={cn("font-mono text-[12px]", v.number === version.number && "bg-raised")}>
-                  <span className="w-8">v{v.number}</span>
-                  <span className="flex-1 truncate text-muted-foreground">{v.authorName}</span>
-                  <span className="text-muted-foreground">{ago(v.createdAt)}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Tip label="Newer version" keys="]">
-            <Button variant="ghost" size="icon" className={cn(iconButton, "rounded-l-none")} aria-label="Newer version" disabled={version.number >= latest} onClick={() => onVersion(version.number + 1)}>
-              <ChevronRight className="size-4" />
-            </Button>
-          </Tip>
-        </div>
-
-        {canCompare ? (
-          <Button variant="ghost" size="sm" asChild className="h-8 gap-1.5 text-fg-2 max-md:hidden">
-            <Link href={`/a/${slug}/v/${version.number}?diff=${version.number - 1}`}>
-              <Columns2 className="size-3.5" /> Compare
-            </Link>
-          </Button>
-        ) : null}
+        <VersionMenu slug={slug} version={version} latest={latest} versions={versions} onVersion={onVersion} />
         {canEdit ? (
           <Tip label="Edit" keys="e">
             <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-fg-2 max-md:hidden" onClick={onEdit}>
@@ -234,6 +201,9 @@ export function ViewerHeader({
           <MessageSquare className="size-4 md:size-3.5" /> <span className="max-md:hidden">Threads</span>
           {threads ? <span className="font-mono text-[11px] text-muted-foreground">{threads}</span> : null}
         </Button>
+        {onShare ? (
+          <ShareButton sharing={sharing} onShare={onShare} />
+        ) : null}
         {unsent ? (
           <Button size="sm" className="h-10 gap-1.5 px-3 md:h-8" onClick={onSend} aria-label="Send to agent">
             <Send className="size-4 md:size-3.5" /> <span className="max-md:hidden">Send to agent</span>
@@ -248,31 +218,130 @@ export function ViewerHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[240px]">
-              <div className="md:hidden">
-                {versions.length > 1
-                  ? versions.slice(0, 6).map((v) => (
-                      <DropdownMenuItem key={v.number} onSelect={() => onVersion(v.number)} className={cn("font-mono text-[13px]", v.number === version.number && "bg-raised")}>
-                        <span className="w-8">v{v.number}</span>
-                        <span className="flex-1 truncate text-muted-foreground">{v.authorName}</span>
-                        <span className="text-muted-foreground">{ago(v.createdAt)}</span>
-                      </DropdownMenuItem>
-                    ))
-                  : null}
-                {canCompare ? (
-                  <DropdownMenuItem asChild>
-                    <Link href={`/a/${slug}/v/${version.number}?diff=${version.number - 1}`}>
-                      <Columns2 /> Compare with v{version.number - 1}
-                    </Link>
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuSeparator />
-              </div>
               {menu}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
       </div>
     </header>
+  );
+}
+
+const SHARING = {
+  private: { icon: Share2, label: "Share", tip: "Only you can open this. Share it" },
+  link: { icon: Globe, label: "Shared", tip: "Anyone with the link can open this" },
+  email: { icon: AtSign, label: "Shared", tip: "Anyone who confirms their email can open this" },
+} as const;
+
+/**
+ * Share, and what sharing is on: a plain button while the page is private,
+ * a globe or an @ in sand once others can open it. On a phone it shows only
+ * when shared, as a sign; the menu has Share either way.
+ */
+function ShareButton({ sharing, onShare }: { sharing: "private" | "link" | "email"; onShare: () => void }) {
+  const { icon: Icon, label, tip } = SHARING[sharing];
+  const shared = sharing !== "private";
+  return (
+    <Tip label={tip}>
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label={tip}
+        className={cn(
+          "h-10 gap-1.5 px-2.5 text-fg-2 md:h-8",
+          shared ? "text-sand-strong hover:bg-sand-soft hover:text-sand-strong" : "max-md:hidden",
+        )}
+        onClick={onShare}
+      >
+        <Icon className="size-4 md:size-3.5" /> <span className="max-lg:hidden">{label}</span>
+      </Button>
+    </Tip>
+  );
+}
+
+/**
+ * One icon for the page's history. The list names each version; the button at
+ * the end of a row compares it with the version on screen.
+ */
+function VersionMenu({
+  slug,
+  version,
+  latest,
+  versions,
+  onVersion,
+}: {
+  slug: string;
+  version: VersionStep;
+  latest: number;
+  versions: VersionStep[];
+  onVersion: (n: number) => void;
+}) {
+  const behind = version.number !== latest;
+  const compareHref = (other: number) =>
+    `/a/${slug}/v/${Math.max(other, version.number)}?diff=${Math.min(other, version.number)}`;
+  return (
+    <DropdownMenu>
+      <Tip label={versions.length > 1 ? "Versions and compare" : "Versions"} keys="[ ]">
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Version ${version.number} of ${latest}`}
+            className={cn(
+              "h-10 gap-1 px-2.5 text-fg-2 md:h-8 md:px-2",
+              behind && "bg-sand-soft text-sand-strong hover:bg-sand-soft hover:text-sand-strong",
+            )}
+          >
+            <History className="size-4 md:size-3.5" />
+            {behind ? <span className="font-mono text-[12px]">v{version.number}</span> : null}
+          </Button>
+        </DropdownMenuTrigger>
+      </Tip>
+      <DropdownMenuContent align="end" className="w-[300px] p-1">
+        <div className="px-2 pt-1.5 pb-2 text-[12px] font-medium text-muted-foreground">Versions</div>
+        <div className="max-h-[360px] overflow-y-auto">
+          {versions.map((v) => {
+            const here = v.number === version.number;
+            return (
+              <DropdownMenuItem
+                key={v.number}
+                onSelect={() => onVersion(v.number)}
+                className={cn("group gap-2 py-1.5 pr-1 font-mono text-[12px]", here && "bg-sand-soft")}
+              >
+                <span className={cn("w-7", here ? "text-sand-strong" : "text-foreground")}>v{v.number}</span>
+                <span className="flex-1 truncate text-muted-foreground">{v.authorName}</span>
+                <span className="text-muted-foreground">{ago(v.createdAt)}</span>
+                {here ? (
+                  <span className="flex size-7 items-center justify-center text-[10px] text-faint" aria-label="Showing">
+                    ●
+                  </span>
+                ) : (
+                  <Link
+                    href={compareHref(v.number)}
+                    onClick={(e) => e.stopPropagation()}
+                    title={`Compare v${v.number} with v${version.number}`}
+                    aria-label={`Compare v${v.number} with v${version.number}`}
+                    className="flex size-7 items-center justify-center rounded-md text-faint hover:bg-background hover:text-foreground group-focus:text-fg-2"
+                  >
+                    <Columns2 className="size-3.5" />
+                  </Link>
+                )}
+              </DropdownMenuItem>
+            );
+          })}
+        </div>
+        {version.number > 1 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href={compareHref(version.number - 1)} className="gap-2 text-[13px]">
+                <Columns2 className="size-3.5" /> Compare v{version.number} with v{version.number - 1}
+              </Link>
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

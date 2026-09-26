@@ -30,20 +30,24 @@ import { agoLong } from "@/lib/time";
 import type { FieldSpec, FormSettings } from "@/lib/forms/spec";
 import { FormProvider } from "./forms/FormState";
 import { FormBar } from "./forms/FormBar";
+import { ShareDialog } from "./viewer/ShareDialog";
+import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
 
 export interface ThreadView {
   id: string;
-  authorKind: "agent" | "human";
+  authorKind: "agent" | "human" | "visitor";
   authorName: string;
   body: string;
   anchor: Anchor | null;
   status: "open" | "resolved";
   sentAt: string | null;
+  /** A visitor's thread, once the owner has passed it on to the agent. */
+  approvedAt?: string | null;
   versionNumber: number;
   createdAt: string;
   replies: {
     id: string;
-    authorKind: "agent" | "human";
+    authorKind: "agent" | "human" | "visitor";
     authorName: string;
     body: string;
     createdAt: string;
@@ -92,6 +96,17 @@ export interface ArtifactViewProps {
   framed: boolean;
   versions: VersionStub[];
   initialThreads: ThreadView[];
+  /** Who can open the page besides the owner. */
+  sharing?: "private" | "link" | "email";
+  /** Set when a visitor opens the page through a share link. */
+  visitor?: VisitorInfo | null;
+}
+
+export interface VisitorInfo {
+  token: string;
+  email: string | null;
+  allowComments: boolean;
+  sharedBy: string | null;
 }
 
 interface Box {
@@ -180,11 +195,18 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [pick, setPick] = useState<Box | null>(null);
   const [selected, setSelected] = useState<Anchor | null>(null);
   // Signed in, you are who you are; the name box is for when you are not.
-  const [author, setAuthor] = useState(props.userName ?? "operator");
+  const [author, setAuthor] = useState(props.userName ?? (props.visitor ? (props.visitor.email ?? "") : "operator"));
+  const visitor = props.visitor ?? null;
+  // Where this page's comments live: the owner's API, or the share link's.
+  const commentsApi = visitor ? `/s/${visitor.token}/api/comments` : `/api/artifacts/${props.slug}/comments`;
+  const canComment = !visitor || visitor.allowComments;
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
   const [batchMessage, setBatchMessage] = useState("");
   const [panel, setPanel] = useState<"none" | "list" | "send">("none");
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sharing, setSharing] = useState(props.sharing ?? "private");
+  useEffect(() => setSharing(props.sharing ?? "private"), [props.sharing]);
   const [frameHeight, setFrameHeight] = useState(600);
   // Editing happens on the page itself: the same editor, made typeable.
   const [editing, setEditing] = useState(false);
@@ -212,7 +234,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     [threads, showResolved],
   );
   const unsent = useMemo(
-    () => threads.filter((t) => t.status === "open" && t.authorKind === "human" && !t.sentAt).length,
+    () => threads.filter((t) => t.status === "open" && !t.sentAt && (t.authorKind === "human" || (t.authorKind === "visitor" && t.approvedAt))).length,
     [threads],
   );
   const active = useMemo(() => visible.find((t) => t.id === activeId) ?? null, [visible, activeId]);
@@ -246,11 +268,11 @@ export function ArtifactView(props: ArtifactViewProps) {
   }, [notice]);
 
   const refreshThreads = useCallback(async () => {
-    const res = await fetch(`/api/artifacts/${props.slug}/comments?status=all`, { cache: "no-store" });
+    const res = await fetch(`${commentsApi}?status=all`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as { threads: ThreadView[] };
     setThreads(data.threads);
-  }, [props.slug]);
+  }, [commentsApi]);
 
   // A card anchored near the foot of a long page would open with half of it
   // below the fold. Measure it on the frame after it appears and lift it back
@@ -377,6 +399,8 @@ export function ArtifactView(props: ArtifactViewProps) {
   const busyEditing = draft !== null || editing;
 
   useEffect(() => {
+    // Live updates are for the owner; a visitor sees the page as it was opened.
+    if (visitor) return;
     const source = new EventSource(`/api/live/${props.slug}`);
     source.addEventListener("changed", (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { version: number };
@@ -387,7 +411,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       void refreshThreads();
     });
     return () => source.close();
-  }, [props.slug, props.versionNumber, refreshThreads, router]);
+  }, [visitor, props.slug, props.versionNumber, refreshThreads, router]);
 
   useEffect(() => {
     busyEditingRef.current = busyEditing;
@@ -501,9 +525,9 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   // Opening the latest version counts as having seen it.
   useEffect(() => {
-    if (!isLatest) return;
+    if (!isLatest || visitor) return;
     void fetch(`/api/artifacts/${props.slug}/seen`, { method: "POST" }).catch(() => {});
-  }, [isLatest, props.slug, props.versionNumber]);
+  }, [isLatest, visitor, props.slug, props.versionNumber]);
 
   // ---- placing comments ----------------------------------------------------
 
@@ -536,6 +560,10 @@ export function ArtifactView(props: ArtifactViewProps) {
         return;
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      // A visitor has one page: no library to go back to, no versions to step.
+      if (visitorRef.current && !["c", "Escape"].includes(event.key)) return;
+      if (event.key === "c" && !canCommentRef.current) return;
+      if (event.key === "Escape" && !somethingOpen.current && visitorRef.current) return;
       if (event.key === "c") {
         event.preventDefault();
         toggleTool();
@@ -587,7 +615,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
 
   function onPressStart(event: React.PointerEvent) {
-    if (editing || !event.isPrimary || event.button > 0 || tool || draft) return;
+    if (editing || !canComment || !event.isPrimary || event.button > 0 || tool || draft) return;
     if ((event.target as HTMLElement).closest("a, button, input, textarea, select, label, iframe")) return;
     const { clientX: x, clientY: y } = event;
     window.clearTimeout(press.current?.timer);
@@ -652,6 +680,7 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   function onContentMouseUp(event: React.MouseEvent) {
     if (editing) return;
+    if (!canComment) return;
     // The release that ends a press-and-hold is not a click.
     if (press.current?.fired) {
       press.current = null;
@@ -720,7 +749,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   }
 
   function commentOnBlock(event: React.MouseEvent) {
-    if (editing) return;
+    if (editing || !canComment) return;
     const block = blockOf(event.target as Node);
     if (!block) return;
     setActiveId(null);
@@ -742,7 +771,7 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   // ---- editing ---------------------------------------------------------------
 
-  const canEdit = isLatest && props.kind === "markdown" && props.source !== null && props.doc !== null;
+  const canEdit = !visitor && isLatest && props.kind === "markdown" && props.source !== null && props.doc !== null;
   // A phone has no hover, so it gets the bottom bar instead of shortcuts.
   const [hoverless, setHoverless] = useState(false);
   useEffect(() => setHoverless(!window.matchMedia("(hover: hover)").matches), []);
@@ -830,6 +859,10 @@ export function ArtifactView(props: ArtifactViewProps) {
   // The key handler is bound once; these keep it pointed at the current state.
   const editingRef = useRef(false);
   editingRef.current = editing;
+  const visitorRef = useRef(false);
+  visitorRef.current = visitor !== null;
+  const canCommentRef = useRef(true);
+  canCommentRef.current = canComment;
   const canEditRef = useRef(false);
   canEditRef.current = canEdit;
   const startRef = useRef(startEditing);
@@ -877,7 +910,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     if (!payload.body.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/artifacts/${props.slug}/comments`, {
+      const res = await fetch(commentsApi, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -914,6 +947,26 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
   }
 
+  /** Pass a visitor's thread on to the agent; it goes with the next batch. */
+  async function forwardThread(id: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/comments/${id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "forward" }),
+      });
+      if (!res.ok) {
+        setNotice({ kind: "bad", text: "Could not forward that comment." });
+        return;
+      }
+      await refreshThreads();
+      setNotice({ kind: "good", text: "Forwarded. It goes to the agent with the next send." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function sendBatch() {
     setBusy(true);
     try {
@@ -944,8 +997,23 @@ export function ArtifactView(props: ArtifactViewProps) {
   // ---- render --------------------------------------------------------------
 
   return (
-    <FormGate slug={props.slug} form={props.form} onSent={() => router.refresh()}>
+    <FormGate
+      slug={props.slug}
+      form={props.form}
+      submitUrl={visitor ? `/s/${visitor.token}/api/responses` : undefined}
+      onSent={() => (visitor ? undefined : router.refresh())}
+    >
       <link rel="stylesheet" href={`/themes/${props.theme}.css`} />
+      {visitor ? (
+        <VisitorHeader
+          title={props.title}
+          sharedBy={visitor.sharedBy}
+          threads={canComment ? visible.length : null}
+          panel={panel}
+          onThreads={() => setPanel((p) => (p === "list" ? "none" : "list"))}
+          onComment={canComment ? toggleTool : null}
+        />
+      ) : (
       <ViewerHeader
         slug={props.slug}
         title={props.title}
@@ -968,6 +1036,8 @@ export function ArtifactView(props: ArtifactViewProps) {
         onThreads={() => setPanel((p) => (p === "list" ? "none" : "list"))}
         onSend={() => setPanel((p) => (p === "send" ? "none" : "send"))}
         onEdit={startEditing}
+        onShare={() => setShareOpen(true)}
+        sharing={sharing}
         editing={editing ? { dirty, saving, onCancel: cancelEditing, onDone: () => void finishEditing() } : null}
         menu={
           <>
@@ -976,10 +1046,12 @@ export function ArtifactView(props: ArtifactViewProps) {
               {showResolved ? "Hide resolved threads" : "Show resolved threads"}
             </ViewerMenuItem>
             <ViewerMenuSeparator />
-            <ViewerMenuItem onSelect={() => void navigator.clipboard?.writeText(window.location.href)}>Copy link</ViewerMenuItem>
+            <ViewerMenuItem onSelect={() => setShareOpen(true)}>Share…</ViewerMenuItem>
           </>
         }
       />
+      )}
+      {!visitor && shareOpen ? <ShareDialog slug={props.slug} title={props.title} versionNumber={props.versionNumber} onClose={() => setShareOpen(false)} onMode={setSharing} /> : null}
 
       {panel === "list" ? (
         <div className="panel">
@@ -1007,6 +1079,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                         <span className="badge badge--unsent">unsent</span>
                       ) : null}
                       {thread.status === "resolved" ? <span className="badge">resolved</span> : null}
+                      {!visitor && thread.authorKind === "visitor" && !thread.approvedAt ? <span className="badge">visitor</span> : null}
                     </span>
                     <span className="rowitem__body">{truncate(thread.body, 90)}</span>
                   </span>
@@ -1205,6 +1278,8 @@ export function ArtifactView(props: ArtifactViewProps) {
                 <ThreadCard
                   thread={active}
                   busy={busy}
+                  role={visitor ? "visitor" : "owner"}
+                  onForward={() => forwardThread(active.id)}
                   onClose={() => setActiveId(null)}
                   onStatus={(status) => setStatus(active.id, status)}
                   onReply={(text) => postComment(active.id, text)}
@@ -1240,19 +1315,23 @@ export function ArtifactView(props: ArtifactViewProps) {
                     aria-label="Your name"
                   />}
                   <div className="composer__row">
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={draft.notify}
-                        onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
-                      />
-                      Notify agent
-                    </label>
+                    {visitor ? (
+                      <span className="tiny">Only the page's owner sees this.</span>
+                    ) : (
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={draft.notify}
+                          onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
+                        />
+                        Notify agent
+                      </label>
+                    )}
                     <span style={{ display: "flex", gap: 6 }}>
                       <button className="btn btn--ghost" onClick={() => setDraft(null)}>
                         Cancel
                       </button>
-                      <button className="btn btn--primary" onClick={() => postComment()} disabled={busy || !draft.body.trim()}>
+                      <button className="btn btn--primary" onClick={() => postComment()} disabled={busy || !draft.body.trim() || (visitor !== null && !author.trim())}>
                         Comment
                       </button>
                     </span>
@@ -1297,7 +1376,7 @@ export function ArtifactView(props: ArtifactViewProps) {
           ) : null}
           {tool ? <span className="touchbar__hint">Tap the spot or element the comment is about</span> : null}
           {/* A form's send bar owns the foot of a phone screen; hold to comment there. */}
-          {!draft && !active && !props.form ? (
+          {!draft && !active && !props.form && canComment ? (
             <button
               className={tool ? "touchbar__fab touchbar__fab--on" : "touchbar__fab"}
               onClick={toggleTool}
@@ -1314,16 +1393,31 @@ export function ArtifactView(props: ArtifactViewProps) {
           {notice.text}
         </div>
       ) : null}
-      {props.form && !editing ? <FormBar responsesHref={`/a/${props.slug}/responses`} responseCount={props.form.responses} /> : null}
+      {props.form && !editing ? (
+        <FormBar responsesHref={visitor ? undefined : `/a/${props.slug}/responses`} responseCount={visitor ? undefined : props.form.responses} />
+      ) : null}
+      {visitor ? <MadeWithIndy raised={props.form !== null} /> : null}
     </FormGate>
   );
 }
 
 /** The form's state around the page and its bar, on pages that have questions. */
-function FormGate({ slug, form, onSent, children }: { slug: string; form: ArtifactViewProps["form"]; onSent: () => void; children: React.ReactNode }) {
+function FormGate({
+  slug,
+  form,
+  submitUrl,
+  onSent,
+  children,
+}: {
+  slug: string;
+  form: ArtifactViewProps["form"];
+  submitUrl?: string;
+  onSent: () => void;
+  children: React.ReactNode;
+}) {
   if (!form) return <>{children}</>;
   return (
-    <FormProvider slug={slug} fields={form.fields} settings={form.settings} onSent={onSent}>
+    <FormProvider slug={slug} fields={form.fields} settings={form.settings} submitUrl={submitUrl} onSent={onSent}>
       {children}
     </FormProvider>
   );
@@ -1345,7 +1439,8 @@ function ArticleHead(
   return (
     <div className="doc-head">
       <div className="doc-head__kicker">
-        {KIND_LABEL[props.kind] ?? "Page"} · updated {agoLong(props.createdAt)} by {props.authorName}
+        {KIND_LABEL[props.kind] ?? "Page"} · updated {agoLong(props.createdAt)}
+        {props.visitor ? null : ` by ${props.authorName}`}
       </div>
       {ownTitle ? null : head ? (
         <Typeable as="h1" className="doc-head__title" value={head.title} placeholder="Title" onChange={(title) => onHead({ ...head, title })} />
@@ -1370,12 +1465,16 @@ function ArticleHead(
 function ThreadCard({
   thread,
   busy,
+  role,
+  onForward,
   onClose,
   onStatus,
   onReply,
 }: {
   thread: ThreadView;
   busy: boolean;
+  role: "owner" | "visitor";
+  onForward: () => void;
   onClose: () => void;
   onStatus: (status: "open" | "resolved") => void;
   onReply: (text: string) => void;
@@ -1386,15 +1485,17 @@ function ThreadCard({
         <span className="pop__quote" title={describeAnchor(thread.anchor)}>
           {quoteOf(thread.anchor)}
         </span>
-        <button
-          className="iconbtn"
-          onClick={() => onStatus(thread.status === "open" ? "resolved" : "open")}
-          disabled={busy}
-          title={thread.status === "open" ? "Resolve" : "Reopen"}
-          aria-label={thread.status === "open" ? "Resolve" : "Reopen"}
-        >
-          {thread.status === "open" ? "✓" : "↺"}
-        </button>
+        {role === "owner" ? (
+          <button
+            className="iconbtn"
+            onClick={() => onStatus(thread.status === "open" ? "resolved" : "open")}
+            disabled={busy}
+            title={thread.status === "open" ? "Resolve" : "Reopen"}
+            aria-label={thread.status === "open" ? "Resolve" : "Reopen"}
+          >
+            {thread.status === "open" ? "✓" : "↺"}
+          </button>
+        ) : null}
         <button className="iconbtn" onClick={onClose} aria-label="Close">
           ✕
         </button>
@@ -1410,9 +1511,10 @@ function ThreadCard({
               <div className="msg__meta">
                 <span className="msg__who">{message.authorName}</span>
                 <span>{when(message.createdAt)}</span>
-                {index === 0 && thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
+                {index === 0 && role === "owner" && thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
                   <span className="chip">not sent</span>
                 ) : null}
+                {role === "owner" && message.authorKind === "visitor" ? <span className="chip chip--visitor">visitor</span> : null}
               </div>
               <div className="msg__body">{message.body}</div>
             </div>
@@ -1420,6 +1522,20 @@ function ThreadCard({
         ))}
       </div>
 
+      {role === "owner" && thread.authorKind === "visitor" ? (
+        <div className="pop__forward">
+          {thread.approvedAt ? (
+            <span className="tiny">{thread.sentAt ? "Sent to the agent" : "Forwarded · goes with the next send"}</span>
+          ) : (
+            <>
+              <span className="tiny">From a share link. The agent does not see it unless you forward it.</span>
+              <button className="btn btn--ghost" onClick={onForward} disabled={busy}>
+                Forward to agent
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
       <ReplyBox onSend={onReply} busy={busy} />
     </div>
   );
@@ -1428,7 +1544,7 @@ function ThreadCard({
 /** One message in a thread: the comment itself has the same shape as a reply. */
 interface Message {
   id: string;
-  authorKind: "agent" | "human";
+  authorKind: "agent" | "human" | "visitor";
   authorName: string;
   body: string;
   createdAt: string;

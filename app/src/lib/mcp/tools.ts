@@ -248,7 +248,7 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
           const slug = String(args.slug);
           const artifact = requireArtifact(ctx, slug);
           const { fields } = formOf(requireVersion(ctx, artifact).source);
-          const responses = listResponses(ctx, slug);
+          const responses = listResponses(ctx, slug, { agent: true });
           if (!fields.length) return ok(`"${artifact.title}" has no questions, so it takes no responses.`, []);
           return ok(
             `${responses.length} response${responses.length === 1 ? "" : "s"} to "${artifact.title}". Questions: ${fields.map((f) => `${f.name} (${f.label})`).join("; ")}.`,
@@ -281,6 +281,7 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
         try {
           const threads = listComments(ctx, String(args.slug), {
             status: (args.status as "open" | "resolved" | "all") ?? "open",
+            audience: "agent",
           });
           const artifact = requireArtifact(ctx, String(args.slug));
           return ok(
@@ -289,6 +290,7 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
               id: t.id,
               author: t.authorName,
               author_kind: t.authorKind,
+              untrusted: t.authorKind === "visitor",
               body: t.body,
               status: t.status,
               version_number: t.versionNumber,
