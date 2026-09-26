@@ -30,6 +30,8 @@ const CONTAINERS: Record<string, { node: string; parent?: string; children?: str
   col: { node: "col", parent: "columns" },
   tabs: { node: "tabs", children: "tab" },
   tab: { node: "tab", parent: "tabs" },
+  choice: { node: "choice", children: "option" },
+  option: { node: "option", parent: "choice" },
 };
 
 const EMBED_LANGS = new Set(["html", "mermaid"]);
@@ -128,6 +130,9 @@ function block(node: Md, ctx: Ctx, parent?: string): JSONContent {
       return table(node, ctx);
     case "containerDirective":
       return directive(node, ctx, parent);
+    case "leafDirective":
+      if (node.name === "field" && !node.children?.length) return { type: "field", attrs: { attributes: { ...(node.attributes ?? {}) } } };
+      throw new Unmodelled(`leaf directive ${node.name}`);
     default:
       throw new Unmodelled(node.type);
   }

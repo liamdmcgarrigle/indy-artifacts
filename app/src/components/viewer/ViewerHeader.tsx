@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, GitBranch, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send } from "lucide-react";
+import { ArrowLeft, GitBranch, ListChecks, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -44,6 +44,7 @@ export function ViewerHeader({
   panel,
   canEdit,
   canCompare,
+  responses,
   onVersion,
   onNav,
   onThreads,
@@ -66,6 +67,8 @@ export function ViewerHeader({
   panel: "none" | "list" | "send";
   canEdit: boolean;
   canCompare: boolean;
+  /** Response count, on a form page. */
+  responses?: number | null;
   onVersion: (n: number) => void;
   onNav: (step: 1 | -1) => void;
   onThreads: () => void;
@@ -181,6 +184,14 @@ export function ViewerHeader({
           </Tip>
         ) : null}
 
+        {responses !== null && responses !== undefined ? (
+          <Button variant="ghost" size="sm" asChild className="h-10 gap-1.5 px-2.5 text-fg-2 md:h-8">
+            <Link href={`/a/${slug}/responses`} aria-label="Responses">
+              <ListChecks className="size-4 md:size-3.5" /> <span className="max-md:hidden">Responses</span>
+              <span className="font-mono text-[11px] text-muted-foreground">{responses}</span>
+            </Link>
+          </Button>
+        ) : null}
         <span className="mx-1 h-5 w-px bg-hairline max-md:hidden" />
 
         <Button

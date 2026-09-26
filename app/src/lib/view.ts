@@ -4,6 +4,7 @@ import { listComments } from "./service/comments";
 import { renderVersion } from "./service/render";
 import { capability } from "./auth/accounts";
 import { docForView } from "./doc";
+import { countResponses, formOf } from "./service/responses";
 import type { ArtifactViewProps, ThreadView } from "@/components/ArtifactView";
 
 /** Everything the viewer needs for one version of one artifact. */
@@ -37,6 +38,7 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
   }));
 
   const versions = listVersions(ctx, artifact.id);
+  const form = framed ? null : formOf(version.source);
   return {
     slug: artifact.slug,
     title: artifact.title,
@@ -50,6 +52,7 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
     createdAt: version.createdAt,
     doc: rendered && version.source !== null ? docForView(version.source, rendered) : null,
     assetBase,
+    form: form && form.fields.length ? { ...form, responses: countResponses(ctx, artifact.id) } : null,
     kind: artifact.kind,
     theme: artifact.theme,
     currentVersion: artifact.currentVersion,

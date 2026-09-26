@@ -16,7 +16,11 @@ export class NotFoundError extends ServiceError {
 }
 
 export class ValidationError extends ServiceError {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** Per-field problems, for a form to show beside each question. */
+    public details?: Record<string, unknown>,
+  ) {
     super("invalid", message, 400);
   }
 }

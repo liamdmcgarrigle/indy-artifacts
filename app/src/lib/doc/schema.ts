@@ -47,6 +47,8 @@ export const TOP_LEVEL = [
   "chart",
   "dataTable",
   "embed",
+  "field",
+  "choice",
   "rawBlock",
 ] as const;
 
@@ -83,7 +85,7 @@ export interface OriginAttrs {
 function container(name: string, tag: string, content = "block+", keys: string[] = []) {
   return Node.create({
     name,
-    group: name === "col" || name === "tab" ? undefined : "block",
+    group: name === "col" || name === "tab" || name === "option" ? undefined : "block",
     content,
     defining: true,
     addAttributes() {
@@ -108,6 +110,28 @@ export const Columns = container("columns", "art-columns", "col+", ["n"]);
 export const Col = container("col", "art-col", "block+");
 export const Tabs = container("tabs", "art-tabs", "tab+");
 export const Tab = container("tab", "art-tab", "block+", ["label"]);
+
+// --------------------------------------------------------------------- forms
+
+/** A question: `::field{name=why type=textarea label="Why?" required}`. */
+export const Field = Node.create({
+  name: "field",
+  group: "block",
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return { attributes: { default: {}, rendered: false } };
+  },
+  renderHTML({ node }) {
+    const a = (node.attrs.attributes ?? {}) as Record<string, string>;
+    return ["div", { class: "art-field", "data-name": a.name ?? "" }, ["label", {}, a.label ?? a.name ?? ""]];
+  },
+});
+
+/** A question answered by picking rich options: `:::choice{name=… label=…}`. */
+export const Choice = container("choice", "art-choice", "option+", ["name", "label"]);
+/** One pickable option; its content is any blocks, so it can hold images and frames. */
+export const ChoiceOption = container("option", "art-option", "block+", ["value", "label"]);
 
 // --------------------------------------------------------------------- atoms
 
@@ -366,6 +390,9 @@ export function docExtensions(options: DocOptions = {}): AnyExtension[] {
     Col,
     Tabs,
     Tab,
+    Field,
+    Choice,
+    ChoiceOption,
     Kpis,
     Chart,
     DataTable,

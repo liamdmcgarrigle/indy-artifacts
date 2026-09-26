@@ -351,3 +351,290 @@ kbd.kbd {
 /* Table cells hold a paragraph in the editor; the pipeline put text straight in. */
 .art-content th > p,
 .art-content td > p { margin: 0; }
+
+/* ------------------------------------------------------------------- forms */
+
+/* Questions are numbered down the page, so a long form reads as a sequence. */
+.doc .art-content {
+  counter-reset: question;
+}
+
+/* A question: number and words, help under them, then a control that fills
+   the column. Everything that can be picked is a tile of the same kind. */
+.art-q {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: var(--art-measure, 68ch);
+  margin: 44px 0;
+  font-family: var(--font-sans, var(--art-font-sans));
+  color: var(--foreground);
+  counter-increment: question;
+}
+.art-choice-q {
+  max-width: none;
+}
+.art-q__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.art-q__label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.art-q__label::before {
+  content: counter(question);
+  flex: none;
+  min-width: 22px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sand);
+}
+.art-q__required {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sand-soft);
+  color: var(--sand-strong);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.art-q__help {
+  margin: 0 0 0 32px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.art-q__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 0;
+  font-size: 14px;
+  color: var(--bad);
+}
+.art-q__error::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.art-q--invalid [aria-invalid="true"],
+.art-q--invalid .art-opt,
+.art-q--invalid .q-tile {
+  border-color: color-mix(in oklab, var(--bad) 65%, transparent);
+}
+
+/* A switch answers the question on its own line. */
+.art-q--inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.art-q--inline .art-q__label {
+  font-size: 16px;
+}
+
+/* One tile for everything pickable: list options, checkboxes, scale steps. */
+.q-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  font-size: 15px;
+  cursor: pointer;
+  transition: border-color 120ms, background-color 120ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.q-tile:hover {
+  border-color: var(--input);
+}
+.q-tile--on {
+  border-color: var(--sand);
+  background: color-mix(in oklab, var(--card), var(--sand) 8%);
+}
+.q-tile--step {
+  flex: 1;
+  justify-content: center;
+  padding: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 16px;
+  color: var(--fg-2);
+}
+.q-tile--step.q-tile--on {
+  color: var(--sand-strong);
+  font-weight: 600;
+}
+.q-switch {
+  flex: none;
+  transform: scale(1.15);
+}
+
+/* Rich options: cards that hold anything, picked by tapping anywhere on them. */
+.art-choice__options {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 14px;
+}
+/* TipTap puts the options in an inner element of its own; lay them out as the grid's. */
+.art-choice__options > div,
+.art-choice__options > div > .react-renderer {
+  display: contents;
+}
+@media (max-width: 760px) {
+  .art-choice__options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.art-opt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color 140ms, box-shadow 140ms, transform 140ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.art-opt:hover {
+  border-color: var(--input);
+  transform: translateY(-1px);
+}
+.art-opt:active {
+  transform: none;
+}
+.art-opt:focus-visible {
+  outline: 2px solid var(--sand);
+  outline-offset: 2px;
+}
+.art-opt--on {
+  border-color: var(--sand);
+  box-shadow: 0 0 0 1px var(--sand), 0 12px 32px -12px color-mix(in oklab, var(--sand) 45%, transparent);
+}
+/* The label leads; what the option holds follows it. */
+.art-opt__foot {
+  order: -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 0;
+}
+.art-opt__body {
+  flex: 1;
+  padding: 6px 16px 16px 46px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg-2);
+}
+.art-opt__body p {
+  margin: 0;
+}
+.art-opt__body p + p {
+  margin-top: 8px;
+}
+/* A preview (a frame or a picture) runs edge to edge above the words. */
+.art-opt__body pre:has(> art-embed),
+.art-opt__body p:has(> img:only-child) {
+  margin: 8px -16px 14px -46px;
+}
+.art-opt__body p:has(> img:only-child) img {
+  display: block;
+  width: 100%;
+  border-radius: 0;
+}
+.art-opt__body art-embed {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.art-opt__body art-embed iframe {
+  border-radius: 0;
+}
+.art-opt__body > div > p:only-child:empty {
+  display: none;
+}
+.art-opt__mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--faint);
+  border-radius: 50%;
+  color: var(--primary-foreground);
+  transition: background-color 120ms, border-color 120ms;
+}
+.art-opt__mark--square {
+  border-radius: 6px;
+}
+.art-opt--on .art-opt__mark {
+  border-color: var(--sand);
+  background: var(--sand);
+}
+.art-opt__label {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* The send bar, pinned to the foot of a form page. */
+.formbar {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 34;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--hairline);
+  background: color-mix(in oklab, var(--background) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+.formbar__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+/* On a phone the thank-you line gets a row of its own above the buttons. */
+@media (max-width: 760px) {
+  .formbar__done {
+    flex-basis: calc(100% - 40px);
+  }
+  .formbar__inner > a,
+  .formbar__inner > button:not(:last-child) {
+    flex: 1;
+  }
+}
+.stage:has(~ .formbar) {
+  padding-bottom: 180px;
+}
+.touchbar.touchbar--raised {
+  bottom: calc(96px + env(safe-area-inset-bottom));
+}
+/* A preview frame in an option is a picture of the choice: tapping it picks. */
+.art-opt art-embed iframe {
+  pointer-events: none;
+}

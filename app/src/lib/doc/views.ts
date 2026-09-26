@@ -1,7 +1,9 @@
 import type { AnyExtension, NodeViewRendererProps } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { NodeView, ViewMutationRecord } from "@tiptap/pm/view";
+import { ReactNodeViewRenderer } from "@tiptap/react";
 import { docExtensions, type DocOptions } from "./schema";
+import { ChoiceView, FieldView, OptionView } from "@/components/forms/NodeViews";
 
 /**
  * Browser-only node views for the directive containers and raw blocks.
@@ -145,6 +147,11 @@ export function viewExtensions(options: DocOptions = {}): AnyExtension[] {
     if (ext.name === "tabs") return ext.extend({ addNodeView: () => tabsView });
     if (ext.name in BODY) return ext.extend({ addNodeView: () => containerView });
     if (ext.name === "rawBlock") return ext.extend({ addNodeView: () => rawView });
+    // Questions are React, on shadcn controls. Their events are theirs: the
+    // page must not turn a tap on a radio button into a selection.
+    if (ext.name === "field") return ext.extend({ addNodeView: () => ReactNodeViewRenderer(FieldView, { stopEvent: () => true }) });
+    if (ext.name === "choice") return ext.extend({ addNodeView: () => ReactNodeViewRenderer(ChoiceView, { stopEvent: () => true }) });
+    if (ext.name === "option") return ext.extend({ addNodeView: () => ReactNodeViewRenderer(OptionView, { stopEvent: () => true }) });
     return ext;
   });
 }

@@ -48,7 +48,7 @@ function kpiChildren(node: AnyNode) {
 }
 
 /** Directives that only mean anything inside a particular parent. */
-const REQUIRED_PARENT: Record<string, string> = { col: "columns", tab: "tabs" };
+const REQUIRED_PARENT: Record<string, string> = { col: "columns", tab: "tabs", option: "choice" };
 
 function checkParent(node: AnyNode, parent: AnyNode, ctx: PipelineContext) {
   const required = REQUIRED_PARENT[node.name];
@@ -83,6 +83,21 @@ function handleDirective(node: AnyNode, ctx: PipelineContext) {
       return;
     case "details":
       setElement(node, "art-details", { summary: attrs.summary || "Details" });
+      return;
+    // Form questions. The viewer draws the real controls; this is what shows
+    // before it loads, and in search.
+    case "field":
+      if (!attrs.name) warn(ctx, node, '"::field" needs a name, e.g. ::field{name=email type=email label="Email"}');
+      setElement(node, "div", { className: "art-field" }, [
+        { type: "element", tagName: "label", properties: {}, children: [{ type: "text", value: attrs.label || attrs.name || "Question" }] },
+      ]);
+      return;
+    case "choice":
+      if (!attrs.name) warn(ctx, node, '":::choice" needs a name, e.g. :::choice{name=pick label="Which one?"}');
+      setElement(node, "div", { className: "art-choice" });
+      return;
+    case "option":
+      setElement(node, "div", { className: "art-option" });
       return;
     default:
       warn(ctx, node, `unknown directive ":::${node.name}"`);

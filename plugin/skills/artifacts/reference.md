@@ -241,3 +241,39 @@ version is written automatically once the typing settles.
 
 Use it when the operator is watching and asked for a change. For ordinary publishing
 use `artifact_update`: it is one atomic version and does not need anyone to be there.
+
+
+## Forms
+
+A page becomes a form when it has questions in it. Everything else on the page
+stays ordinary content, so explain, show and ask in one document.
+
+```markdown
+---
+title: Pick a checkout direction
+form:
+  submit: Send my pick                 # the button's words; default "Submit"
+  confirm: Got it, your pick is in.    # shown after sending
+---
+
+:::choice{name=direction label="Which one would you ship?" required}
+:::option{value=stepped label="Stepped"}
+Any content: a picture, a chart, or an html fence as a live preview.
+:::
+:::option{value=single label="Single page"}
+Everything on one screen.
+:::
+:::
+
+::field{name=why type=textarea label="Why this one?" required placeholder="A line or two"}
+::field{name=sure type=scale label="How sure are you?" min=1 max=5 low="a coin flip" high="certain"}
+::field{name=worries type=checkboxes label="Anything worrying?" options="Too many steps|Total shows late"}
+```
+
+`::field` types: text, textarea, email, number, url, tel, date, time, select, radio,
+checkboxes (these three take `options="A|B|C"`), checkbox, switch, rating (`max`),
+scale (`min`, `max`, `low`, `high`) and slider (`min`, `max`, `step`). Every question
+needs a unique `name`; `label`, `help`, `placeholder` and `required` are optional.
+A `:::choice` takes `multiple` to allow several picks and `columns` to set the grid.
+
+Read answers with `artifact_responses`.

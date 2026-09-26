@@ -24,6 +24,9 @@ import { DocView } from "./viewer/DocView";
 import { ViewerHeader, ViewerMenuItem, ViewerMenuSeparator } from "./viewer/ViewerHeader";
 import { readNavList, type NavList } from "./library/nav-list";
 import { agoLong } from "@/lib/time";
+import type { FieldSpec, FormSettings } from "@/lib/forms/spec";
+import { FormProvider } from "./forms/FormState";
+import { FormBar } from "./forms/FormBar";
 
 export interface ThreadView {
   id: string;
@@ -64,6 +67,8 @@ export interface ArtifactViewProps {
   pinned: boolean;
   archived: boolean;
   createdAt: string;
+  /** The page's questions, when it is a form. */
+  form: { fields: FieldSpec[]; settings: FormSettings; responses: number } | null;
   /** The signed-in owner's name, used as the comment author. */
   userName?: string | null;
   /** The markdown as a document for the editor; null for framed artifacts. */
@@ -929,7 +934,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   // ---- render --------------------------------------------------------------
 
   return (
-    <>
+    <FormGate slug={props.slug} form={props.form} onSent={() => router.refresh()}>
       <link rel="stylesheet" href={`/themes/${props.theme}.css`} />
       <ViewerHeader
         slug={props.slug}
@@ -947,6 +952,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         panel={panel}
         canEdit={isLatest && !props.framed}
         canCompare={props.versionNumber > 1}
+        responses={props.form ? props.form.responses : null}
         onVersion={goVersion}
         onNav={goNav}
         onThreads={() => setPanel((p) => (p === "list" ? "none" : "list"))}
@@ -1306,7 +1312,7 @@ export function ArtifactView(props: ArtifactViewProps) {
 
       {/* Touch screens: commenting without a keyboard shortcut or hover. */}
       {hoverless ? (
-        <div className="touchbar">
+        <div className={props.form ? "touchbar touchbar--raised" : "touchbar"}>
           {selected && !draft ? (
             <button
               className="touchbar__select"
@@ -1321,7 +1327,8 @@ export function ArtifactView(props: ArtifactViewProps) {
             </button>
           ) : null}
           {tool ? <span className="touchbar__hint">Tap the spot or element the comment is about</span> : null}
-          {!draft && !active ? (
+          {/* A form's send bar owns the foot of a phone screen; hold to comment there. */}
+          {!draft && !active && !props.form ? (
             <button
               className={tool ? "touchbar__fab touchbar__fab--on" : "touchbar__fab"}
               onClick={toggleTool}
@@ -1338,7 +1345,18 @@ export function ArtifactView(props: ArtifactViewProps) {
           {notice.text}
         </div>
       ) : null}
-    </>
+      {props.form ? <FormBar responsesHref={`/a/${props.slug}/responses`} responseCount={props.form.responses} /> : null}
+    </FormGate>
+  );
+}
+
+/** The form's state around the page and its bar, on pages that have questions. */
+function FormGate({ slug, form, onSent, children }: { slug: string; form: ArtifactViewProps["form"]; onSent: () => void; children: React.ReactNode }) {
+  if (!form) return <>{children}</>;
+  return (
+    <FormProvider slug={slug} fields={form.fields} settings={form.settings} onSent={onSent}>
+      {children}
+    </FormProvider>
   );
 }
 

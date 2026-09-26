@@ -2,7 +2,7 @@ export type Kind = "markdown" | "react" | "svelte" | "html";
 export type AuthorKind = "agent" | "human";
 export type BuildStatus = "none" | "ok" | "error";
 export type CommentStatus = "open" | "resolved";
-export type EventKind = "comment.created" | "feedback.sent" | "version.created";
+export type EventKind = "comment.created" | "feedback.sent" | "version.created" | "response.created";
 
 export const KINDS: Kind[] = ["markdown", "react", "svelte", "html"];
 

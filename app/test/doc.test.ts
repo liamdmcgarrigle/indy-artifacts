@@ -196,3 +196,55 @@ describe("every stored artifact", () => {
     expect(failures).toEqual([]);
   });
 });
+
+describe("forms", () => {
+  const FORM = `---
+title: Pick one
+form:
+  submit: Send my pick
+---
+
+Try each one first.
+
+:::choice{name=direction label="Which one would you ship?" required}
+:::option{value=stepped label="Stepped"}
+Four screens.
+:::
+:::option{value=single label="Single page"}
+Everything on one screen.
+:::
+:::
+
+::field{name=why type=textarea label="Why this one?" required}
+
+::field{name=sure type=scale label="How sure are you?" min=1 max=5}
+`;
+
+  it("round-trips, and models questions as fields and choices", async () => {
+    const doc = markdownToDoc(FORM);
+    expect(docToMarkdown(doc)).toBe(FORM);
+    expect((doc.content ?? []).map((n) => n.type)).toEqual(["paragraph", "choice", "field", "field"]);
+    const again = markdownToDoc(docToMarkdown(doc, { fresh: true }));
+    expect(content(again)).toEqual(content(doc));
+  });
+
+  it("reads the questions and checks answers against them", async () => {
+    const { formFields, checkAnswers, cleanAnswers, formSettings } = await import("@/lib/forms/spec");
+    const fields = formFields(markdownToDoc(FORM));
+    expect(fields.map((f) => [f.name, f.type, f.required])).toEqual([
+      ["direction", "choice", true],
+      ["why", "textarea", true],
+      ["sure", "scale", false],
+    ]);
+    expect(fields[0].options?.map((o) => o.value)).toEqual(["stepped", "single"]);
+    expect(Object.keys(checkAnswers(fields, {}))).toEqual(["direction", "why"]);
+    const answers = cleanAnswers(fields, { direction: "single", why: "Fewer steps", sure: "4", extra: "dropped" });
+    expect(answers).toEqual({ direction: "single", why: "Fewer steps", sure: 4 });
+    expect(checkAnswers(fields, answers)).toEqual({});
+    expect(checkAnswers(fields, { ...answers, direction: "nope", sure: 9 })).toEqual({
+      direction: "Pick one of the options.",
+      sure: "The highest is 5.",
+    });
+    expect(formSettings({ form: { submit: "Send my pick" } }).submit).toBe("Send my pick");
+  });
+});

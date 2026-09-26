@@ -141,6 +141,10 @@ function block(node: JSONContent): Md {
           },
         ],
       };
+    case "field":
+      return { type: "leafDirective", name: "field", attributes: { ...(a.attributes ?? {}) }, children: [] };
+    case "choice":
+    case "option":
     case "callout":
     case "card":
     case "details":
