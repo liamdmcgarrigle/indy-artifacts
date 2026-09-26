@@ -19,7 +19,10 @@ import {
   type Anchor,
   type Spot,
 } from "@/lib/anchors";
-import type { JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
+import { docToMarkdown } from "@/lib/doc/serialize";
+import { withFront } from "@/lib/doc/frontmatter";
+import { Typeable } from "./editor/Typeable";
 import { DocView } from "./viewer/DocView";
 import { ViewerHeader, ViewerMenuItem, ViewerMenuSeparator } from "./viewer/ViewerHeader";
 import { readNavList, type NavList } from "./library/nav-list";
@@ -131,8 +134,6 @@ function fanOut<T extends { top: number; left: number }>(pins: T[]): T[] {
 
 const NAME_KEY = "art-author-name";
 const POP_W = 312;
-/** How far outside the text column the edit pencil sits, and stays alive. */
-const EDIT_GUTTER = 48;
 const POP_GAP = 16;
 
 function initials(name: string): string {
@@ -185,16 +186,27 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [batchMessage, setBatchMessage] = useState("");
   const [panel, setPanel] = useState<"none" | "list" | "send">("none");
   const [frameHeight, setFrameHeight] = useState(600);
-  const [hover, setHover] = useState<{ lines: [number, number]; top: number; left: number } | null>(null);
-  const [edit, setEdit] = useState<{
-    lines: [number, number];
-    text: string;
-    box: { top: number; left: number; width: number; minHeight: number };
-  } | null>(null);
+  // Editing happens on the page itself: the same editor, made typeable.
+  const [editing, setEditing] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [head, setHead] = useState<{ title: string; description: string } | null>(null);
+  const editorRef = useRef<Editor | null>(null);
+  const onEditor = useCallback((editor: Editor | null) => {
+    editorRef.current = editor;
+  }, []);
+  const onDirty = useCallback(() => setDirty(true), []);
+  const setHeadDirty = useCallback((next: { title: string; description: string }) => {
+    setHead(next);
+    setDirty(true);
+  }, []);
+  // What was just saved, shown until the new version arrives from the server.
+  const [savedDoc, setSavedDoc] = useState<{ version: number; doc: JSONContent } | null>(null);
+  const shownDoc = savedDoc && savedDoc.version === props.versionNumber ? savedDoc.doc : props.doc;
 
   const isLatest = props.versionNumber === props.currentVersion;
   const somethingOpen = useRef(false);
-  somethingOpen.current = tool || draft !== null || activeId !== null || panel !== "none" || bubble !== null || edit !== null || menu !== null;
+  somethingOpen.current = tool || draft !== null || activeId !== null || panel !== "none" || bubble !== null || editing || menu !== null;
   const visible = useMemo(
     () => threads.filter((t) => (showResolved ? true : t.status === "open")),
     [threads, showResolved],
@@ -362,7 +374,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   // back while something is half typed, so nothing under the cursor moves.
   const pendingRefresh = useRef(false);
   const busyEditingRef = useRef(false);
-  const busyEditing = draft !== null || edit !== null;
+  const busyEditing = draft !== null || editing;
 
   useEffect(() => {
     const source = new EventSource(`/api/live/${props.slug}`);
@@ -512,7 +524,14 @@ export function ArtifactView(props: ArtifactViewProps) {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) {
+      if (editingRef.current) {
+        if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+          event.preventDefault();
+          void finishRef.current();
+        }
+        return;
+      }
+      if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) {
         if (event.key === "Escape") (target as HTMLElement).blur();
         return;
       }
@@ -526,9 +545,9 @@ export function ArtifactView(props: ArtifactViewProps) {
       } else if (event.key === "[" || event.key === "]") {
         event.preventDefault();
         goVersion(versionRef.current + (event.key === "]" ? 1 : -1));
-      } else if (event.key === "e" && isLatest && !props.framed) {
+      } else if (event.key === "e" && canEditRef.current) {
         event.preventDefault();
-        router.push(`/a/${props.slug}/edit`);
+        startRef.current();
       } else if (event.key === "Escape" && !somethingOpen.current) {
         router.push("/");
       } else if (event.key === "Escape") {
@@ -540,12 +559,11 @@ export function ArtifactView(props: ArtifactViewProps) {
         setPanel("none");
         setMenu(null);
         setPick(null);
-        setHover(null);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleTool, setFramePicking, goNav, goVersion, isLatest, props.framed, props.slug, router]);
+  }, [toggleTool, setFramePicking, goNav, goVersion, router]);
 
   // A click outside the open card closes it. The draft composer stays put, so a
   // half-typed comment is never thrown away by a stray click.
@@ -569,7 +587,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
 
   function onPressStart(event: React.PointerEvent) {
-    if (!event.isPrimary || event.button > 0 || tool || draft) return;
+    if (editing || !event.isPrimary || event.button > 0 || tool || draft) return;
     if ((event.target as HTMLElement).closest("a, button, input, textarea, select, label, iframe")) return;
     const { clientX: x, clientY: y } = event;
     window.clearTimeout(press.current?.timer);
@@ -633,6 +651,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   }
 
   function onContentMouseUp(event: React.MouseEvent) {
+    if (editing) return;
     // The release that ends a press-and-hold is not a click.
     if (press.current?.fired) {
       press.current = null;
@@ -701,6 +720,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   }
 
   function commentOnBlock(event: React.MouseEvent) {
+    if (editing) return;
     const block = blockOf(event.target as Node);
     if (!block) return;
     setActiveId(null);
@@ -720,129 +740,119 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
   }
 
-  // ---- editing one block ---------------------------------------------------
+  // ---- editing ---------------------------------------------------------------
 
-  const canEdit = isLatest && props.kind === "markdown" && props.source !== null;
-  // A phone has no hover, so the pencil that hover reveals is not for it.
-  const hoverCapable = useRef(true);
+  const canEdit = isLatest && props.kind === "markdown" && props.source !== null && props.doc !== null;
+  // A phone has no hover, so it gets the bottom bar instead of shortcuts.
   const [hoverless, setHoverless] = useState(false);
-  useEffect(() => {
-    hoverCapable.current = window.matchMedia("(hover: hover)").matches;
-    setHoverless(!hoverCapable.current);
-  }, []);
+  useEffect(() => setHoverless(!window.matchMedia("(hover: hover)").matches), []);
 
-  function linesOfBlock(el: HTMLElement): [number, number] | null {
-    const raw = el.dataset.lines;
-    if (!raw) return null;
-    const [from, to] = raw.split("-").map(Number);
-    return Number.isFinite(from) && Number.isFinite(to) ? [from, to] : null;
-  }
-
-  /**
-   * Which block the pointer is over, decided by where the pointer is rather
-   * than what it entered and left.
-   *
-   * The pencil sits in the margin, outside the text column, so a handler that
-   * hid it on mouseleave took it away the moment you set off to click it. This
-   * asks the document what is under the pointer, widened by the gutter the
-   * pencil lives in, which means the button is inside the region that keeps it
-   * on screen.
-   */
+  /** While placing a comment, outline the smallest thing under the pointer. */
   function onStageMove(event: React.MouseEvent) {
     const content = contentRef.current;
     const inner = innerRef.current;
-    if (!content || !inner) return;
-    const target = event.target as HTMLElement | null;
+    if (!tool || !content || !inner) return;
+    const el = pickTarget(content, event.target as HTMLElement | null);
+    if (!el) return setPick(null);
+    const origin = inner.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    setPick({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
+  }
 
-    // Placing a comment: outline the smallest thing under the pointer.
-    if (tool) {
-      const el = pickTarget(content, target);
-      if (!el) return setPick(null);
-      const origin = inner.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      setPick({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
+  function startEditing() {
+    if (!canEdit || editing) return;
+    setTool(false);
+    setFramePicking(false);
+    setDraft(null);
+    setBubble(null);
+    setActiveId(null);
+    setMenu(null);
+    setPick(null);
+    setPanel("none");
+    setHead({ title: props.title, description: props.description ?? "" });
+    setDirty(false);
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    if (dirty && !window.confirm("Throw away your changes to this page?")) return;
+    setEditing(false);
+    setDirty(false);
+  }
+
+  async function finishEditing() {
+    const editor = editorRef.current;
+    if (!editor || saving) return;
+    const json = editor.getJSON();
+    const patch: Record<string, string | null> = {};
+    const title = head?.title.trim() ?? "";
+    const description = head?.description.trim() ?? "";
+    if (head && title && title !== props.title) patch.title = title;
+    if (head && description !== (props.description ?? "")) patch.description = description || null;
+    if (Object.keys(patch).length) {
+      json.attrs = { ...json.attrs, front: withFront((json.attrs?.front as string[] | null) ?? null, patch) };
+    }
+    const source = docToMarkdown(json);
+    if (source === props.source) {
+      setEditing(false);
+      setDirty(false);
       return;
     }
-
-    if (!canEdit || edit || !hoverCapable.current) return;
-    // On the way to the pencil the pointer crosses the pencil itself; keep it.
-    if (target?.closest(".blockedit")) return;
-    if (target?.closest(".pop, .panel, .inline-edit, .pin, .note")) return setHover(null);
-
-    const column = content.getBoundingClientRect();
-    const x = event.clientX;
-    const y = event.clientY;
-    if (y < column.top || y > column.bottom) return setHover(null);
-    if (x < column.left - EDIT_GUTTER || x > column.right + EDIT_GUTTER) return setHover(null);
-
-    // Find the block by height alone. Blocks are narrower than the column, so
-    // probing at the pointer would find nothing in the space beside a block,
-    // and the pencil would vanish on the way to it.
-    const blocks = Array.from(content.querySelectorAll<HTMLElement>(".art-content > [data-block]"));
-    const block = blocks.find((b) => {
-      const r = b.getBoundingClientRect();
-      return y >= r.top - 6 && y <= r.bottom + 6;
-    });
-    if (!block) return setHover(null);
-    const lines = linesOfBlock(block);
-    if (!lines) return setHover(null);
-
-    const origin = inner.getBoundingClientRect();
-    const box = block.getBoundingClientRect();
-    setHover({ lines, top: box.top - origin.top + 2, left: Math.min(box.right, column.right) - origin.left + 10 });
-  }
-
-  function startEdit(lines: [number, number]) {
-    const inner = innerRef.current;
-    const content = contentRef.current;
-    if (!inner || !content || props.source === null) return;
-    const block = Array.from(content.querySelectorAll<HTMLElement>("[data-lines]")).find(
-      (el) => el.dataset.lines === `${lines[0]}-${lines[1]}`,
-    );
-    const origin = inner.getBoundingClientRect();
-    const box = (block ?? content).getBoundingClientRect();
-    const text = props.source.split("\n").slice(lines[0] - 1, lines[1]).join("\n");
-    setHover(null);
-    setActiveId(null);
-    setEdit({
-      lines,
-      text,
-      box: {
-        top: box.top - origin.top - 8,
-        left: box.left - origin.left - 10,
-        width: box.width + 20,
-        minHeight: box.height + 16,
-      },
-    });
-  }
-
-  async function saveEdit() {
-    if (!edit) return;
-    setBusy(true);
+    setSaving(true);
     try {
-      const res = await fetch(`/api/artifacts/${props.slug}/lines`, {
+      const res = await fetch(`/api/artifacts/${props.slug}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          from: edit.lines[0],
-          to: edit.lines[1],
-          text: edit.text,
-          author_name: author,
-          expected_version: props.versionNumber,
-        }),
+        body: JSON.stringify({ source, expected_version: props.versionNumber, author_kind: "human", author_name: author }),
       });
-      const data = (await res.json()) as { error?: { message?: string } };
-      if (!res.ok) {
-        setNotice({ kind: "bad", text: data.error?.message ?? "could not save that block" });
+      const data = (await res.json()) as { version?: { number?: number }; error?: { message?: string } };
+      if (res.status === 409) {
+        setNotice({
+          kind: "bad",
+          text: "A newer version was saved while you were editing. Your changes are still on the page; copy what you need, then reload.",
+        });
         return;
       }
-      setEdit(null);
-      setNotice({ kind: "good", text: "Saved as a new version." });
+      if (!res.ok) {
+        setNotice({ kind: "bad", text: data.error?.message ?? "Could not save the page." });
+        return;
+      }
+      setSavedDoc({ version: props.versionNumber, doc: json });
+      setEditing(false);
+      setDirty(false);
+      setNotice({ kind: "good", text: `Saved as version ${data.version?.number ?? props.currentVersion + 1}.` });
       router.refresh();
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
+
+  // The key handler is bound once; these keep it pointed at the current state.
+  const editingRef = useRef(false);
+  editingRef.current = editing;
+  const canEditRef = useRef(false);
+  canEditRef.current = canEdit;
+  const startRef = useRef(startEditing);
+  startRef.current = startEditing;
+  const finishRef = useRef(finishEditing);
+  finishRef.current = finishEditing;
+
+  // ?edit=1 opens the page ready to type into.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("edit") !== "1") return;
+    url.searchParams.delete("edit");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    startRef.current();
+  }, []);
+
+  // Leaving with unsaved changes asks first.
+  useEffect(() => {
+    if (!editing || !dirty) return;
+    const guard = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [editing, dirty]);
 
   // ---- writes --------------------------------------------------------------
 
@@ -950,13 +960,15 @@ export function ArtifactView(props: ArtifactViewProps) {
         unsent={unsent}
         agentName={props.agentName}
         panel={panel}
-        canEdit={isLatest && !props.framed}
+        canEdit={canEdit}
         canCompare={props.versionNumber > 1}
         responses={props.form ? props.form.responses : null}
         onVersion={goVersion}
         onNav={goNav}
         onThreads={() => setPanel((p) => (p === "list" ? "none" : "list"))}
         onSend={() => setPanel((p) => (p === "send" ? "none" : "send"))}
+        onEdit={startEditing}
+        editing={editing ? { dirty, saving, onCancel: cancelEditing, onDone: () => void finishEditing() } : null}
         menu={
           <>
             <ViewerMenuItem onSelect={toggleTool}>Comment on a spot</ViewerMenuItem>
@@ -1034,9 +1046,8 @@ export function ArtifactView(props: ArtifactViewProps) {
       ) : null}
 
       <main
-        className={tool ? "stage stage--picking" : "stage"}
+        className={["stage", tool && "stage--picking", editing && "stage--editing"].filter(Boolean).join(" ")}
         onMouseMove={onStageMove}
-        onMouseLeave={() => setHover(null)}
       >
         <div className="stage__inner" ref={innerRef}>
           {!isLatest ? (
@@ -1100,9 +1111,17 @@ export function ArtifactView(props: ArtifactViewProps) {
               </div>
             ) : (
               <>
-                <ArticleHead {...props} />
-                {props.doc ? (
-                  <DocView doc={props.doc} fallbackHtml={props.html ?? ""} assetBase={props.assetBase} onReady={onDocReady} />
+                <ArticleHead {...props} doc={shownDoc} head={editing ? head : null} onHead={setHeadDirty} />
+                {shownDoc ? (
+                  <DocView
+                    doc={shownDoc}
+                    fallbackHtml={props.html ?? ""}
+                    assetBase={props.assetBase}
+                    editing={editing}
+                    onReady={onDocReady}
+                    onEditor={onEditor}
+                    onDirty={onDirty}
+                  />
                 ) : (
                   <div className="art-content" dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
                 )}
@@ -1243,56 +1262,6 @@ export function ArtifactView(props: ArtifactViewProps) {
             ) : null}
           </div>
 
-          {hover && !edit ? (
-            <button
-              className="blockedit"
-              style={{ top: hover.top, left: hover.left }}
-              // On press, not on click: the pointer crossing the gutter keeps
-              // re-rendering this button, and a click needs the press and the
-              // release to land on the same element.
-              onMouseDown={(event) => {
-                event.preventDefault();
-                startEdit(hover.lines);
-              }}
-              title={`Edit lines ${hover.lines[0]}-${hover.lines[1]}`}
-              aria-label={`Edit lines ${hover.lines[0]} to ${hover.lines[1]}`}
-            >
-              ✎
-            </button>
-          ) : null}
-
-          {edit ? (
-            <div
-              className="inline-edit"
-              style={{ top: edit.box.top, left: edit.box.left, width: edit.box.width }}
-            >
-              <textarea
-                autoFocus
-                spellCheck
-                value={edit.text}
-                style={{ minHeight: edit.box.minHeight }}
-                onChange={(e) => setEdit({ ...edit, text: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void saveEdit();
-                  if (e.key === "Escape") setEdit(null);
-                }}
-              />
-              <div className="inline-edit__bar">
-                <span className="tiny">
-                  lines {edit.lines[0]}-{edit.lines[1]} · saves a new version
-                </span>
-                <span style={{ display: "flex", gap: 6 }}>
-                  <button className="btn btn--ghost" onClick={() => setEdit(null)}>
-                    Cancel
-                  </button>
-                  <button className="btn btn--primary" onClick={saveEdit} disabled={busy}>
-                    Save
-                  </button>
-                </span>
-              </div>
-            </div>
-          ) : null}
-
           {bubble ? (
             <div className="bubble" style={{ top: bubble.top, left: bubble.left }}>
               <button
@@ -1311,7 +1280,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       </main>
 
       {/* Touch screens: commenting without a keyboard shortcut or hover. */}
-      {hoverless ? (
+      {hoverless && !editing ? (
         <div className={props.form ? "touchbar touchbar--raised" : "touchbar"}>
           {selected && !draft ? (
             <button
@@ -1345,7 +1314,7 @@ export function ArtifactView(props: ArtifactViewProps) {
           {notice.text}
         </div>
       ) : null}
-      {props.form ? <FormBar responsesHref={`/a/${props.slug}/responses`} responseCount={props.form.responses} /> : null}
+      {props.form && !editing ? <FormBar responsesHref={`/a/${props.slug}/responses`} responseCount={props.form.responses} /> : null}
     </FormGate>
   );
 }
@@ -1363,16 +1332,37 @@ function FormGate({ slug, form, onSent, children }: { slug: string; form: Artifa
 const KIND_LABEL: Record<string, string> = { markdown: "Page", html: "HTML page", react: "React app", svelte: "Svelte app" };
 
 /** Kicker, title and lede above the page, unless the page opens with its own title. */
-function ArticleHead(props: ArtifactViewProps) {
+function ArticleHead(
+  props: ArtifactViewProps & {
+    /** The title and lede being typed, while editing. */
+    head: { title: string; description: string } | null;
+    onHead: (head: { title: string; description: string }) => void;
+  },
+) {
   const first = props.doc?.content?.[0];
   const ownTitle = first?.type === "heading" && first.attrs?.level === 1;
+  const { head, onHead } = props;
   return (
     <div className="doc-head">
       <div className="doc-head__kicker">
         {KIND_LABEL[props.kind] ?? "Page"} · updated {agoLong(props.createdAt)} by {props.authorName}
       </div>
-      {ownTitle ? null : <h1 className="doc-head__title">{props.title}</h1>}
-      {props.description && !ownTitle ? <p className="doc-head__lede">{props.description}</p> : null}
+      {ownTitle ? null : head ? (
+        <Typeable as="h1" className="doc-head__title" value={head.title} placeholder="Title" onChange={(title) => onHead({ ...head, title })} />
+      ) : (
+        <h1 className="doc-head__title">{props.title}</h1>
+      )}
+      {ownTitle ? null : head ? (
+        <Typeable
+          as="p"
+          className="doc-head__lede"
+          value={head.description}
+          placeholder="Add a line about what this page is for"
+          onChange={(description) => onHead({ ...head, description })}
+        />
+      ) : props.description ? (
+        <p className="doc-head__lede">{props.description}</p>
+      ) : null}
     </div>
   );
 }

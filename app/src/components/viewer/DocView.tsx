@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import { viewExtensions } from "@/lib/doc/views";
+import { EditChrome } from "@/components/editor/EditChrome";
 
 /** Wait for the <art-*> primitives, which the node views build on. */
 function usePrimitives(): boolean {
@@ -36,14 +37,21 @@ export function DocView(props: {
   doc: JSONContent;
   fallbackHtml: string;
   assetBase: string;
+  /** The same page, typed into where it stands. */
+  editing?: boolean;
   onReady?: () => void;
+  /** The live editor, for whoever saves it; null when it goes away. */
+  onEditor?: (editor: Editor | null) => void;
+  /** Called on the first change after the editor opens. */
+  onDirty?: () => void;
 }) {
   const primitives = usePrimitives();
   const [mounted, setMounted] = useState(false);
   const markMounted = useCallback(() => setMounted(true), []);
   return (
     <>
-      {primitives ? <DocEditor {...props} onMounted={markMounted} /> : null}
+      {/* Editing is a different set of node views, so it is a fresh editor. */}
+      {primitives ? <DocEditor key={props.editing ? "edit" : "view"} {...props} onMounted={markMounted} /> : null}
       {mounted ? null : <div className="art-content" dangerouslySetInnerHTML={{ __html: props.fallbackHtml }} />}
     </>
   );
@@ -52,28 +60,48 @@ export function DocView(props: {
 function DocEditor({
   doc,
   assetBase,
+  editing = false,
   onReady,
   onMounted,
+  onEditor,
+  onDirty,
 }: {
   doc: JSONContent;
   assetBase: string;
+  editing?: boolean;
   onReady?: () => void;
   onMounted: () => void;
+  onEditor?: (editor: Editor | null) => void;
+  onDirty?: () => void;
 }) {
-  const extensions = useMemo(() => viewExtensions({ assetBase }), [assetBase]);
+  const extensions = useMemo(() => viewExtensions({ assetBase, editing }), [assetBase, editing]);
   const editor = useEditor({
     extensions,
     content: doc,
-    editable: false,
+    editable: editing,
     immediatelyRender: false,
-    editorProps: { attributes: { class: "art-content", "aria-label": "Page" } },
+    editorProps: {
+      attributes: { class: editing ? "art-content art-content--editing" : "art-content", "aria-label": editing ? "Page, editing" : "Page" },
+    },
   });
 
   // A new version arrives as a new document; swap it in without remounting.
+  // Never while editing: that would throw away what is being typed.
   useEffect(() => {
-    if (!editor || editor.isDestroyed) return;
+    if (!editor || editor.isDestroyed || editing) return;
     if (JSON.stringify(editor.getJSON()) !== JSON.stringify(doc)) editor.commands.setContent(doc, { emitUpdate: false });
-  }, [editor, doc]);
+  }, [editor, doc, editing]);
+
+  useEffect(() => {
+    if (!editor) return;
+    onEditor?.(editor);
+    const dirty = () => onDirty?.();
+    editor.on("update", dirty);
+    return () => {
+      editor.off("update", dirty);
+      onEditor?.(null);
+    };
+  }, [editor, onEditor, onDirty]);
 
   useEffect(() => {
     if (!editor) return;
@@ -81,5 +109,11 @@ function DocEditor({
     onReady?.();
   }, [editor, onMounted, onReady]);
 
-  return editor ? <EditorContent editor={editor} /> : null;
+  if (!editor) return null;
+  return (
+    <>
+      <EditorContent editor={editor} />
+      {editing ? <EditChrome editor={editor} /> : null}
+    </>
+  );
 }

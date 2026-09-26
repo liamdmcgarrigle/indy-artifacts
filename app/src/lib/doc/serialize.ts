@@ -196,6 +196,8 @@ export function docToMarkdown(input: JSONContent, options: SerializeOptions = {}
   for (const node of doc.content ?? []) {
     const a = node.attrs ?? {};
     if (node.type === "rawBlock" && a.src === null) continue;
+    // An empty line typed while editing is spacing, not content.
+    if (node.type === "paragraph" && !node.content?.length && typeof a.src !== "string") continue;
     const kept = !options.fresh && typeof a.src === "string" && a.fp === fingerprint(node);
     const gap = (a.gap as string[] | null) ?? (out.length ? [""] : []);
     out.push(...gap, ...(kept || node.type === "rawBlock" ? String(a.src) : blockToMarkdown(node)).split("\n"));

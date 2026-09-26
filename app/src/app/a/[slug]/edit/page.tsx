@@ -1,5 +1,5 @@
 import { pageOwner } from "@/lib/auth/page";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Editor } from "@/components/Editor";
 import { getContext } from "@/lib/service/context";
 import { requireArtifact, requireVersion } from "@/lib/service/artifacts";
@@ -21,6 +21,8 @@ export default async function EditPage({ params }: { params: Promise<{ slug: str
   try {
     const ctx = getContext();
     const artifact = requireArtifact(ctx, slug);
+    // A markdown page is edited where it is read.
+    if (artifact.kind === "markdown") redirect(`/a/${artifact.slug}?edit=1`);
     const version = requireVersion(ctx, artifact);
     return (
       <Editor

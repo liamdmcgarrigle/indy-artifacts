@@ -5,6 +5,7 @@ import type { JSONContent } from "@tiptap/core";
 import { markdownToDoc } from "@/lib/doc/parse";
 import { docToMarkdown } from "@/lib/doc/serialize";
 import { ORIGIN_ATTRS } from "@/lib/doc/schema";
+import { withFront } from "@/lib/doc/frontmatter";
 
 const EVERYTHING = `---
 title: Every block
@@ -246,5 +247,40 @@ Everything on one screen.
       sure: "The highest is 5.",
     });
     expect(formSettings({ form: { submit: "Send my pick" } }).submit).toBe("Send my pick");
+  });
+});
+
+describe("editing in place", () => {
+  it("changes a title in the frontmatter and keeps the rest as written", () => {
+    const front = ["---", "title: Old", "# a comment", "theme: default", "---"];
+    expect(withFront(front, { title: "New: a better one", description: "Short" })).toEqual([
+      "---",
+      'title: "New: a better one"',
+      "# a comment",
+      "theme: default",
+      "description: Short",
+      "---",
+    ]);
+    expect(withFront(front, { title: null })).toEqual(["---", "# a comment", "theme: default", "---"]);
+    expect(withFront(null, { title: "Fresh" })).toEqual(["---", "title: Fresh", "---"]);
+  });
+
+  it("writes the frontmatter back through the document", () => {
+    const doc = markdownToDoc("---\ntitle: Old\n---\n\nBody text.\n");
+    doc.attrs = { ...doc.attrs, front: withFront(doc.attrs?.front as string[], { title: "New" }) };
+    expect(docToMarkdown(doc)).toBe("---\ntitle: New\n---\n\nBody text.\n");
+  });
+
+  it("drops empty lines added while typing", () => {
+    const doc = markdownToDoc("One.\n\nTwo.\n");
+    doc.content!.splice(1, 0, { type: "paragraph" }, { type: "paragraph" });
+    expect(docToMarkdown(doc)).toBe("One.\n\nTwo.\n");
+  });
+
+  it("writes a moved block as it was written", () => {
+    const doc = markdownToDoc("# Head\n\n> quoted  *as is*\n\nLast.\n");
+    const [a, b, c] = doc.content!;
+    doc.content = [a, c, b];
+    expect(docToMarkdown(doc)).toContain("> quoted  *as is*");
   });
 });

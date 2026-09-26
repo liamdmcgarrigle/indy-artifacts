@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, GitBranch, ListChecks, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send } from "lucide-react";
+import { ArrowLeft, Check, GitBranch, ListChecks, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -49,6 +49,8 @@ export function ViewerHeader({
   onNav,
   onThreads,
   onSend,
+  onEdit,
+  editing,
   menu,
 }: {
   slug: string;
@@ -73,9 +75,34 @@ export function ViewerHeader({
   onNav: (step: 1 | -1) => void;
   onThreads: () => void;
   onSend: () => void;
+  onEdit?: () => void;
+  /** Set while the page is being edited: the bar becomes Cancel and Done. */
+  editing?: { dirty: boolean; saving: boolean; onCancel: () => void; onDone: () => void } | null;
   menu?: React.ReactNode;
 }) {
   const first = versions[versions.length - 1]?.number ?? 1;
+  if (editing) {
+    return (
+      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-hairline bg-background px-3 md:h-[52px] md:bg-background/92 md:px-4 md:backdrop-blur">
+        <span className="flex min-w-0 items-center gap-2 text-[13px]">
+          <span className="edit-dot" aria-hidden />
+          <span className="shrink-0 font-medium text-foreground">Editing</span>
+          <span className="truncate text-muted-foreground max-sm:hidden">{title}</span>
+        </span>
+        <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground max-sm:hidden">
+          {editing.dirty ? "Not saved yet" : "No changes"}
+        </span>
+        <Button variant="ghost" size="sm" className="h-10 px-3 text-fg-2 max-sm:ml-auto md:h-8" onClick={editing.onCancel} disabled={editing.saving}>
+          Cancel
+        </Button>
+        <Tip label="Save as a new version" keys="⌘S">
+          <Button size="sm" className="btn--primary h-10 gap-1.5 px-4 md:h-8" onClick={editing.onDone} disabled={editing.saving}>
+            <Check className="size-4 md:size-3.5" /> {editing.saving ? "Saving" : "Done"}
+          </Button>
+        </Tip>
+      </header>
+    );
+  }
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1.5 border-b border-hairline bg-background px-2 md:h-[52px] md:gap-3 md:bg-background/92 md:px-4 md:backdrop-blur">
       <Tip label="Back to the library" keys="esc">
@@ -176,14 +203,17 @@ export function ViewerHeader({
         ) : null}
         {canEdit ? (
           <Tip label="Edit" keys="e">
-            <Button variant="ghost" size="sm" asChild className="h-8 gap-1.5 text-fg-2 max-md:hidden">
-              <Link href={`/a/${slug}/edit`}>
-                <Pencil className="size-3.5" /> Edit
-              </Link>
+            <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-fg-2 max-md:hidden" onClick={onEdit}>
+              <Pencil className="size-3.5" /> Edit
             </Button>
           </Tip>
         ) : null}
 
+        {canEdit ? (
+          <Button variant="ghost" size="icon" className={cn(iconButton, "size-10 md:hidden")} aria-label="Edit" onClick={onEdit}>
+            <Pencil className="size-4" />
+          </Button>
+        ) : null}
         {responses !== null && responses !== undefined ? (
           <Button variant="ghost" size="sm" asChild className="h-10 gap-1.5 px-2.5 text-fg-2 md:h-8">
             <Link href={`/a/${slug}/responses`} aria-label="Responses">
@@ -232,13 +262,6 @@ export function ViewerHeader({
                   <DropdownMenuItem asChild>
                     <Link href={`/a/${slug}/v/${version.number}?diff=${version.number - 1}`}>
                       <Columns2 /> Compare with v{version.number - 1}
-                    </Link>
-                  </DropdownMenuItem>
-                ) : null}
-                {canEdit ? (
-                  <DropdownMenuItem asChild>
-                    <Link href={`/a/${slug}/edit`}>
-                      <Pencil /> Edit
                     </Link>
                   </DropdownMenuItem>
                 ) : null}
