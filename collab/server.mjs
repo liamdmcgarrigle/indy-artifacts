@@ -18,13 +18,16 @@ import { Server } from "@hocuspocus/server";
 import { DatabaseSync } from "node:sqlite";
 import * as Y from "yjs";
 import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { createHmac } from "node:crypto";
 
 const PORT = Number(process.env.COLLAB_PORT || 5175);
-const DATA = process.env.ARTIFACTS_DATA || join(process.cwd(), "data");
-const APP = process.env.ARTIFACTS_APP_URL || "http://127.0.0.1:5174";
+const DATA = process.env.INDY_DATA || process.env.ARTIFACTS_DATA || join(process.cwd(), "data");
+const APP = process.env.INDY_APP_URL || process.env.ARTIFACTS_APP_URL || "http://127.0.0.1:5174";
+const DB_FILE = existsSync(join(DATA, "artifacts.db")) ? "artifacts.db" : "indy.db";
 const SNAPSHOT_AFTER_MS = Number(process.env.COLLAB_SNAPSHOT_MS || 2500);
 
-const db = new DatabaseSync(join(DATA, "artifacts.db"));
+const db = new DatabaseSync(join(DATA, DB_FILE));
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA busy_timeout = 5000");
 db.exec(`CREATE TABLE IF NOT EXISTS ydocs (
@@ -47,12 +50,18 @@ function currentSource(slug) {
   return row && typeof row.source === "string" ? row.source : null;
 }
 
+/** The key the app accepts from this process, derived from the install secret. */
+function internalKey() {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'secret'").get();
+  return row ? createHmac("sha256", String(row.value)).update("internal").digest("base64url") : "";
+}
+
 /** Ask the app to write a new version. It owns validation, events and history. */
 async function snapshot(slug, text) {
   try {
     const res = await fetch(`${APP}/api/artifacts/${encodeURIComponent(slug)}/snapshot`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-indy-internal": internalKey() },
       body: JSON.stringify({ text, author_name: "live edit" }),
     });
     const data = await res.json().catch(() => ({}));
@@ -80,7 +89,7 @@ function scheduleSnapshot(slug, document) {
 
 const server = new Server({
   port: PORT,
-  address: "0.0.0.0",
+  address: "127.0.0.1",
   quiet: true,
 
   onRequest: ({ request, response }) => handle(request, response),

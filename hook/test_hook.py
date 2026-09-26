@@ -159,7 +159,7 @@ class FormatMessageTest(unittest.TestCase):
         self.assertIn("http://agentbox:5174/a/backup-run-2026-09-20", message)
         self.assertIn('lines 44-44 "restored 1.2 TB": This number looks stale.', message)
         self.assertIn("Liam commented on", message)
-        self.assertIn("artifacts_comments", message)
+        self.assertIn("artifact_comments", message)
         self.assertTrue(message.startswith("[artifacts] "))
 
     def test_feedback_sent(self):
@@ -173,8 +173,8 @@ class FormatMessageTest(unittest.TestCase):
     def test_version_created(self):
         message = hook.format_message(version_event())
         self.assertIn('Liam edited "Backup run 2026-09-20", now v4', message)
-        self.assertIn("artifacts_get", message)
-        self.assertIn("artifacts_diff from=3 to=4", message)
+        self.assertIn("artifact_get", message)
+        self.assertIn("artifact_diff from=3 to=4", message)
 
 
 class FakeServer:

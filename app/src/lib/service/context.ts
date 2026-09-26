@@ -1,5 +1,7 @@
-import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { openDb, type DatabaseSync } from "../db/index";
+import { config } from "../config";
 
 export interface ServiceContext {
   db: DatabaseSync;
@@ -10,28 +12,28 @@ export interface ServiceContext {
 
 let singleton: ServiceContext | null = null;
 
+/** An install from before the rename keeps its database file name. */
+export function dbFile(dataDir: string): string {
+  return existsSync(join(dataDir, "artifacts.db")) ? "artifacts.db" : "indy.db";
+}
+
 export function defaultDataDir(): string {
-  return process.env.ARTIFACTS_DATA ?? resolve(process.cwd(), "data");
+  return config().dataDir;
 }
 
 export function defaultPublicUrl(): string {
-  return (process.env.ARTIFACTS_PUBLIC_URL ?? "http://agentbox:5174").replace(/\/+$/, "");
+  return config().url;
 }
 
 export function defaultAssetRoots(): string[] {
-  const raw = process.env.ARTIFACTS_ASSET_ROOTS ?? "/home/liam/work:/home/liam/orca:/tmp";
-  return raw
-    .split(":")
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => resolve(p));
+  return config().assetRoots;
 }
 
 export function getContext(): ServiceContext {
   if (!singleton) {
     const dataDir = defaultDataDir();
     singleton = {
-      db: openDb(join(dataDir, "artifacts.db")),
+      db: openDb(join(dataDir, dbFile(dataDir))),
       dataDir,
       publicUrl: defaultPublicUrl(),
       assetRoots: defaultAssetRoots(),

@@ -254,7 +254,7 @@ function uniqueSlug(ctx: ServiceContext, wanted: string | undefined, title: stri
         `slug must be 3-64 characters of a-z, 0-9 and dashes, starting with a letter or digit: "${wanted}"`,
       );
     if (findArtifact(ctx, slug))
-      throw new ValidationError(`slug "${slug}" is taken; use artifacts_update to change that artifact`);
+      throw new ValidationError(`slug "${slug}" is taken; use artifact_update to change that artifact`);
     return slug;
   }
   const base = slugify(title);
@@ -263,6 +263,13 @@ function uniqueSlug(ctx: ServiceContext, wanted: string | undefined, title: stri
     if (!findArtifact(ctx, candidate)) return candidate;
   }
   throw new ValidationError("could not allocate a slug; pass one explicitly");
+}
+
+/** What search reads: the markdown or HTML, or a compiled artifact's source files. */
+function searchableText(content: { source: string | null; files: Record<string, string> | null }): string {
+  if (content.source !== null) return content.source;
+  if (!content.files) return "";
+  return Object.values(content.files).join("\n").slice(0, 200_000);
 }
 
 async function writeVersion(
@@ -355,6 +362,12 @@ async function writeVersion(
         }),
       );
 
+    // One row per artifact in the search index, holding its latest text.
+    ctx.db.prepare("DELETE FROM search WHERE artifact_id = ?").run(artifact.id);
+    ctx.db
+      .prepare("INSERT INTO search (artifact_id, title, description, body) VALUES (?, ?, ?, ?)")
+      .run(artifact.id, meta.title, meta.description ?? "", searchableText(content));
+
     if (authorKind === "human") {
       recordEvent(ctx, artifact.id, "version.created", {
         version: { number, author_name: authorName, message: input.message ?? null },
@@ -433,7 +446,7 @@ export async function updateArtifact(
     throw new ValidationError('"expected_version" is required; pass the version you last saw');
   if (input.expectedVersion !== artifact.currentVersion)
     throw new ConflictError(
-      `artifact "${slug}" is at version ${artifact.currentVersion}, not ${input.expectedVersion}; read it again with artifacts_get before updating`,
+      `artifact "${slug}" is at version ${artifact.currentVersion}, not ${input.expectedVersion}; read it again with artifact_get before updating`,
       artifact.currentVersion,
     );
   if (input.kind && input.kind !== artifact.kind)

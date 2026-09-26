@@ -2,6 +2,7 @@ import { getContext } from "./service/context";
 import { requireArtifact, requireVersion, listVersions } from "./service/artifacts";
 import { listComments } from "./service/comments";
 import { renderVersion } from "./service/render";
+import { capability } from "./auth/accounts";
 import type { ArtifactViewProps, ThreadView } from "@/components/ArtifactView";
 
 /** Everything the viewer needs for one version of one artifact. */
@@ -10,8 +11,9 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
   const artifact = requireArtifact(ctx, slug);
   const version = requireVersion(ctx, artifact, versionNumber);
   const framed = artifact.kind !== "markdown";
-  const embedBase = `/embed/${artifact.slug}/${version.number}`;
-  const assetBase = `/api/assets/${artifact.slug}/${version.number}`;
+  const cap = capability(ctx, artifact.slug, version.number);
+  const embedBase = `/embed/${cap}/${artifact.slug}/${version.number}`;
+  const assetBase = `/api/assets/${cap}/${artifact.slug}/${version.number}`;
   const rendered = framed ? null : renderVersion(version, artifact.title, assetBase);
 
   const threads: ThreadView[] = listComments(ctx, slug, { status: "all" }).map((t) => ({

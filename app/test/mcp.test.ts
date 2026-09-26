@@ -44,7 +44,7 @@ beforeAll(async () => {
       clientInfo: { name: "vitest", version: "1" },
     },
   });
-  expect((init.result as Record<string, unknown>).serverInfo).toMatchObject({ name: "artifacts" });
+  expect((init.result as Record<string, unknown>).serverInfo).toMatchObject({ name: "indy" });
 });
 
 afterAll(async () => {
@@ -72,27 +72,27 @@ describe("mcp endpoint", () => {
     const res = await post({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const names = ((res.result as { tools: { name: string }[] }).tools ?? []).map((t) => t.name).sort();
     expect(names).toEqual([
-      "artifacts_comments",
-      "artifacts_diff",
-      "artifacts_get",
-      "artifacts_list",
-      "artifacts_publish",
-      "artifacts_reply",
-      "artifacts_resolve",
-      "artifacts_type",
-      "artifacts_update",
-      "artifacts_wait",
+      "artifact_comments",
+      "artifact_diff",
+      "artifact_get",
+      "artifact_list",
+      "artifact_publish",
+      "artifact_reply",
+      "artifact_resolve",
+      "artifact_type",
+      "artifact_update",
+      "artifact_wait",
     ]);
   });
 
   it("serves the authoring reference as a resource", async () => {
-    const res = await post({ jsonrpc: "2.0", id: 3, method: "resources/read", params: { uri: "artifacts://reference" } });
+    const res = await post({ jsonrpc: "2.0", id: 3, method: "resources/read", params: { uri: "indy://reference" } });
     const contents = (res.result as { contents: { text: string }[] }).contents;
     expect(contents[0].text).toContain(":::kpis");
   });
 
   it("publishes, reads back and updates an artifact", async () => {
-    const published = await callTool("artifacts_publish", {
+    const published = await callTool("artifact_publish", {
       slug: "mcp-demo",
       source: "---\ntitle: MCP demo\n---\n\nFirst body.\n",
       agent: { name: "vitest", terminal: "term_t" },
@@ -100,22 +100,22 @@ describe("mcp endpoint", () => {
     expect(textOf(published)).toContain("http://agentbox:5174/a/mcp-demo");
     expect((jsonOf(published) as { version: number }).version).toBe(1);
 
-    const got = await callTool("artifacts_get", { slug: "mcp-demo" });
+    const got = await callTool("artifact_get", { slug: "mcp-demo" });
     expect((jsonOf(got) as { source: string }).source).toContain("First body.");
 
-    const updated = await callTool("artifacts_update", {
+    const updated = await callTool("artifact_update", {
       slug: "mcp-demo",
       expected_version: 1,
       source: "---\ntitle: MCP demo\n---\n\nSecond body.\n",
     });
     expect((jsonOf(updated) as { version: number }).version).toBe(2);
 
-    const diff = await callTool("artifacts_diff", { slug: "mcp-demo", from: 1, to: 2 });
+    const diff = await callTool("artifact_diff", { slug: "mcp-demo", from: 1, to: 2 });
     expect(textOf(diff)).toContain("+Second body.");
   });
 
   it("returns a tool error for a stale expected_version", async () => {
-    const res = await callTool("artifacts_update", {
+    const res = await callTool("artifact_update", {
       slug: "mcp-demo",
       expected_version: 1,
       source: "---\ntitle: MCP demo\n---\n\nStale.\n",
@@ -125,7 +125,7 @@ describe("mcp endpoint", () => {
   });
 
   it("reports a build failure in the tool result without losing the version", async () => {
-    const res = await callTool("artifacts_publish", {
+    const res = await callTool("artifact_publish", {
       slug: "broken-react",
       title: "Broken",
       kind: "react",
@@ -133,7 +133,7 @@ describe("mcp endpoint", () => {
     });
     expect(textOf(res)).toContain("Build FAILED");
     expect(textOf(res)).toContain("is not available in artifacts");
-    const got = await callTool("artifacts_get", { slug: "broken-react" });
+    const got = await callTool("artifact_get", { slug: "broken-react" });
     expect((jsonOf(got) as { build_status: string }).build_status).toBe("error");
   });
 
@@ -146,23 +146,23 @@ describe("mcp endpoint", () => {
       anchor: { type: "range", block: "b0", lines: [5, 5], quote: "Second" },
     });
 
-    const listed = await callTool("artifacts_comments", { slug: "mcp-demo" });
+    const listed = await callTool("artifact_comments", { slug: "mcp-demo" });
     const threads = jsonOf(listed) as { id: string; anchor: { lines: number[] } }[];
     expect(threads).toHaveLength(1);
     expect(threads[0].anchor.lines).toEqual([5, 5]);
 
-    await callTool("artifacts_reply", { comment_id: comment.id, body: "fixed in v3", agent: { name: "vitest" } });
-    const withReply = jsonOf(await callTool("artifacts_comments", { slug: "mcp-demo" })) as {
+    await callTool("artifact_reply", { comment_id: comment.id, body: "fixed in v3", agent: { name: "vitest" } });
+    const withReply = jsonOf(await callTool("artifact_comments", { slug: "mcp-demo" })) as {
       replies: { body: string }[];
     }[];
     expect(withReply[0].replies[0].body).toBe("fixed in v3");
 
-    await callTool("artifacts_resolve", { comment_id: comment.id });
-    expect(jsonOf(await callTool("artifacts_comments", { slug: "mcp-demo" }))).toHaveLength(0);
+    await callTool("artifact_resolve", { comment_id: comment.id });
+    expect(jsonOf(await callTool("artifact_comments", { slug: "mcp-demo" }))).toHaveLength(0);
   });
 
   it("wait returns promptly when there is nothing new", async () => {
-    const res = await callTool("artifacts_wait", { slug: "mcp-demo", timeout_s: 1 });
+    const res = await callTool("artifact_wait", { slug: "mcp-demo", timeout_s: 1 });
     expect(textOf(res)).toContain("No feedback");
   });
 });

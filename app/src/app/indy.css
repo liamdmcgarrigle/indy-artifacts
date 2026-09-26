@@ -1,0 +1,296 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * Indy's interface. Dark is the default; light is the same system with the
+ * values turned over. The shadcn components read the plain names (--background,
+ * --primary, ...), so the tokens are defined under those names and the Indy
+ * extras sit beside them.
+ *
+ * Artifact content does not use these. It reads the --art-* theme it was
+ * published with, so a React artifact in a sandboxed frame matches the page.
+ */
+
+@custom-variant dark (&:where([data-scheme="dark"], [data-scheme="dark"] *));
+
+:root,
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+  --background: #0e0f11;
+  --foreground: #ededeb;
+  --sidebar: #0a0b0d;
+  --sidebar-foreground: #b4b5ba;
+  --card: #16171a;
+  --card-foreground: #ededeb;
+  --popover: #1c1e22;
+  --popover-foreground: #ededeb;
+  --primary: #d9b26f;
+  --primary-foreground: #1a1407;
+  --secondary: #1c1e22;
+  --secondary-foreground: #ededeb;
+  --muted: #1c1e22;
+  --muted-foreground: #8b8d93;
+  --accent: #1c1e22;
+  --accent-foreground: #ededeb;
+  --destructive: #f2735e;
+  --border: #25272c;
+  --input: #2c2e34;
+  --ring: #d9b26f;
+  --radius: 0.5rem;
+
+  /* Indy's own */
+  --fg-2: #b4b5ba;
+  --fg-3: #9c9da3;
+  --faint: #6e7076;
+  --hairline: #1d1f23;
+  --raised: #1c1e22;
+  --well: #121316;
+  --sand: #d9b26f;
+  --sand-strong: #e8c98f;
+  --sand-soft: rgb(217 178 111 / 0.14);
+  --sand-line: #6b5733;
+  --good: #3ddc84;
+  --warn: #f0b45a;
+  --bad: #f2735e;
+  --agent: #f08a4b;
+  --shadow-pop: 0 16px 40px rgb(0 0 0 / 0.5);
+  --shadow-dialog: 0 30px 80px rgb(0 0 0 / 0.6);
+  --scrim: rgb(5 6 8 / 0.62);
+}
+
+:root[data-scheme="light"] {
+  color-scheme: light;
+  --background: #f7f6f2;
+  --foreground: #1a1a18;
+  --sidebar: #efede7;
+  --sidebar-foreground: #45443f;
+  --card: #ffffff;
+  --card-foreground: #1a1a18;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a18;
+  --primary: #d9b26f;
+  --primary-foreground: #1a1407;
+  --secondary: #efede7;
+  --secondary-foreground: #1a1a18;
+  --muted: #efede7;
+  --muted-foreground: #6d6b64;
+  --accent: #efede7;
+  --accent-foreground: #1a1a18;
+  --destructive: #c2412d;
+  --border: #e2dfd6;
+  --input: #d8d4ca;
+  --ring: #b8873a;
+
+  --fg-2: #45443f;
+  --fg-3: #5d5b55;
+  --faint: #8a877f;
+  --hairline: #ebe8e0;
+  --raised: #ffffff;
+  --well: #f1efe9;
+  --sand: #b8873a;
+  --sand-strong: #8a6420;
+  --sand-soft: rgb(184 135 58 / 0.14);
+  --sand-line: #d9b26f;
+  --good: #1f9d55;
+  --warn: #b26b00;
+  --bad: #c2412d;
+  --agent: #c75f1f;
+  --shadow-pop: 0 12px 32px rgb(30 25 15 / 0.14);
+  --shadow-dialog: 0 30px 80px rgb(30 25 15 / 0.22);
+  --scrim: rgb(30 25 15 / 0.32);
+}
+
+@theme inline {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
+  --font-serif: "Source Serif 4", Georgia, serif;
+  --font-display: "Bricolage Grotesque", "Geist", ui-sans-serif, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-faint: var(--faint);
+  --color-hairline: var(--hairline);
+  --color-raised: var(--raised);
+  --color-well: var(--well);
+  --color-sand: var(--sand);
+  --color-sand-strong: var(--sand-strong);
+  --color-sand-soft: var(--sand-soft);
+  --color-sand-line: var(--sand-line);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-agent: var(--agent);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  --shadow-pop: var(--shadow-pop);
+  --shadow-dialog: var(--shadow-dialog);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    background: var(--background);
+    color: var(--foreground);
+  }
+  body {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: var(--sand-soft);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@layer utilities {
+  /* Thin scrollbars that sit back in the dark. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
+
+kbd.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--input);
+  background: var(--card);
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ------------------------------------------------------------ the swap
+ * The sign-in cover: the idol lifts away and the sack takes its place on the
+ * pedestal, which dips under the weight. Plays once. With reduced motion the
+ * scene starts in its final pose.
+ */
+.swap g,
+.swap circle {
+  transform-box: view-box;
+}
+.swap-idol {
+  animation: swap-idol 4.6s cubic-bezier(0.5, 0, 0.2, 1) 0.4s both;
+}
+.swap-sack {
+  animation: swap-sack 4.6s cubic-bezier(0.5, 0, 0.2, 1) 0.4s both;
+}
+.swap-plinth {
+  animation: swap-plinth 4.6s ease-in-out 0.4s both;
+}
+.swap-glow {
+  animation: swap-glow 4.6s ease-in-out 0.4s both;
+}
+.swap-grain-1 {
+  animation: swap-grain-1 4.6s ease-in 0.4s both;
+}
+.swap-grain-2 {
+  animation: swap-grain-2 4.6s ease-in 0.4s both;
+}
+.swap-caption {
+  animation: swap-caption 4.6s ease-out 0.4s both;
+}
+@keyframes swap-idol {
+  0%, 34% { transform: translate(0, 0); opacity: 1; }
+  46% { transform: translate(0, -22px); opacity: 1; }
+  70%, 100% { transform: translate(70px, -150px); opacity: 0; }
+}
+@keyframes swap-sack {
+  0%, 20% { transform: translate(90px, -170px); opacity: 0; }
+  36% { transform: translate(26px, -52px); opacity: 1; }
+  48% { transform: translate(0, -8px); opacity: 1; }
+  54%, 100% { transform: translate(0, 0); opacity: 1; }
+}
+@keyframes swap-plinth {
+  0%, 54% { transform: translateY(0); }
+  58% { transform: translateY(5px); }
+  63% { transform: translateY(1px); }
+  68%, 100% { transform: translateY(0); }
+}
+@keyframes swap-glow {
+  0%, 38% { opacity: 1; }
+  70%, 100% { opacity: 0.35; }
+}
+@keyframes swap-grain-1 {
+  0%, 66% { transform: translate(0, 0); opacity: 0; }
+  69% { opacity: 1; }
+  86% { transform: translate(6px, 58px); opacity: 1; }
+  92%, 100% { transform: translate(6px, 58px); opacity: 0; }
+}
+@keyframes swap-grain-2 {
+  0%, 71% { transform: translate(0, 0); opacity: 0; }
+  74% { opacity: 1; }
+  92% { transform: translate(12px, 58px); opacity: 1; }
+  97%, 100% { transform: translate(12px, 58px); opacity: 0; }
+}
+@keyframes swap-caption {
+  0%, 74% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .swap-idol { animation: none; opacity: 0; }
+  .swap-sack, .swap-plinth, .swap-grain-1, .swap-grain-2 { animation: none; }
+  .swap-grain-1, .swap-grain-2 { opacity: 0; }
+  .swap-glow { animation: none; opacity: 0.35; }
+  .swap-caption { animation: none; opacity: 1; }
+}

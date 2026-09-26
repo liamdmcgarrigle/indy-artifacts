@@ -35,7 +35,7 @@ done instead, and why.
 8. **Notifications to an agent are always a single line.** `orca terminal send --enter` replays every
    newline as a submission, so a multi-line message arrives as several separate prompts, and in a
    plain shell each line runs as its own command. Verified against a scratch terminal. Detail beyond
-   one line is fetched by the agent with `artifacts_comments`.
+   one line is fetched by the agent with `artifact_comments`.
 
 ## Deployment
 
@@ -112,7 +112,7 @@ done instead, and why.
     where that goes wrong. It is worth revisiting once the block editor has been lived with; the
     collaboration half of the TipTap ecosystem is what we adopted instead.
 
-22. **Live typing is Yjs and Hocuspocus, not a diff feed.** `artifacts_type` needed to show an agent
+22. **Live typing is Yjs and Hocuspocus, not a diff feed.** `artifact_type` needed to show an agent
     writing, which means the document must tolerate two writers at once and survive a browser that
     is halfway through a sentence. A CRDT does that; a "replace the source" endpoint does not. The
     document is a working copy, not the record: versions stay immutable rows, and the collaboration
@@ -120,7 +120,7 @@ done instead, and why.
     only if the text changed.
 
 23. **Both processes live in one container.** The collaboration server has to call the app to write
-    a version, and the app has to reach the collaboration server for `artifacts_type`. Under rootless
+    a version, and the app has to reach the collaboration server for `artifact_type`. Under rootless
     podman here, container-to-container DNS did not resolve and `host.containers.internal` timed out.
     Rather than fight the network, `start.mjs` supervises both processes in the same container and
     they talk over loopback. If either dies the container dies, which is the behaviour we want.

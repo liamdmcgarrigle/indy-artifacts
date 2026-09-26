@@ -194,7 +194,7 @@ def format_message(event: dict) -> str:
     It must be ONE line. `orca terminal send --enter` replays a newline as a
     submission, so a multi-line message would arrive as several separate
     prompts, and in a plain shell each line would run as its own command.
-    Detail the agent needs beyond one line is fetched with artifacts_comments.
+    Detail the agent needs beyond one line is fetched with artifact_comments.
     """
     artifact = event.get("artifact") or {}
     payload = event.get("payload") or {}
@@ -211,8 +211,8 @@ def format_message(event: dict) -> str:
         where = describe_anchor(comment.get("anchor"))
         return (
             f'[artifacts] {author} commented on "{title}" v{version} ({url}) at {where}: {body} '
-            f"Read the thread with artifacts_comments slug={slug}, answer with artifacts_reply, "
-            f"close it with artifacts_resolve, and publish fixes with artifacts_update "
+            f"Read the thread with artifact_comments slug={slug}, answer with artifact_reply, "
+            f"close it with artifact_resolve, and publish fixes with artifact_update "
             f"expected_version={version}."
         )
 
@@ -235,8 +235,8 @@ def format_message(event: dict) -> str:
             parts.append(f"({index}) {where}: {sentence(comment.get('body'))}")
 
         parts.append(
-            f"Read the full threads with artifacts_comments slug={slug}, then artifacts_reply / "
-            f"artifacts_resolve, and artifacts_update with expected_version={version}."
+            f"Read the full threads with artifact_comments slug={slug}, then artifact_reply / "
+            f"artifact_resolve, and artifact_update with expected_version={version}."
         )
         return " ".join(parts)
 
@@ -250,8 +250,8 @@ def format_message(event: dict) -> str:
             previous = "?"
         return (
             f'[artifacts] {author} edited "{title}", now v{number} ({url}). '
-            f"Read it back with artifacts_get slug={slug}, or see exactly what changed with "
-            f"artifacts_diff from={previous} to={number}."
+            f"Read it back with artifact_get slug={slug}, or see exactly what changed with "
+            f"artifact_diff from={previous} to={number}."
         )
 
     return f'[artifacts] {kind} on "{title}" ({url})'

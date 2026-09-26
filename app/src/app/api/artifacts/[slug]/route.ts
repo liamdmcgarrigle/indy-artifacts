@@ -1,3 +1,4 @@
+import { requireMember } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { createHumanVersion, listVersions, requireArtifact, requireVersion, updateArtifact } from "@/lib/service/artifacts";
 import { countUnsent } from "@/lib/service/comments";
@@ -8,8 +9,9 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ slug: string }> };
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   try {
+    requireMember(getContext(), request);
     const ctx = getContext();
     const { slug } = await params;
     const artifact = requireArtifact(ctx, slug);
@@ -33,6 +35,7 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function PUT(request: Request, { params }: Params) {
   try {
+    requireMember(getContext(), request);
     const { slug } = await params;
     const payload = await body(request);
     const expectedVersion = Number(payload.expected_version ?? payload.expectedVersion);

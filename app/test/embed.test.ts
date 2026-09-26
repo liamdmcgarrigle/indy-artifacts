@@ -4,22 +4,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 let dir: string;
-let GET: (req: Request, ctx: { params: Promise<{ slug: string; version: string; block: string }> }) => Promise<Response>;
+let GET: (
+  req: Request,
+  ctx: { params: Promise<{ cap: string; slug: string; version: string; block: string }> },
+) => Promise<Response>;
+let cap: (slug: string, version: number) => string;
 
-const get = (slug: string, version: number, block: string, scheme = "light") =>
-  GET(new Request(`http://localhost:5174/embed/${slug}/${version}/${block}?scheme=${scheme}`), {
-    params: Promise.resolve({ slug, version: String(version), block }),
+const get = (slug: string, version: number, block: string, scheme = "light", token = cap(slug, version)) =>
+  GET(new Request(`http://localhost:5174/embed/${token}/${slug}/${version}/${block}?scheme=${scheme}`), {
+    params: Promise.resolve({ cap: token, slug, version: String(version), block }),
   });
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "artifact-embed-"));
   process.env.ARTIFACTS_DATA = dir;
   process.env.ARTIFACTS_PUBLIC_URL = "http://agentbox:5174";
-  GET = (await import("@/app/embed/[slug]/[version]/[block]/route")).GET as typeof GET;
+  GET = (await import("@/app/embed/[cap]/[slug]/[version]/[block]/route")).GET as typeof GET;
+  const { capability } = await import("@/lib/auth/accounts");
 
   const { publishArtifact } = await import("@/lib/service/artifacts");
   const { getContext } = await import("@/lib/service/context");
   const ctx = getContext();
+  cap = (slug, version) => capability(ctx, slug, version);
   await publishArtifact(ctx, {
     slug: "embed-md",
     source: [
@@ -133,7 +139,7 @@ describe("embed documents", () => {
 
   it("points a compiled artifact at its bundle", async () => {
     const html = await (await get("embed-react", 1, "page")).text();
-    expect(html).toContain('src="/api/bundle/embed-react/1/bundle.js"');
+    expect(html).toMatch(/src="\/api\/bundle\/[\w.-]+\/embed-react\/1\/bundle\.js"/);
     expect(html).toContain('<div id="root"></div>');
     expect(html).toContain("/primitives/primitives.js");
   });
@@ -154,6 +160,13 @@ describe("embed documents", () => {
 
   it("404s an unknown block and an unknown artifact", async () => {
     expect((await get("embed-md", 1, "e99")).status).toBe(404);
+  });
+
+  it("refuses a frame whose capability is for another version or forged", async () => {
+    const other = await (await get("embed-md", 1, "e0", "light", cap("embed-md", 2))).text();
+    expect(other).toContain("expired");
+    const forged = await (await get("embed-md", 1, "e0", "light", "9999999999.bogus")).text();
+    expect(forged).toContain("expired");
     expect((await get("nope", 1, "e0")).status).toBe(404);
   });
 });

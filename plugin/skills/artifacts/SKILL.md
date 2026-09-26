@@ -35,12 +35,12 @@ agent: { name: "claude", terminal: "<ORCA_TERMINAL_HANDLE>", session: "<CLAUDE_C
 
 If `ORCA_TERMINAL_HANDLE` is empty you are not running under an Orca terminal. Publish
 anyway and say in your reply that comments will not reach you automatically, so you will
-need to check `artifacts_comments` when they say they have reviewed it.
+need to check `artifact_comments` when they say they have reviewed it.
 
 ## Publishing
 
 ```
-artifacts_publish
+artifact_publish
   title:  "Backup run 2026-09-20"
   kind:   "markdown"          # markdown | react | svelte | html; markdown is the default
   source: "<the document>"
@@ -71,31 +71,31 @@ Feedback arrives in this terminal as a `[artifacts]` message naming the artifact
 line range and the comment. You can also pull it yourself at any time. Do that when they
 say "I've left some notes" and nothing has arrived.
 
-1. `artifacts_comments slug:<slug>` lists the open threads, each with `anchor.lines`, the
+1. `artifact_comments slug:<slug>` lists the open threads, each with `anchor.lines`, the
    quoted text, and `source_hint` for compiled kinds. That is where to look in your source.
-2. `artifacts_reply comment_id:<id> body:"..."` answers a question or says what you
-   changed. `artifacts_resolve comment_id:<id>` closes a thread you have addressed.
+2. `artifact_reply comment_id:<id> body:"..."` answers a question or says what you
+   changed. `artifact_resolve comment_id:<id>` closes a thread you have addressed.
    Resolve only what you actually fixed.
-3. `artifacts_update slug:<slug> expected_version:<n> source:"..."` publishes the revision.
+3. `artifact_update slug:<slug> expected_version:<n> source:"..."` publishes the revision.
    `expected_version` is the version you last read, and it is what makes the update safe.
 
-`artifacts_wait slug:<slug> after:<event_id>` blocks for up to 55 seconds if you have
+`artifact_wait slug:<slug> after:<event_id>` blocks for up to 55 seconds if you have
 been told to wait for their review rather than move on.
 
 ## The operator edits too
 
 They can rewrite the source in the browser, and their save is a new version by a human
-author. So an `artifacts_update` can come back as a 409 conflict naming the current
+author. So an `artifact_update` can come back as a 409 conflict naming the current
 version. A 409 is not worth retrying as-is: the page in front of them is no longer the
 page you wrote.
 
-Read it back with `artifacts_get slug:<slug>`, or `artifacts_diff slug:<slug> from:<yours>
+Read it back with `artifact_get slug:<slug>`, or `artifact_diff slug:<slug> from:<yours>
 to:<theirs>` to see what they changed, fold your change into their version, and update
 with the version number you just read. Never overwrite their edit with your copy.
 
 ## The rest of the tools
 
-`artifacts_list` finds what you published earlier in the project. `artifacts_get` with a
+`artifact_list` finds what you published earlier in the project. `artifact_get` with a
 `version` reads any older version back, including its build log if a compiled kind failed.
 
 ## Authoring reference

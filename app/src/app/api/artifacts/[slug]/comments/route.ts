@@ -1,3 +1,4 @@
+import { requireMember } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { createComment, listComments } from "@/lib/service/comments";
 import { body, fail, json } from "@/lib/api/respond";
@@ -9,6 +10,7 @@ type Params = { params: Promise<{ slug: string }> };
 
 export async function GET(request: Request, { params }: Params) {
   try {
+    requireMember(getContext(), request);
     const { slug } = await params;
     const status = (new URL(request.url).searchParams.get("status") ?? "open") as CommentStatus | "all";
     return json({ threads: listComments(getContext(), slug, { status }) });
@@ -19,6 +21,7 @@ export async function GET(request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   try {
+    requireMember(getContext(), request);
     const { slug } = await params;
     const payload = await body(request);
     const comment = createComment(getContext(), slug, {

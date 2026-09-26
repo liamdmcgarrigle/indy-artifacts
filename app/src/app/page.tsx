@@ -1,3 +1,4 @@
+import { pageOwner } from "@/lib/auth/page";
 import Link from "next/link";
 import { getContext } from "@/lib/service/context";
 import { listArtifacts } from "@/lib/service/artifacts";
@@ -17,6 +18,7 @@ function when(iso: string): string {
 }
 
 export default async function IndexPage() {
+  await pageOwner();
   const artifacts = listArtifacts(getContext(), { limit: 300 });
   const groups = new Map<string, typeof artifacts>();
   for (const artifact of artifacts) {
@@ -48,7 +50,7 @@ export default async function IndexPage() {
 
         {artifacts.length === 0 ? (
           <div className="empty">
-            <p>An agent publishes here with the <code>artifacts_publish</code> tool.</p>
+            <p>An agent publishes here with the <code>artifact_publish</code> tool.</p>
             <p className="tiny">
               The MCP endpoint is <code>/mcp</code>. Install the plugin, then ask an agent for a report.
             </p>

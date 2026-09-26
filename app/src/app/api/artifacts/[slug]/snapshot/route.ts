@@ -1,3 +1,4 @@
+import { requireMember } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { createHumanVersion, LIVE_EDIT_MESSAGE, requireArtifact, requireVersion } from "@/lib/service/artifacts";
 import { body, fail, json } from "@/lib/api/respond";
@@ -15,6 +16,7 @@ type Params = { params: Promise<{ slug: string }> };
  */
 export async function POST(request: Request, { params }: Params) {
   try {
+    requireMember(getContext(), request);
     const { slug } = await params;
     const payload = await body(request);
     const text = String(payload.text ?? "");

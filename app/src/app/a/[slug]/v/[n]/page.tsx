@@ -1,3 +1,4 @@
+import { pageOwner } from "@/lib/auth/page";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArtifactView } from "@/components/ArtifactView";
@@ -24,6 +25,7 @@ export default async function VersionPage({
   params: Promise<{ slug: string; n: string }>;
   searchParams: Promise<{ diff?: string }>;
 }) {
+  await pageOwner();
   const { slug, n } = await params;
   const { diff } = await searchParams;
   const number = Number(n);

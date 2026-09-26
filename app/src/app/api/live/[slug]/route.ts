@@ -1,3 +1,4 @@
+import { requireMember } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { findArtifact, requireArtifact } from "@/lib/service/artifacts";
 import { fail } from "@/lib/api/respond";
@@ -27,6 +28,7 @@ function stamp(slug: string): string {
  */
 export async function GET(request: Request, { params }: Params) {
   try {
+    requireMember(getContext(), request);
     const { slug } = await params;
     requireArtifact(getContext(), slug);
 

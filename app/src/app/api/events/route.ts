@@ -1,3 +1,4 @@
+import { requireMember } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { listEvents } from "@/lib/service/events";
 import type { EventRecord } from "@/lib/service/types";
@@ -33,6 +34,7 @@ function wire(event: EventRecord) {
 
 export async function GET(request: Request) {
   try {
+    requireMember(getContext(), request);
     const ctx = getContext();
     const url = new URL(request.url);
     const after = Number(url.searchParams.get("after") ?? 0);

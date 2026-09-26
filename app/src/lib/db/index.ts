@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { SCHEMA } from "./schema";
+import { MIGRATIONS, SCHEMA } from "./schema";
 
 export function openDb(path: string): DatabaseSync {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -10,7 +10,22 @@ export function openDb(path: string): DatabaseSync {
   db.exec("PRAGMA foreign_keys = ON");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/** Apply every migration newer than the database, each in its own transaction. */
+export function migrate(db: DatabaseSync): void {
+  const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
+  // Rebuilding a table that others reference needs foreign keys off for the copy.
+  for (let i = row.user_version; i < MIGRATIONS.length; i++) {
+    db.exec("PRAGMA foreign_keys = OFF");
+    withTx(db, () => {
+      db.exec(MIGRATIONS[i]);
+      db.exec(`PRAGMA user_version = ${i + 1}`);
+    });
+    db.exec("PRAGMA foreign_keys = ON");
+  }
 }
 
 export function withTx<T>(db: DatabaseSync, fn: () => T): T {

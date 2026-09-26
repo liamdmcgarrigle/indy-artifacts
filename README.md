@@ -50,7 +50,7 @@ data:
 
 The full vocabulary is `:::card`, `:::callout`, `:::kpis`, `:::columns` with `:::col`, `:::tabs`
 with `:::tab`, `:::details`, and the fences `chart`, `table`, `mermaid` and `html`. It is documented
-for agents in `plugin/skills/artifacts/reference.md` and served over MCP as `artifacts://reference`.
+for agents in `plugin/skills/artifacts/reference.md` and served over MCP as `indy://reference`.
 
 ## Themes
 
@@ -94,8 +94,8 @@ The pencil is kept alive by where the pointer is rather than by what it entered 
 off to click it does not take it away.
 
 The Edit button still opens the full source in CodeMirror for larger work. Saving creates a new
-version authored by you, and the agent can read it back with `artifacts_get` or see exactly what
-changed with `artifacts_diff`. An agent that tries to update against a stale version gets a 409
+version authored by you, and the agent can read it back with `artifact_get` or see exactly what
+changed with `artifact_diff`. An agent that tries to update against a stale version gets a 409
 naming the current one.
 
 ## Live documents
@@ -104,7 +104,7 @@ A markdown artifact open in the editor is a shared document, held as a CRDT by t
 server on 5175 and stored beside the versions in SQLite. Two browsers editing one artifact see each
 other's carets and changes.
 
-An agent joins the same document with `artifacts_type`, which types its text in a few characters at
+An agent joins the same document with `artifact_type`, which types its text in a few characters at
 a time rather than replacing the page. You watch the words arrive, with a chip naming the agent that
 is writing them. Typing does not create a version on every keystroke: once the document has been
 quiet for a couple of seconds the collaboration server asks the app to snapshot it, and only then,
@@ -144,9 +144,9 @@ codex plugin add artifacts@artifacts-local
 Both get the same MCP server at `http://127.0.0.1:5174/mcp` and the same skill. Details and the
 fallback commands are in `plugin/README.md`.
 
-The ten tools are `artifacts_publish`, `artifacts_update`, `artifacts_type`, `artifacts_get`,
-`artifacts_list`, `artifacts_diff`, `artifacts_comments`, `artifacts_reply`, `artifacts_resolve` and
-`artifacts_wait`.
+The ten tools are `artifact_publish`, `artifact_update`, `artifact_type`, `artifact_get`,
+`artifact_list`, `artifact_diff`, `artifact_comments`, `artifact_reply`, `artifact_resolve` and
+`artifact_wait`.
 
 ## Sandboxing
 

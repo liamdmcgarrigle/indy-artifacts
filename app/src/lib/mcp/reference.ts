@@ -49,14 +49,14 @@ source 1 MB; 40 files / 2 MB total; 30 assets of 20 MB each, given as absolute h
 /home/liam/work, /home/liam/orca or /tmp; comment 20 KB.
 
 ## Typing live
-When the operator is looking at the artifact and asks for a change, \`artifacts_type\`
+When the operator is looking at the artifact and asks for a change, \`artifact_type\`
 writes into the shared document character by character so they can watch it happen,
 and a new version is written once the typing settles. Markdown artifacts only. For
-ordinary publishing use \`artifacts_update\`, which is one atomic version.
+ordinary publishing use \`artifact_update\`, which is one atomic version.
 
 ## Feedback loop
-Comments carry the source lines they point at. Read them with artifacts_comments, answer with
-artifacts_reply, close with artifacts_resolve, and publish fixes with artifacts_update passing the
+Comments carry the source lines they point at. Read them with artifact_comments, answer with
+artifact_reply, close with artifact_resolve, and publish fixes with artifact_update passing the
 expected_version you last saw. A 409 conflict means the operator edited the artifact: re-read it
-with artifacts_get first.
+with artifact_get first.
 `;

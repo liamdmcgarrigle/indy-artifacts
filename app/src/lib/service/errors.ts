@@ -28,3 +28,15 @@ export class ConflictError extends ServiceError {
     this.currentVersion = currentVersion;
   }
 }
+
+export class UnauthorizedError extends ServiceError {
+  constructor(message = "sign in first") {
+    super("unauthorized", message, 401);
+  }
+}
+
+export class ForbiddenError extends ServiceError {
+  constructor(message = "not allowed") {
+    super("forbidden", message, 403);
+  }
+}

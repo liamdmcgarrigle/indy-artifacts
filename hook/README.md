@@ -60,7 +60,7 @@ than losing one.
 Delivery is in order, and a failed send stops the batch: if Orca rejects an event, the
 loop breaks and the next poll fetches the same event again. After three attempts the
 event is acked `undeliverable` and the poller moves on. The comment stays in the UI, and
-the agent can still pull it with `artifacts_comments`.
+the agent can still pull it with `artifact_comments`.
 
 An artifact with no terminal handle is acked `no-terminal` and never sent. That happens
 when the agent published without passing `agent.terminal`.

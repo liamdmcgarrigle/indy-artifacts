@@ -1,3 +1,4 @@
+import { pageOwner } from "@/lib/auth/page";
 import { notFound } from "next/navigation";
 import { Editor } from "@/components/Editor";
 import { getContext } from "@/lib/service/context";
@@ -15,6 +16,7 @@ function collabPort(): number | null {
 export const dynamic = "force-dynamic";
 
 export default async function EditPage({ params }: { params: Promise<{ slug: string }> }) {
+  await pageOwner();
   const { slug } = await params;
   try {
     const ctx = getContext();

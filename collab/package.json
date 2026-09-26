@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "@hocuspocus/server": "4.7.0",
-    "yjs": "13.6.32"
+    "yjs": "13.6.33"
   }
 }
