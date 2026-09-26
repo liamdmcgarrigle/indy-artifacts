@@ -10,8 +10,10 @@
  * server is restarting, and a reset that misses is repaired the next time the
  * document is loaded cold.
  */
+import { config } from "../config";
+
 function collabUrl(): string {
-  return process.env.ARTIFACTS_COLLAB_URL || `http://127.0.0.1:${process.env.COLLAB_PORT || 5175}`;
+  return config().collabUrl;
 }
 
 export function resetLiveDocument(slug: string, text: string | null): void {

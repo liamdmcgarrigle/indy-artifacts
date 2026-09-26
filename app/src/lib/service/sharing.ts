@@ -236,3 +236,17 @@ export function openVisit(ctx: ServiceContext, link: ShareLink, email: string | 
 export function sharedBy(ctx: ServiceContext): string | null {
   return owner(ctx)?.name ?? null;
 }
+
+/** Every page that someone besides the owner can open right now, newest link first. */
+export function listSharedPages(ctx: ServiceContext): (ShareLink & { slug: string; title: string; url: string })[] {
+  const rows = ctx.db
+    .prepare(
+      `SELECT s.*, a.slug AS slug, a.title AS title FROM share_links s JOIN artifacts a ON a.id = s.artifact_id
+       WHERE s.revoked_at IS NULL ORDER BY s.created_at DESC`,
+    )
+    .all() as Row[];
+  return rows
+    .map((row) => ({ link: toLink(row), slug: String(row.slug), title: String(row.title) }))
+    .filter(({ link }) => live(link))
+    .map(({ link, slug, title }) => ({ ...link, slug, title, url: shareUrl(link) }));
+}

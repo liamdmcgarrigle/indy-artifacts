@@ -8,6 +8,7 @@ import { buildArtifact } from "../build/index";
 import { artifactUrl, buildDir, type ServiceContext } from "./context";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { carryAssets, copyAssets } from "./assets";
+import { assertRoom, forgetUsage } from "./storage";
 import { resetLiveDocument } from "./collab";
 
 /** The message the document server uses when it snapshots a live edit. */
@@ -292,6 +293,9 @@ async function writeVersion(
 ): Promise<PublishResult> {
   const number = artifact.currentVersion + 1;
   const contentHash = hashContent(artifact.kind, content.source, content.files);
+  const textBytes =
+    Buffer.byteLength(content.source ?? "") + Object.values(content.files ?? {}).reduce((n, f) => n + Buffer.byteLength(f), 0);
+  await assertRoom(ctx, textBytes);
 
   let assets = previous?.assets ?? [];
   if (input.assets !== undefined) {
@@ -395,6 +399,7 @@ async function writeVersion(
   if (artifact.kind === "markdown" && input.message !== LIVE_EDIT_MESSAGE) {
     resetLiveDocument(artifact.slug, content.source);
   }
+  forgetUsage();
 
   return {
     slug: artifact.slug,

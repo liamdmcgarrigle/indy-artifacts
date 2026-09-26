@@ -1,0 +1,12 @@
+# Local additions to compose.yaml. Copy to compose.override.yaml (which git
+# ignores); compose merges it in on every command.
+#
+# This example lets pages load screenshots from a folder on the host by their
+# absolute path, the way an agent on the same machine refers to them.
+services:
+  indy:
+    environment:
+      INDY_ASSET_ROOTS: /srv/screenshots
+    volumes:
+      # Same path inside as outside, read-only.
+      - /srv/screenshots:/srv/screenshots:ro

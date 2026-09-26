@@ -1,0 +1,16 @@
+# Never send the database, local settings or installed modules into a build.
+data
+.env
+.env.*
+!.env.example
+**/node_modules
+**/.next
+**/dist
+**/*.tsbuildinfo
+app/test/.corpus
+.git
+.orca
+.shots
+tools/screenshot
+hook
+docs

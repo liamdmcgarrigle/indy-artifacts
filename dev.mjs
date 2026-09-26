@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { startProxy } from "./proxy.mjs";
 
-const PORT = Number(process.env.PORT || 5174);
+const PORT = Number(process.env.PORT || 1936);
 const APP_PORT = Number(process.env.INDY_APP_PORT || 3100);
 const COLLAB_PORT = Number(process.env.COLLAB_PORT || 3101);
 const shared = {

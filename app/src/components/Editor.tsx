@@ -12,8 +12,8 @@ export interface EditorProps {
   version: number;
   source: string | null;
   files: Record<string, string> | null;
-  /** Port the document server listens on, or null when it is not configured. */
-  collabPort: number | null;
+  /** Whether the live document server is on; it answers at /collab on this address. */
+  collab: boolean;
 }
 
 const NAME_KEY = "art-author-name";
@@ -38,7 +38,7 @@ export function Editor(props: EditorProps) {
   const key = props.files ? active : "source";
   // Markdown only: a compiled artifact is several files, and the live document
   // holds one text.
-  const collaborative = props.collabPort !== null && !props.files;
+  const collaborative = props.collab && !props.files;
 
   useEffect(() => {
     try {
@@ -105,7 +105,7 @@ export function Editor(props: EditorProps) {
         if (cancelled || !host.current) return;
 
         const doc = new Y.Doc();
-        const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:${props.collabPort}`;
+        const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;
         const hocus = new HocuspocusProvider({ url, name: props.slug, document: doc });
         hocus.on("status", (event: { status: string }) => setLive(event.status === "connected" ? "on" : "connecting"));
 
@@ -158,7 +158,7 @@ export function Editor(props: EditorProps) {
     };
     // Rebuilding on `key` swaps the document when the operator picks another file.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, props.kind, collaborative, props.slug, props.collabPort]);
+  }, [key, props.kind, collaborative, props.slug, props.collab]);
 
   async function save() {
     setBusy(true);

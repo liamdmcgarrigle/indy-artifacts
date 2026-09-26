@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { config } from "../config";
 import { createRequire } from "node:module";
 import { dirname, join, normalize, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -38,8 +39,7 @@ function nodePathDirs(): string[] {
   const dirs: string[] = [];
   // In the container the extra packages artifacts may import (chart.js, d3,
   // lucide-react) live outside the traced standalone node_modules.
-  const extra = process.env.ARTIFACTS_BUILD_MODULES;
-  if (extra) dirs.push(...extra.split(":").map((d) => d.trim()).filter(Boolean));
+  dirs.push(...config().buildModules);
   const require = createRequire(import.meta.url);
   try {
     // .../node_modules/react/package.json -> .../node_modules
@@ -116,7 +116,7 @@ async function loadSveltePlugin() {
  * their host path), so the scratch directory has to live somewhere else.
  */
 function scratchRoot(): string {
-  return process.env.ARTIFACTS_TMP || tmpdir();
+  return config().tmpDir ?? tmpdir();
 }
 
 export async function buildArtifact(input: BuildInput): Promise<BuildResult> {

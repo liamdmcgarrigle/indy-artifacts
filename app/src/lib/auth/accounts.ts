@@ -296,3 +296,10 @@ export function checkCapability(ctx: ServiceContext, cap: string, slug: string, 
   if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return false;
   return safeEqual(hmac(secret(ctx), `${slug}/${version}|${exp}`), cap.slice(dot + 1));
 }
+
+// ---------------------------------------------------------------- first run
+
+/** The lines the server prints while an install has no owner. */
+export function setupBanner(url: string): string {
+  return ["", "  Indy has no account yet. Create yours at", `    ${url}/setup`, ""].join("\n");
+}

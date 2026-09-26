@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { z } from "zod";
 import {
   diffVersions,
@@ -22,7 +23,7 @@ type Content = { content: { type: "text"; text: string }[]; isError?: boolean };
 
 /** Where the document server listens. Same host, its own port. */
 function collabUrl(): string {
-  return process.env.ARTIFACTS_COLLAB_URL || `http://127.0.0.1:${process.env.COLLAB_PORT || 5175}`;
+  return config().collabUrl;
 }
 
 function ok(summary: string, data?: unknown): Content {

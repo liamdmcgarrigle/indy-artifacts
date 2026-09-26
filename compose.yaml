@@ -1,28 +1,76 @@
+# Indy: one container, one port, one volume.
+#
+#   cp .env.example .env        then set INDY_URL
+#   docker compose up -d
+#   docker compose logs indy    the setup code is printed here on first start
+#
+# Updating is docker compose pull && docker compose up -d. Your data is in the
+# indy-data volume and survives both.
+#
+# For HTTPS on a public domain, set INDY_DOMAIN in .env and add the bundled
+# Caddy, which gets and renews the certificate itself:
+#
+#   docker compose --profile https up -d
+#
+# Full instructions are in README.md, under "Running Indy".
+
+name: indy
+
 services:
-  artifacts:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: localhost/artifacts:latest
-    container_name: artifacts
+  indy:
+    image: ${INDY_IMAGE:-ghcr.io/liamdmcgarrigle/indy-artifacts:latest}
+    # To run your own build instead: docker build -t indy:local . and set
+    # INDY_IMAGE=indy:local in .env.
     restart: unless-stopped
-    # Rootless podman: map the host user to the same uid inside, so the
-    # container's uid 1000 owns the bind-mounted ./data.
-    userns_mode: "keep-id"
-    ports:
-      - "${ARTIFACTS_PORT:-5174}:5174"
-      # The document server: live editing, and agents typing into an artifact.
-      - "${ARTIFACTS_COLLAB_PORT:-5175}:5175"
+    init: true
+    env_file:
+      - path: .env
+        required: false
     environment:
-      ARTIFACTS_PUBLIC_URL: "${ARTIFACTS_PUBLIC_URL:-http://agentbox:5174}"
-      ARTIFACTS_ASSET_ROOTS: "/home/liam/work:/home/liam/orca:/tmp"
-      ARTIFACTS_COLLAB_PORT: "${ARTIFACTS_COLLAB_PORT:-5175}"
+      INDY_URL: ${INDY_URL:-http://localhost:1936}
+    ports:
+      # Set INDY_BIND=127.0.0.1 when Caddy (or another proxy) is in front, so
+      # the plain-HTTP port is not reachable from outside.
+      - "${INDY_BIND:-0.0.0.0}:${INDY_PORT:-1936}:1936"
     volumes:
-      - ./data:/data:Z
-      - ./themes:/themes:ro,Z
-      # Read-only so an artifact can reference a screenshot by its host path.
-      - /home/liam/work:/home/liam/work:ro
-      - /home/liam/orca:/home/liam/orca:ro
-      - /tmp:/tmp:ro
+      # The database, uploaded assets and compiled artifacts. Back this up.
+      - indy-data:/data
+    # Also in the Dockerfile; repeated here because Podman's default image
+    # format drops it, and Caddy waits on it.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:1936/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
     mem_limit: 1g
-    cpus: 2
+
+  caddy:
+    image: caddy:2
+    profiles: [https]
+    restart: unless-stopped
+    depends_on:
+      indy:
+        condition: service_healthy
+    environment:
+      INDY_DOMAIN: ${INDY_DOMAIN:-}
+    # The check lives in here rather than in compose's ${VAR:?} syntax, which
+    # would refuse to start Indy at all whenever INDY_DOMAIN is unset.
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        [ -n "$$INDY_DOMAIN" ] || { echo "Set INDY_DOMAIN in .env to use the https profile."; exit 1; };
+        exec caddy reverse-proxy --from "$$INDY_DOMAIN" --to indy:1936
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  indy-data:
+  caddy-data:
+  caddy-config:

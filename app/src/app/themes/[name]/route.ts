@@ -1,10 +1,11 @@
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
 function themesDir(): string {
-  return process.env.ARTIFACTS_THEMES ?? resolve(process.cwd(), "..", "themes");
+  return config().themesDir;
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ name: string }> }) {

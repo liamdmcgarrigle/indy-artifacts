@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: new URL("..", import.meta.url).pathname,
   allowedDevOrigins: ["agentbox", "agentbox.taila42e4e.ts.net", "100.100.43.42", "127.0.0.1", "localhost"],
-  serverExternalPackages: ["esbuild", "esbuild-svelte", "svelte"],
+  serverExternalPackages: ["esbuild", "esbuild-svelte", "svelte", "sharp"],
   typescript: { ignoreBuildErrors: false },
   async headers() {
     // Sandboxed frames run on an opaque origin, so anything they fetch with

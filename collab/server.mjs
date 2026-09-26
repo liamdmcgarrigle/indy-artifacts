@@ -23,7 +23,7 @@ import { createHmac } from "node:crypto";
 
 const PORT = Number(process.env.COLLAB_PORT || 5175);
 const DATA = process.env.INDY_DATA || process.env.ARTIFACTS_DATA || join(process.cwd(), "data");
-const APP = process.env.INDY_APP_URL || process.env.ARTIFACTS_APP_URL || "http://127.0.0.1:5174";
+const APP = process.env.INDY_APP_URL || process.env.ARTIFACTS_APP_URL || "http://127.0.0.1:1936";
 const DB_FILE = existsSync(join(DATA, "artifacts.db")) ? "artifacts.db" : "indy.db";
 const SNAPSHOT_AFTER_MS = Number(process.env.COLLAB_SNAPSHOT_MS || 2500);
 

@@ -47,7 +47,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         </div>
         <div className="flex flex-col gap-2.5">
           <h1 className="text-balance text-[26px] font-semibold leading-tight tracking-[-0.015em]">
-            Your agents publish here. You read, comment and answer.
+            Your agents publish here. You read, edit, comment and answer.
           </h1>
           <p className="text-[15px] leading-relaxed text-fg-3">
             Reports, live pages and forms from Claude, Codex or anything that speaks MCP.

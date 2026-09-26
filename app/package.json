@@ -2,11 +2,12 @@
   "name": "app",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/build-vendor.mjs && next dev --hostname 0.0.0.0 --port 5174",
+    "dev": "node scripts/build-vendor.mjs && next dev --hostname 0.0.0.0 --port 1936",
     "build": "node scripts/build-vendor.mjs && next build",
-    "start": "next start --hostname 0.0.0.0 --port 5174",
+    "start": "next start --hostname 0.0.0.0 --port 1936",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "vendor": "node scripts/build-vendor.mjs"
@@ -81,6 +82,7 @@
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
     "remark-rehype": "11.1.2",
+    "sharp": "0.35.4",
     "sonner": "2.0.8",
     "svelte": "5.57.1",
     "tailwind-merge": "3.7.0",

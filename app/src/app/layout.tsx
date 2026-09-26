@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: "Indy", template: "%s · Indy" },
-  description: "Pages, reports and forms your agents publish, for you to read, comment on and answer.",
+  description: "Pages, reports and forms your agents publish, for you to read, edit, comment on and answer.",
   icons: { icon: "/icon.svg" },
 };
 
