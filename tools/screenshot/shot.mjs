@@ -14,6 +14,7 @@
  *     "scheme": "light" | "dark",          // default light
  *     "full": true,                        // full page instead of viewport
  *     "scale": 2,                          // device pixel ratio, default 2
+ *     "mobile": true,                      // touch, no hover (use with width 390)
  *     "steps": [                           // optional interactions
  *       { "click": ".pin" },
  *       { "hover": ".btn" },
@@ -47,6 +48,9 @@ for (const shot of Array.isArray(shots) ? shots : [shots]) {
     deviceScaleFactor: shot.scale ?? 2,
     colorScheme: scheme,
     reducedMotion: "reduce",
+    // A phone: touch events, no hover, the mobile viewport meta honoured.
+    isMobile: shot.mobile === true,
+    hasTouch: shot.mobile === true,
   });
   // Signed-in pages: a recipe can carry the session cookie for the host.
   if (shot.cookies?.length) {
@@ -80,6 +84,8 @@ for (const shot of Array.isArray(shots) ? shots : [shots]) {
     for (const step of shot.steps ?? []) {
       if (step.click) await page.click(step.click, { timeout: 5000 });
       if (step.hover) await page.hover(step.hover, { timeout: 5000 });
+      if (step.move) await page.mouse.move(step.move[0], step.move[1], { steps: 4 });
+      if (step.tap) await page.touchscreen.tap(step.tap[0], step.tap[1]);
       if (step.press) await page.keyboard.press(step.press);
       if (step.type) await page.fill(step.type[0], step.type[1]);
       if (step.keys) await page.keyboard.type(step.keys, { delay: 20 });

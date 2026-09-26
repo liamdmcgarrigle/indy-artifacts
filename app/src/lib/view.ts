@@ -42,6 +42,7 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
     title: artifact.title,
     project: artifact.project,
     series: artifact.series,
+    branch: artifact.branch,
     description: artifact.description,
     agentName: artifact.agentName ?? versions.find((v) => v.authorKind === "agent")?.authorName ?? null,
     pinned: artifact.pinnedAt !== null,

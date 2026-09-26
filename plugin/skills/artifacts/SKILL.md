@@ -45,9 +45,14 @@ artifact_publish
   kind:   "markdown"          # markdown | react | svelte | html; markdown is the default
   source: "<the document>"
   theme:  "default"           # default | picaflick | backup-studio
-  project: "backup-studio"    # optional grouping for the index
+  project: "backup-studio"    # the repository's folder name
+  branch: "feat/nightly-scans" # `git branch --show-current`; pass it whenever you are in a repo
   agent:  { name, terminal, session }
 ```
+
+Pass `project` and `branch` from the repository you are working in. The library groups
+pages by project and lets the reader filter a project by branch, so a page without them
+is harder to find.
 
 Markdown is the right answer almost every time: cards, KPIs, callouts, tabs, charts,
 tables and mermaid diagrams are all directives and fences, so you write a short document

@@ -35,6 +35,7 @@ export interface LibraryRow {
   kind: Kind;
   project: string | null;
   series: string | null;
+  branch: string | null;
   agentName: string | null;
   lastAuthor: string | null;
   lastAuthorKind: "agent" | "human" | null;
@@ -62,7 +63,7 @@ export interface SidebarCounts {
   pinned: number;
   live: number;
   archived: number;
-  projects: { name: string; count: number }[];
+  projects: { name: string; count: number; branches: { name: string; count: number }[] }[];
   series: { name: string; count: number; project: string | null }[];
 }
 
@@ -71,7 +72,7 @@ export type LibraryFilter =
   | { view: "pinned" }
   | { view: "live" }
   | { view: "archive" }
-  | { view: "project"; name: string }
+  | { view: "project"; name: string; branch?: string }
   | { view: "series"; name: string };
 
 const isLive = (row: Row) =>
@@ -147,6 +148,7 @@ function toRow(row: Row): LibraryRow {
     kind: String(row.kind) as Kind,
     project: (row.project as string | null) ?? null,
     series: (row.series as string | null) ?? null,
+    branch: (row.branch as string | null) ?? null,
     agentName: (row.agent_name as string | null) ?? null,
     lastAuthor: (row.last_name as string | null) ?? null,
     lastAuthorKind: (row.last_kind as "agent" | "human" | null) ?? null,
@@ -207,8 +209,9 @@ export function listLibrary(ctx: ServiceContext, filter: LibraryFilter, limit = 
       where = "WHERE a.archived_at IS NOT NULL ORDER BY a.updated_at DESC";
       break;
     case "project":
-      where = "WHERE a.project = :name ORDER BY a.archived_at IS NOT NULL, a.updated_at DESC";
+      where = `WHERE a.project = :name${filter.branch ? " AND a.branch = :branch" : ""} ORDER BY a.archived_at IS NOT NULL, a.updated_at DESC`;
       params.name = filter.name;
+      if (filter.branch) params.branch = filter.branch;
       break;
     case "series":
       where = "WHERE a.series = :name ORDER BY a.created_at DESC";
@@ -297,6 +300,18 @@ export function needsYou(ctx: ServiceContext): NeedsYouRow[] {
   return folded.map(({ rank: _rank, ...rest }) => rest);
 }
 
+/** A project's branches, busiest first; the default branches sort to the top. */
+export function branchesOf(ctx: ServiceContext, project: string): { name: string; count: number }[] {
+  return (
+    ctx.db
+      .prepare(
+        `SELECT branch AS name, COUNT(*) AS count FROM artifacts WHERE project = ? AND branch IS NOT NULL
+          GROUP BY branch ORDER BY branch IN ('main', 'master') DESC, MAX(updated_at) DESC`,
+      )
+      .all(project) as Row[]
+  ).map((r) => ({ name: String(r.name), count: Number(r.count) }));
+}
+
 export function sidebarCounts(ctx: ServiceContext): SidebarCounts {
   sweepArchive(ctx);
   const one = (sql: string, params: unknown[] = []) =>
@@ -314,7 +329,7 @@ export function sidebarCounts(ctx: ServiceContext): SidebarCounts {
           "SELECT project AS name, COUNT(*) AS count FROM artifacts WHERE project IS NOT NULL GROUP BY project ORDER BY MAX(updated_at) DESC",
         )
         .all() as Row[]
-    ).map((r) => ({ name: String(r.name), count: Number(r.count) })),
+    ).map((r) => ({ name: String(r.name), count: Number(r.count), branches: branchesOf(ctx, String(r.name)) })),
     series: (
       ctx.db
         .prepare(

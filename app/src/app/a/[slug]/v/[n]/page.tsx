@@ -25,7 +25,7 @@ export default async function VersionPage({
   params: Promise<{ slug: string; n: string }>;
   searchParams: Promise<{ diff?: string }>;
 }) {
-  await pageOwner();
+  const { user } = await pageOwner();
   const { slug, n } = await params;
   const { diff } = await searchParams;
   const number = Number(n);
@@ -64,7 +64,7 @@ export default async function VersionPage({
         </>
       );
     }
-    return <ArtifactView {...loadView(slug, number)} />;
+    return <ArtifactView {...loadView(slug, number)} userName={user?.name ?? null} />;
   } catch (err) {
     if (err instanceof NotFoundError) notFound();
     throw err;

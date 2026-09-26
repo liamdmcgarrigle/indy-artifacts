@@ -65,6 +65,7 @@ function toArtifact(row: Row): Artifact {
     theme: String(row.theme),
     project: (row.project as string | null) ?? null,
     series: (row.series as string | null) ?? null,
+    branch: (row.branch as string | null) ?? null,
     description: (row.description as string | null) ?? null,
     tags: JSON.parse(String(row.tags_json ?? "[]")),
     agentName: (row.agent_name as string | null) ?? null,
@@ -225,6 +226,7 @@ interface Meta {
   theme: string;
   project: string | null;
   series: string | null;
+  branch: string | null;
   description: string | null;
   tags: string[];
 }
@@ -252,6 +254,8 @@ function resolveMeta(kind: Kind, input: PublishInput, source: string | null, exi
     theme,
     project: (fmProject ?? input.project?.trim() ?? existing?.project ?? null) || null,
     series: ((fmSeries ?? input.series?.trim() ?? existing?.series ?? null) || null)?.slice(0, 80) ?? null,
+    // The latest publish wins: a page updated from another branch now belongs to it.
+    branch: ((input.branch?.trim() ?? existing?.branch ?? null) || null)?.slice(0, 120) ?? null,
     description: (fmDescription ?? input.description?.trim() ?? existing?.description ?? null) || null,
     tags: fmTags ?? input.tags ?? existing?.tags ?? [],
   };
@@ -343,7 +347,7 @@ async function writeVersion(
 
     ctx.db
       .prepare(
-        `UPDATE artifacts SET title = :title, theme = :theme, project = :project, series = :series, description = :description,
+        `UPDATE artifacts SET title = :title, theme = :theme, project = :project, series = :series, branch = :branch, description = :description,
            tags_json = :tags_json, current_version = :current_version, updated_at = :updated_at,
            archived_at = NULL,
            seen_version = CASE WHEN :by_human = 1 THEN :current_version ELSE seen_version END,
@@ -360,6 +364,7 @@ async function writeVersion(
           theme: meta.theme,
           project: meta.project,
           series: meta.series,
+          branch: meta.branch,
           description: meta.description,
           tags_json: JSON.stringify(meta.tags),
           current_version: number,

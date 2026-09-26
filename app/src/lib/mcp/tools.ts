@@ -58,6 +58,7 @@ export const PUBLISH_SHAPE = {
   theme: z.enum(["default", "picaflick", "backup-studio"]).optional(),
   project: z.string().max(80).optional().describe("the repository or product this is about, usually the git repo's folder name"),
   series: z.string().max(80).optional().describe("for recurring pages (nightly runs, weekly reports): the same name each time groups them"),
+  branch: z.string().max(120).optional().describe("the git branch you are working on (git branch --show-current); pass it whenever you are in a repository"),
   description: z.string().max(400).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
   source: z.string().optional().describe("markdown or a complete html document"),

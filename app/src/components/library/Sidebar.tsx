@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Archive, Clock3, Inbox, Layers3, LogOut, Moon, Pin, Search, Settings, Sun } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Archive, Clock3, GitBranch, Inbox, Layers3, LogOut, Moon, Pin, Search, Settings, Sun } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SackMark } from "@/components/indy/brand";
 import { openCommand } from "@/components/indy/CommandPalette";
@@ -18,6 +18,8 @@ function NavItem({
   count,
   badge,
   active,
+  mono,
+  indent,
 }: {
   href: string;
   icon: React.ReactNode;
@@ -25,18 +27,21 @@ function NavItem({
   count?: number;
   badge?: boolean;
   active: boolean;
+  mono?: boolean;
+  indent?: boolean;
 }) {
   return (
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-[30px] items-center gap-2.5 rounded-[7px] px-2 text-[13px] text-sidebar-foreground transition-colors hover:bg-raised hover:text-foreground",
+        "flex h-10 items-center gap-2.5 rounded-[7px] px-2 text-[15px] md:h-[30px] md:text-[13px] text-sidebar-foreground transition-colors hover:bg-raised hover:text-foreground",
         active && "bg-raised font-medium text-foreground",
+        indent && "ml-4",
       )}
     >
       <span className="flex w-[15px] justify-center">{icon}</span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className={cn("min-w-0 flex-1 truncate", mono && "font-mono text-[12px] md:text-[12px]")}>{label}</span>
       {count !== undefined && count > 0 ? (
         <span
           className={cn(
@@ -65,20 +70,23 @@ export function Sidebar({
   userName,
   host,
   signedIn,
+  className,
 }: {
   counts: SidebarCounts;
   userName: string;
   host: string;
   signedIn: boolean;
+  className?: string;
 }) {
   const path = usePathname();
+  const branch = useSearchParams().get("branch");
   const { scheme, toggle } = useScheme();
   const is = (href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`));
 
   return (
     <nav
       aria-label="Library"
-      className="flex h-dvh w-[248px] shrink-0 flex-col gap-5 border-r border-hairline bg-sidebar px-3 py-3.5"
+      className={cn("flex h-dvh w-[248px] shrink-0 flex-col gap-5 border-r border-hairline bg-sidebar px-3 py-3.5", className)}
     >
       <Link href="/" className="flex items-center gap-2.5 px-1.5 py-1">
         <SackMark size={16} className="text-sand" />
@@ -93,7 +101,7 @@ export function Sidebar({
       >
         <Search className="size-3.5" />
         <span className="flex-1">Search or jump to…</span>
-        <kbd className="kbd">⌘K</kbd>
+        <kbd className="kbd max-md:hidden">⌘K</kbd>
       </button>
 
       <div className="flex flex-col gap-0.5">
@@ -117,14 +125,30 @@ export function Sidebar({
         {counts.projects.length ? (
           <Section title="Projects">
             {counts.projects.map((p) => (
-              <NavItem
-                key={p.name}
-                href={`/project/${encodeURIComponent(p.name)}`}
-                icon={<span className="size-2 rounded-[2px]" style={{ background: projectColour(p.name) }} />}
-                label={p.name}
-                count={p.count}
-                active={is(`/project/${encodeURIComponent(p.name)}`)}
-              />
+              <div key={p.name} className="flex flex-col gap-0.5">
+                <NavItem
+                  href={`/project/${encodeURIComponent(p.name)}`}
+                  icon={<span className="size-2 rounded-[2px]" style={{ background: projectColour(p.name) }} />}
+                  label={p.name}
+                  count={p.count}
+                  active={is(`/project/${encodeURIComponent(p.name)}`) && !branch}
+                />
+                {/* The open project lists its branches, so one branch's pages are a click away. */}
+                {is(`/project/${encodeURIComponent(p.name)}`)
+                  ? p.branches.map((b) => (
+                      <NavItem
+                        key={b.name}
+                        href={`/project/${encodeURIComponent(p.name)}?branch=${encodeURIComponent(b.name)}`}
+                        icon={<GitBranch className="size-3.5" />}
+                        label={b.name}
+                        count={b.count}
+                        mono
+                        indent
+                        active={branch === b.name}
+                      />
+                    ))
+                  : null}
+              </div>
             ))}
           </Section>
         ) : null}

@@ -56,6 +56,8 @@ export interface PublishInput {
   project?: string;
   /** Groups recurring pages, such as nightly runs, under one name. */
   series?: string;
+  /** The git branch the agent is on, e.g. feat/share-links. */
+  branch?: string;
   description?: string;
   tags?: string[];
   source?: string;
@@ -77,6 +79,7 @@ export interface Artifact {
   theme: string;
   project: string | null;
   series: string | null;
+  branch: string | null;
   description: string | null;
   tags: string[];
   agentName: string | null;

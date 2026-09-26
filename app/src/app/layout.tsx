@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./indy.css";
@@ -9,6 +9,9 @@ export const metadata: Metadata = {
   description: "Pages, reports and forms your agents publish, for you to read, comment on and answer.",
   icons: { icon: "/icon.svg" },
 };
+
+/** Edge to edge on a phone, with the safe areas left to the page. */
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#0e0f11" };
 
 /**
  * Set the colour scheme before first paint so the page never flashes. Indy is
@@ -24,6 +27,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" data-scheme="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: SCHEME_BOOT }} />
+        {/* Indy is dark already. Dark Reader would otherwise rewrite every icon
+            before React hydrates, and each one reports a hydration mismatch. */}
+        <meta name="darkreader-lock" />
         {/* Served from this origin because sandbox frames have no network. */}
         <link rel="stylesheet" href="/fonts/fonts.css" />
         <link rel="stylesheet" href="/primitives/primitives.css" />

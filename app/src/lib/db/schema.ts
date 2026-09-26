@@ -217,4 +217,9 @@ export const MIGRATIONS: string[] = [
     SELECT a.id, a.title, COALESCE(a.description, ''), COALESCE(v.source, '')
       FROM artifacts a LEFT JOIN versions v ON v.artifact_id = a.id AND v.number = a.current_version;
   `,
+  // 2: the git branch a page was written on, so a project's pages can be told apart by branch.
+  `
+  ALTER TABLE artifacts ADD COLUMN branch TEXT;
+  CREATE INDEX artifacts_project_branch ON artifacts (project, branch);
+  `,
 ];

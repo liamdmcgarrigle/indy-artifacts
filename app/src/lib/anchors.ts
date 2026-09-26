@@ -133,6 +133,56 @@ function caretAt(x: number, y: number): CaretPosition | null {
   return range ? { offsetNode: range.startContainer, offset: range.startOffset } : null;
 }
 
+/**
+ * Is there a character under this point? The caret APIs snap to the nearest
+ * text even from empty space, so check the character's own box.
+ */
+export function isOverText(x: number, y: number): boolean {
+  const caret = caretAt(x, y);
+  if (!caret || caret.offsetNode.nodeType !== 3) return false;
+  const text = caret.offsetNode as Text;
+  const range = document.createRange();
+  for (const at of [caret.offset - 1, caret.offset]) {
+    if (at < 0 || at >= text.data.length) continue;
+    range.setStart(text, at);
+    range.setEnd(text, at + 1);
+    for (const r of Array.from(range.getClientRects())) {
+      if (x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 2) return true;
+    }
+  }
+  return false;
+}
+
+const KIND_NAMES: Record<string, string> = {
+  "ART-KPI": "tile",
+  "ART-CHART": "chart",
+  "ART-EMBED": "embed",
+  IMG: "image",
+  TR: "row",
+  LI: "list item",
+  P: "paragraph",
+  H1: "heading",
+  H2: "heading",
+  H3: "heading",
+  H4: "heading",
+  H5: "heading",
+  H6: "heading",
+  PRE: "block",
+  BLOCKQUOTE: "quote",
+  "ART-CALLOUT": "callout",
+  "ART-CARD": "card",
+  "ART-COL": "column",
+  "ART-DETAILS": "section",
+};
+
+/** A word for what was picked: "tile", "row", "chart". */
+export function kindName(el: HTMLElement): string {
+  if (el.matches("pre:has(> art-chart)")) return "chart";
+  if (el.matches("pre:has(> art-table)")) return "table";
+  if (el.tagName === "ART-KPIS") return "row of tiles";
+  return KIND_NAMES[el.tagName] ?? "block";
+}
+
 /** A click with the comment tool on: a caret in text, or the element itself. */
 export function anchorFromPoint(root: HTMLElement, clientX: number, clientY: number): Anchor | null {
   const target = document.elementFromPoint(clientX, clientY);
@@ -181,6 +231,82 @@ export function anchorForBlock(block: HTMLElement, extra: Partial<Anchor> = {}):
 export interface Resolved {
   rect: DOMRect;
   exact: boolean;
+  /** For an element anchor, the whole element, so it can be outlined. */
+  box?: DOMRect;
+}
+
+/**
+ * The smallest thing worth commenting on under the pointer: a counter tile, a
+ * table row, a list item, an image, a paragraph. Innermost first, since
+ * closest() walks outwards and stops at the first match.
+ */
+const PICKABLE = [
+  "art-kpi",
+  "art-chart",
+  "art-embed",
+  "img",
+  "tr",
+  "li",
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "pre",
+  "blockquote",
+  "art-callout",
+  "art-card",
+  "art-col",
+  "art-details",
+  "[data-block]",
+].join(",");
+
+/** Elements whose words are the point: a click in them marks a spot in the text. */
+const TEXTUAL = new Set(["P", "LI", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE"]);
+
+export function pickTarget(root: HTMLElement, node: Element | null): HTMLElement | null {
+  const el = node?.closest<HTMLElement>(PICKABLE) ?? null;
+  return el && root.contains(el) && blockOf(el) ? el : null;
+}
+
+/** A path from a block down to one of its elements, to find it again later. */
+export function pathWithin(block: HTMLElement, el: HTMLElement): string | undefined {
+  if (el === block) return undefined;
+  const parts: string[] = [];
+  let node: HTMLElement | null = el;
+  while (node && node !== block) {
+    const tag = node.tagName.toLowerCase();
+    const parent: HTMLElement | null = node.parentElement;
+    if (!parent) return undefined;
+    const same = Array.from(parent.children).filter((c) => c.tagName === node!.tagName);
+    parts.unshift(`${tag}:nth-of-type(${same.indexOf(node) + 1})`);
+    node = parent;
+  }
+  return node === block ? `:scope > ${parts.join(" > ")}` : undefined;
+}
+
+/**
+ * A comment on a picked element. Inside running text it marks the exact spot;
+ * on a tile, a chart, an image or a row it pins the element itself, with the
+ * point clicked inside it and the words it holds as the quote.
+ */
+export function anchorFromPick(root: HTMLElement, el: HTMLElement, clientX: number, clientY: number): Anchor | null {
+  const block = blockOf(el);
+  if (!block || !root.contains(block)) return null;
+  if (TEXTUAL.has(el.tagName)) {
+    const point = anchorFromPoint(root, clientX, clientY);
+    if (point?.type === "point") return point;
+  }
+  const rect = el.getBoundingClientRect();
+  const text = (el.innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim();
+  return anchorForBlock(block, {
+    selector: pathWithin(block, el),
+    quote: text ? truncate(text, 200) : undefined,
+    x: rect.width ? Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1) : 0.5,
+    y: rect.height ? Math.min(Math.max((clientY - rect.top) / rect.height, 0), 1) : 0.5,
+  });
 }
 
 /** A live DOM Range over a character span of a block, or null if it cannot be built. */
@@ -252,12 +378,16 @@ export function resolveAnchor(root: HTMLElement, anchor: Anchor): Resolved | nul
   }
 
   if (block) {
-    const rect = block.getBoundingClientRect();
+    // A picked element inside the block; frame selectors (no :scope) point into
+    // the frame's own document and are not ours to resolve.
+    const inner = anchor.selector?.startsWith(":scope") ? block.querySelector<HTMLElement>(anchor.selector) : null;
+    const target = inner ?? block;
+    const rect = target.getBoundingClientRect();
     if (anchor.type === "element" && typeof anchor.x === "number" && typeof anchor.y === "number") {
       const point = new DOMRect(rect.left + rect.width * anchor.x, rect.top + rect.height * anchor.y, 0, 0);
-      return { rect: point, exact: true };
+      return { rect: point, exact: !anchor.selector || !!inner || !anchor.selector.startsWith(":scope"), box: rect };
     }
-    return { rect, exact: anchor.type === "element" };
+    return { rect, exact: anchor.type === "element", box: anchor.type === "element" ? rect : undefined };
   }
 
   return null;

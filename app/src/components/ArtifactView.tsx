@@ -5,14 +5,16 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   anchorForBlock,
+  anchorFromPick,
   anchorFromPoint,
+  pickTarget,
   anchorFromSelection,
   blockOf,
   describeAnchor,
   rangeForAnchor,
   resolveAnchor,
-  spotFor,
-  spreadPins,
+  isOverText,
+  kindName,
   truncate,
   type Anchor,
   type Spot,
@@ -56,11 +58,14 @@ export interface ArtifactViewProps {
   title: string;
   project: string | null;
   series: string | null;
+  branch: string | null;
   description: string | null;
   agentName: string | null;
   pinned: boolean;
   archived: boolean;
   createdAt: string;
+  /** The signed-in owner's name, used as the comment author. */
+  userName?: string | null;
   /** The markdown as a document for the editor; null for framed artifacts. */
   doc: JSONContent | null;
   assetBase: string;
@@ -81,9 +86,42 @@ export interface ArtifactViewProps {
   initialThreads: ThreadView[];
 }
 
+interface Box {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 interface Pin extends Spot {
   thread: ThreadView;
   exact: boolean;
+  /** Where the anchor itself sits, in overlay coordinates. */
+  mark: Box;
+  /** The picked element, for element anchors. */
+  box?: Box;
+}
+
+/**
+ * Comments sit on the page the way they do in Figma: a pin on the exact spot,
+ * its point on the words or element it is about, and the card opening beside
+ * it (a sheet from the bottom on a phone).
+ */
+const PIN_SIZE = 26;
+
+/** Where a pin goes for a resolved anchor: the end of a selection, the spot itself otherwise. */
+function pinPoint(rect: DOMRect, type: Anchor["type"]): { x: number; y: number } {
+  return type === "range" ? { x: rect.right, y: rect.top + 2 } : { x: rect.left + rect.width, y: rect.top + (rect.height ? 2 : 0) };
+}
+
+/** Pins on the same spot fan out sideways, so each stays tappable. */
+function fanOut<T extends { top: number; left: number }>(pins: T[]): T[] {
+  const placed: T[] = [];
+  for (const pin of [...pins].sort((a, b) => a.top - b.top || a.left - b.left)) {
+    while (placed.some((p) => Math.abs(p.top - pin.top) < PIN_SIZE - 4 && Math.abs(p.left - pin.left) < PIN_SIZE - 4)) pin.left += PIN_SIZE - 2;
+    placed.push(pin);
+  }
+  return placed;
 }
 
 const NAME_KEY = "art-author-name";
@@ -130,7 +168,13 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [draftSpot, setDraftSpot] = useState<Spot | null>(null);
   const [bubble, setBubble] = useState<{ top: number; left: number; anchor: Anchor } | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
-  const [author, setAuthor] = useState("operator");
+  const [menu, setMenu] = useState<{ top: number; left: number; options: { label: string; anchor: Anchor }[] } | null>(null);
+  const [domTick, setDomTick] = useState(0);
+  const onDocReady = useCallback(() => setDomTick((t) => t + 1), []);
+  const [pick, setPick] = useState<Box | null>(null);
+  const [selected, setSelected] = useState<Anchor | null>(null);
+  // Signed in, you are who you are; the name box is for when you are not.
+  const [author, setAuthor] = useState(props.userName ?? "operator");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
   const [batchMessage, setBatchMessage] = useState("");
@@ -145,7 +189,7 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   const isLatest = props.versionNumber === props.currentVersion;
   const somethingOpen = useRef(false);
-  somethingOpen.current = tool || draft !== null || activeId !== null || panel !== "none" || bubble !== null || edit !== null;
+  somethingOpen.current = tool || draft !== null || activeId !== null || panel !== "none" || bubble !== null || edit !== null || menu !== null;
   const visible = useMemo(
     () => threads.filter((t) => (showResolved ? true : t.status === "open")),
     [threads, showResolved],
@@ -158,6 +202,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   const activePin = useMemo(() => pins.find((p) => p.thread.id === activeId) ?? null, [pins, activeId]);
 
   useEffect(() => {
+    if (props.userName) return;
     try {
       const stored = localStorage.getItem(NAME_KEY);
       if (stored) setAuthor(stored);
@@ -222,15 +267,17 @@ export function ArtifactView(props: ArtifactViewProps) {
     const content = contentRef.current;
     const inner = innerRef.current;
     if (!content || !inner) return;
-    // The overlay is a child of .stage__inner, so that is the origin; measuring
-    // against .stage would shift every pin by the stage padding and centring.
+    // The overlay is a child of .stage__inner, so that is the origin.
     const origin = inner.getBoundingClientRect();
-    const box = content.getBoundingClientRect();
-    const layout = {
-      viewportWidth: window.innerWidth,
-      contentLeft: box.left,
-      contentRight: box.right,
-      popWidth: POP_W,
+    const local = (r: DOMRect): Box => ({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
+
+    const spot = (rect: DOMRect, type: Anchor["type"]): Spot => {
+      const at = pinPoint(rect, type);
+      // The card opens to the right of the pin, or to its left when the
+      // window runs out; the phone stylesheet turns it into a bottom sheet.
+      const right = at.x + PIN_SIZE + 10;
+      const x = right + POP_W <= window.innerWidth - 12 ? right : Math.max(at.x - POP_W - 10, 12);
+      return { top: at.y - origin.top, left: at.x - origin.left, popTop: at.y - origin.top - PIN_SIZE, popLeft: x - origin.left };
     };
 
     const next: Pin[] = [];
@@ -241,18 +288,22 @@ export function ArtifactView(props: ArtifactViewProps) {
       next.push({
         thread,
         exact: resolved.exact,
-        ...spotFor(resolved.rect, origin, thread.anchor.type, layout),
+        mark: local(resolved.rect),
+        box: resolved.box ? local(resolved.box) : undefined,
+        ...spot(resolved.rect, thread.anchor.type),
       });
     });
-    setPins(spreadPins(next));
+    setPins(fanOut(next));
 
     if (draft?.anchor) {
       const resolved = resolveAnchor(content, draft.anchor);
-      setDraftSpot(resolved ? spotFor(resolved.rect, origin, draft.anchor.type, layout) : null);
+      setDraftSpot(resolved ? spot(resolved.rect, draft.anchor.type) : null);
     } else {
       setDraftSpot(null);
     }
-  }, [visible, draft?.anchor]);
+    // domTick: the editor replaced the placeholder page, so measure again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, draft?.anchor, domTick]);
 
   // Light up the text a comment points at. Progressive enhancement: browsers
   // without the Custom Highlight API simply show the pins.
@@ -280,7 +331,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       api.delete("art-anchor");
       api.delete("art-anchor-active");
     };
-  }, [visible, activeId, threads]);
+  }, [visible, activeId, threads, domTick]);
 
   useLayoutEffect(() => {
     let frame = 0;
@@ -387,6 +438,25 @@ export function ArtifactView(props: ArtifactViewProps) {
     return () => window.removeEventListener("art:scheme", onScheme);
   }, []);
 
+  // On a touch screen a selection is made with handles, not a mouse-up, and
+  // the system menu sits right over it; offer the comment from the bottom bar.
+  useEffect(() => {
+    if (window.matchMedia("(hover: hover)").matches) return;
+    let timer = 0;
+    const onChange = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const content = contentRef.current;
+        setSelected(content ? anchorFromSelection(content) : null);
+      }, 180);
+    };
+    document.addEventListener("selectionchange", onChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("selectionchange", onChange);
+    };
+  }, []);
+
   // ---- moving between pages and versions ------------------------------------
 
   const [nav, setNav] = useState<NavList | null>(null);
@@ -463,6 +533,8 @@ export function ArtifactView(props: ArtifactViewProps) {
         setDraft(null);
         setActiveId(null);
         setPanel("none");
+        setMenu(null);
+        setPick(null);
         setHover(null);
       }
     }
@@ -484,15 +556,98 @@ export function ArtifactView(props: ArtifactViewProps) {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
+  // ---- press and hold -------------------------------------------------------
+
+  // Holding a finger (or the mouse) on anything that is not text offers to
+  // comment on it: the element under the finger, or its whole block. Text is
+  // left alone, where holding selects words the usual way.
+  const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
+
+  function onPressStart(event: React.PointerEvent) {
+    if (!event.isPrimary || event.button > 0 || tool || draft) return;
+    if ((event.target as HTMLElement).closest("a, button, input, textarea, select, label, iframe")) return;
+    const { clientX: x, clientY: y } = event;
+    window.clearTimeout(press.current?.timer);
+    press.current = {
+      x,
+      y,
+      fired: false,
+      timer: window.setTimeout(() => {
+        if (!press.current || isOverText(x, y)) return;
+        press.current.fired = true;
+        openPressMenu(x, y);
+      }, 450),
+    };
+  }
+
+  function onPressMove(event: React.PointerEvent) {
+    const p = press.current;
+    if (p && !p.fired && Math.hypot(event.clientX - p.x, event.clientY - p.y) > 8) {
+      window.clearTimeout(p.timer);
+      press.current = null;
+    }
+  }
+
+  function onPressEnd() {
+    if (press.current && !press.current.fired) {
+      window.clearTimeout(press.current.timer);
+      press.current = null;
+    }
+  }
+
+  function openPressMenu(x: number, y: number) {
+    const content = contentRef.current;
+    const inner = innerRef.current;
+    if (!content || !inner) return;
+    const el = pickTarget(content, document.elementFromPoint(x, y));
+    const block = el ? blockOf(el) : null;
+    if (!el || !block) return;
+    const options: { label: string; anchor: Anchor }[] = [];
+    const picked = anchorFromPick(content, el, x, y);
+    if (picked) options.push({ label: `Comment on this ${kindName(el)}`, anchor: picked });
+    if (el !== block) {
+      const r = block.getBoundingClientRect();
+      options.push({
+        label: `Comment on the whole ${kindName(block)}`,
+        anchor: anchorForBlock(block, { x: (x - r.left) / (r.width || 1), y: (y - r.top) / (r.height || 1) }),
+      });
+    }
+    if (!options.length) return;
+    navigator.vibrate?.(12);
+    window.getSelection()?.removeAllRanges();
+    const origin = inner.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    setPick({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
+    setActiveId(null);
+    setBubble(null);
+    setMenu({
+      top: y - origin.top + 12,
+      left: Math.min(Math.max(x - origin.left - 120, 8 - origin.left), window.innerWidth - origin.left - 256),
+      options,
+    });
+  }
+
   function onContentMouseUp(event: React.MouseEvent) {
+    // The release that ends a press-and-hold is not a click.
+    if (press.current?.fired) {
+      press.current = null;
+      return;
+    }
+    if (menu) {
+      setMenu(null);
+      setPick(null);
+      return;
+    }
     const content = contentRef.current;
     const inner = innerRef.current;
     if (!content || !inner) return;
 
     if (tool) {
-      const anchor = anchorFromPoint(content, event.clientX, event.clientY);
+      const el = pickTarget(content, document.elementFromPoint(event.clientX, event.clientY));
+      const anchor = el ? anchorFromPick(content, el, event.clientX, event.clientY) : anchorFromPoint(content, event.clientX, event.clientY);
       setTool(false);
       setFramePicking(false);
+      setPick(null);
       if (anchor) {
         setActiveId(null);
         setDraft({ anchor, body: "", notify: false });
@@ -503,6 +658,9 @@ export function ArtifactView(props: ArtifactViewProps) {
     const anchor = anchorFromSelection(content);
     if (!anchor) {
       setBubble(null);
+      // A tap on words that already carry a comment opens that thread.
+      const hit = threadAt(event.clientX, event.clientY);
+      if (hit) openThread(hit);
       return;
     }
     const selection = window.getSelection();
@@ -514,6 +672,27 @@ export function ArtifactView(props: ArtifactViewProps) {
       top: rect.top - origin.top - 6,
       left: rect.left - origin.left + rect.width / 2,
     });
+  }
+
+  /** The open thread whose words, element or spot is under a point, if any. */
+  function threadAt(x: number, y: number): ThreadView | null {
+    const content = contentRef.current;
+    if (!content) return null;
+    const inside = (r: { top: number; left: number; right: number; bottom: number }, pad = 0) =>
+      x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
+    for (const thread of visible) {
+      if (!thread.anchor) continue;
+      if (thread.anchor.type === "range") {
+        const range = rangeForAnchor(content, thread.anchor);
+        if (range && Array.from(range.getClientRects()).some((r) => inside(r, 2))) return thread;
+        continue;
+      }
+      const resolved = resolveAnchor(content, thread.anchor);
+      if (!resolved) continue;
+      if (resolved.box && thread.anchor.selector?.startsWith(":scope") && inside(resolved.box)) return thread;
+      if (thread.anchor.type === "point" && inside(resolved.rect, 10)) return thread;
+    }
+    return null;
   }
 
   function commentOnBlock(event: React.MouseEvent) {
@@ -539,6 +718,13 @@ export function ArtifactView(props: ArtifactViewProps) {
   // ---- editing one block ---------------------------------------------------
 
   const canEdit = isLatest && props.kind === "markdown" && props.source !== null;
+  // A phone has no hover, so the pencil that hover reveals is not for it.
+  const hoverCapable = useRef(true);
+  const [hoverless, setHoverless] = useState(false);
+  useEffect(() => {
+    hoverCapable.current = window.matchMedia("(hover: hover)").matches;
+    setHoverless(!hoverCapable.current);
+  }, []);
 
   function linesOfBlock(el: HTMLElement): [number, number] | null {
     const raw = el.dataset.lines;
@@ -558,13 +744,25 @@ export function ArtifactView(props: ArtifactViewProps) {
    * on screen.
    */
   function onStageMove(event: React.MouseEvent) {
-    if (!canEdit || tool || edit) return;
     const content = contentRef.current;
     const inner = innerRef.current;
     if (!content || !inner) return;
-
     const target = event.target as HTMLElement | null;
-    if (target?.closest(".pop, .panel, .inline-edit, .pin")) return setHover(null);
+
+    // Placing a comment: outline the smallest thing under the pointer.
+    if (tool) {
+      const el = pickTarget(content, target);
+      if (!el) return setPick(null);
+      const origin = inner.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      setPick({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
+      return;
+    }
+
+    if (!canEdit || edit || !hoverCapable.current) return;
+    // On the way to the pencil the pointer crosses the pencil itself; keep it.
+    if (target?.closest(".blockedit")) return;
+    if (target?.closest(".pop, .panel, .inline-edit, .pin, .note")) return setHover(null);
 
     const column = content.getBoundingClientRect();
     const x = event.clientX;
@@ -572,17 +770,21 @@ export function ArtifactView(props: ArtifactViewProps) {
     if (y < column.top || y > column.bottom) return setHover(null);
     if (x < column.left - EDIT_GUTTER || x > column.right + EDIT_GUTTER) return setHover(null);
 
-    // Probe inside the column, so a pointer out in the gutter still resolves to
-    // the block it is beside.
-    const probe = Math.min(Math.max(x, column.left + 4), column.right - 4);
-    const block = blockOf(document.elementFromPoint(probe, y));
+    // Find the block by height alone. Blocks are narrower than the column, so
+    // probing at the pointer would find nothing in the space beside a block,
+    // and the pencil would vanish on the way to it.
+    const blocks = Array.from(content.querySelectorAll<HTMLElement>(".art-content > [data-block]"));
+    const block = blocks.find((b) => {
+      const r = b.getBoundingClientRect();
+      return y >= r.top - 6 && y <= r.bottom + 6;
+    });
     if (!block) return setHover(null);
     const lines = linesOfBlock(block);
     if (!lines) return setHover(null);
 
     const origin = inner.getBoundingClientRect();
     const box = block.getBoundingClientRect();
-    setHover({ lines, top: box.top - origin.top + 2, left: box.right - origin.left + 10 });
+    setHover({ lines, top: box.top - origin.top + 2, left: Math.min(box.right, column.right) - origin.left + 10 });
   }
 
   function startEdit(lines: [number, number]) {
@@ -734,6 +936,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         title={props.title}
         project={props.project}
         series={props.series}
+        branch={props.branch}
         version={{ number: props.versionNumber, authorName: props.authorName, createdAt: props.createdAt }}
         latest={props.currentVersion}
         versions={props.versions}
@@ -861,6 +1064,13 @@ export function ArtifactView(props: ArtifactViewProps) {
             className="doc"
             ref={contentRef}
             onMouseUp={onContentMouseUp}
+            onPointerDown={onPressStart}
+            onPointerMove={onPressMove}
+            onPointerUp={onPressEnd}
+            onPointerCancel={onPressEnd}
+            onContextMenu={(e) => {
+              if (press.current?.fired || menu) e.preventDefault();
+            }}
             onDoubleClick={commentOnBlock}
           >
             {props.framed ? (
@@ -886,7 +1096,7 @@ export function ArtifactView(props: ArtifactViewProps) {
               <>
                 <ArticleHead {...props} />
                 {props.doc ? (
-                  <DocView doc={props.doc} fallbackHtml={props.html ?? ""} assetBase={props.assetBase} />
+                  <DocView doc={props.doc} fallbackHtml={props.html ?? ""} assetBase={props.assetBase} onReady={onDocReady} />
                 ) : (
                   <div className="art-content" dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
                 )}
@@ -895,6 +1105,14 @@ export function ArtifactView(props: ArtifactViewProps) {
           </div>
 
           <div className="pins">
+            {/* The element a comment is about is outlined while its thread is open. */}
+            {activePin?.box && activePin.thread.anchor?.selector?.startsWith(":scope") ? (
+              <span
+                className="mark-box mark-box--active"
+                style={{ top: activePin.box.top - 3, left: activePin.box.left - 3, width: activePin.box.width + 6, height: activePin.box.height + 6 }}
+              />
+            ) : null}
+
             {pins.map((pin) => (
               <button
                 key={pin.thread.id}
@@ -909,12 +1127,47 @@ export function ArtifactView(props: ArtifactViewProps) {
                   .join(" ")}
                 style={{ top: pin.top, left: pin.left }}
                 title={`${pin.thread.authorName}: ${truncate(pin.thread.body, 80)}`}
+                aria-label={`Comment by ${pin.thread.authorName}: ${truncate(pin.thread.body, 80)}`}
                 onClick={() => (pin.thread.id === activeId ? setActiveId(null) : openThread(pin.thread))}
               >
                 {initials(pin.thread.authorName)}
                 {pin.thread.replies.length > 0 ? <span className="pin__count">{pin.thread.replies.length}</span> : null}
               </button>
             ))}
+
+            {draft && draftSpot ? <span className="pin pin--draft" style={{ top: draftSpot.top, left: draftSpot.left }} /> : null}
+
+            {menu ? (
+              <div className="pressmenu" role="menu" style={{ top: menu.top, left: menu.left }}>
+                {menu.options.map((o) => (
+                  <button
+                    key={o.label}
+                    role="menuitem"
+                    onClick={() => {
+                      setMenu(null);
+                      setPick(null);
+                      setDraft({ anchor: o.anchor, body: "", notify: false });
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+                <button
+                  role="menuitem"
+                  className="pressmenu__cancel"
+                  onClick={() => {
+                    setMenu(null);
+                    setPick(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : null}
+
+            {pick && (tool || menu) ? (
+              <span className="pick-box" style={{ top: pick.top - 4, left: pick.left - 4, width: pick.width + 8, height: pick.height + 8 }} />
+            ) : null}
 
             {/* A thread whose block is gone has no pin, so its card opens at the
                 top of the page rather than nowhere. */}
@@ -954,13 +1207,13 @@ export function ArtifactView(props: ArtifactViewProps) {
                       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void postComment();
                     }}
                   />
-                  <input
+                  {props.userName ? null : <input
                     className="field"
                     value={author}
                     onChange={(e) => rememberName(e.target.value)}
                     placeholder="Your name"
                     aria-label="Your name"
-                  />
+                  />}
                   <div className="composer__row">
                     <label className="check">
                       <input
@@ -1050,6 +1303,35 @@ export function ArtifactView(props: ArtifactViewProps) {
           ) : null}
         </div>
       </main>
+
+      {/* Touch screens: commenting without a keyboard shortcut or hover. */}
+      {hoverless ? (
+        <div className="touchbar">
+          {selected && !draft ? (
+            <button
+              className="touchbar__select"
+              onClick={() => {
+                setActiveId(null);
+                setDraft({ anchor: selected, body: "", notify: false });
+                setSelected(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+            >
+              Comment on the selected words
+            </button>
+          ) : null}
+          {tool ? <span className="touchbar__hint">Tap the spot or element the comment is about</span> : null}
+          {!draft && !active ? (
+            <button
+              className={tool ? "touchbar__fab touchbar__fab--on" : "touchbar__fab"}
+              onClick={toggleTool}
+              aria-label={tool ? "Stop placing a comment" : "Add a comment"}
+            >
+              {tool ? "✕" : "+"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {notice ? (
         <div className={notice.kind === "bad" ? "toast toast--bad" : "toast toast--good"} role="status">

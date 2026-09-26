@@ -102,6 +102,24 @@ describe("organising", () => {
   });
 });
 
+describe("branches", () => {
+  it("records the branch a page was published from, and filters a project by it", async () => {
+    await svc.publishArtifact(ctx, { slug: "on-main", source: page("On main"), project: "branchy", branch: "main" });
+    await svc.publishArtifact(ctx, { slug: "on-feature", source: page("On a feature"), project: "branchy", branch: "feat/share" });
+    await svc.publishArtifact(ctx, { slug: "no-branch", source: page("Nowhere"), project: "branchy" });
+
+    expect(lib.listLibrary(ctx, { view: "project", name: "branchy", branch: "feat/share" }).map((r) => r.slug)).toEqual(["on-feature"]);
+    expect(lib.listLibrary(ctx, { view: "project", name: "branchy" })).toHaveLength(3);
+    expect(lib.branchesOf(ctx, "branchy").map((b) => b.name)).toEqual(["main", "feat/share"]);
+
+    // An update without a branch keeps it; one from another branch moves the page there.
+    await svc.updateArtifact(ctx, "on-feature", { source: page("On a feature", "More."), expectedVersion: 1 });
+    expect(svc.requireArtifact(ctx, "on-feature").branch).toBe("feat/share");
+    await svc.updateArtifact(ctx, "on-feature", { source: page("On a feature", "Merged."), expectedVersion: 2, branch: "main" });
+    expect(svc.requireArtifact(ctx, "on-feature").branch).toBe("main");
+  });
+});
+
 describe("search", () => {
   it("finds words in titles and in the text, without the markdown around them", async () => {
     await svc.publishArtifact(ctx, {

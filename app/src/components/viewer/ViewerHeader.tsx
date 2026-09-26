@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send } from "lucide-react";
+import { ArrowLeft, GitBranch, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -34,13 +34,13 @@ export function ViewerHeader({
   title,
   project,
   series,
+  branch,
   version,
   latest,
   versions,
   nav,
   threads,
   unsent,
-  agentName,
   panel,
   canEdit,
   canCompare,
@@ -54,13 +54,15 @@ export function ViewerHeader({
   title: string;
   project: string | null;
   series: string | null;
+  branch?: string | null;
   version: VersionStep;
   latest: number;
   versions: VersionStep[];
   nav: { label: string; index: number; count: number } | null;
   threads: number;
   unsent: number;
-  agentName: string | null;
+  /** Kept for callers; the button always says "agent". */
+  agentName?: string | null;
   panel: "none" | "list" | "send";
   canEdit: boolean;
   canCompare: boolean;
@@ -72,32 +74,44 @@ export function ViewerHeader({
 }) {
   const first = versions[versions.length - 1]?.number ?? 1;
   return (
-    <header className="sticky top-0 z-30 flex h-[52px] shrink-0 items-center gap-3 border-b border-hairline bg-background/92 px-4 backdrop-blur">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1.5 border-b border-hairline bg-background px-2 md:h-[52px] md:gap-3 md:bg-background/92 md:px-4 md:backdrop-blur">
       <Tip label="Back to the library" keys="esc">
-        <Link href="/" aria-label="Back to the library" className={cn(iconButton, "flex items-center justify-center")}>
-          <ArrowLeft className="size-4" />
+        <Link href="/" aria-label="Back to the library" className={cn(iconButton, "flex size-10 items-center justify-center md:size-7")}>
+          <ArrowLeft className="size-5 md:size-4" />
         </Link>
       </Tip>
 
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[13px]">
         {project ? (
           <>
-            <Link href={`/project/${encodeURIComponent(project)}`} className="flex shrink-0 items-center gap-1.5 text-fg-2 hover:text-foreground">
+            <Link href={`/project/${encodeURIComponent(project)}`} className="flex shrink-0 items-center gap-1.5 text-fg-2 hover:text-foreground max-md:hidden">
               <span className="size-2 rounded-[2px]" style={{ background: projectColour(project) }} />
               {project}
             </Link>
-            <span className="text-faint">/</span>
+            <span className="text-faint max-md:hidden">/</span>
+            {branch ? (
+              <>
+                <Link
+                  href={`/project/${encodeURIComponent(project)}?branch=${encodeURIComponent(branch)}`}
+                  className="flex shrink-0 items-center gap-1 font-mono text-[12px] text-muted-foreground hover:text-foreground max-lg:hidden"
+                >
+                  <GitBranch className="size-3" />
+                  {branch}
+                </Link>
+                <span className="text-faint max-lg:hidden">/</span>
+              </>
+            ) : null}
           </>
         ) : null}
         {series ? (
           <>
-            <Link href={`/series/${encodeURIComponent(series)}`} className="shrink-0 text-fg-2 hover:text-foreground">
+            <Link href={`/series/${encodeURIComponent(series)}`} className="shrink-0 text-fg-2 hover:text-foreground max-md:hidden">
               {series}
             </Link>
-            <span className="text-faint">/</span>
+            <span className="text-faint max-md:hidden">/</span>
           </>
         ) : null}
-        <span className="truncate font-medium text-foreground">{title}</span>
+        <span className="truncate text-[15px] font-medium text-foreground md:text-[13px]">{title}</span>
       </nav>
 
       {nav ? (
@@ -118,8 +132,8 @@ export function ViewerHeader({
         </div>
       ) : null}
 
-      <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        <div className="flex h-8 items-center rounded-lg border border-border bg-card">
+      <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-1.5">
+        <div className="flex h-8 items-center rounded-lg border border-border bg-card max-md:hidden">
           <Tip label="Older version" keys="[">
             <Button variant="ghost" size="icon" className={cn(iconButton, "rounded-r-none")} aria-label="Older version" disabled={version.number <= first} onClick={() => onVersion(version.number - 1)}>
               <ChevronLeft className="size-4" />
@@ -151,7 +165,7 @@ export function ViewerHeader({
         </div>
 
         {canCompare ? (
-          <Button variant="ghost" size="sm" asChild className="h-8 gap-1.5 text-fg-2">
+          <Button variant="ghost" size="sm" asChild className="h-8 gap-1.5 text-fg-2 max-md:hidden">
             <Link href={`/a/${slug}/v/${version.number}?diff=${version.number - 1}`}>
               <Columns2 className="size-3.5" /> Compare
             </Link>
@@ -159,7 +173,7 @@ export function ViewerHeader({
         ) : null}
         {canEdit ? (
           <Tip label="Edit" keys="e">
-            <Button variant="ghost" size="sm" asChild className="h-8 gap-1.5 text-fg-2">
+            <Button variant="ghost" size="sm" asChild className="h-8 gap-1.5 text-fg-2 max-md:hidden">
               <Link href={`/a/${slug}/edit`}>
                 <Pencil className="size-3.5" /> Edit
               </Link>
@@ -167,26 +181,58 @@ export function ViewerHeader({
           </Tip>
         ) : null}
 
-        <span className="mx-1 h-5 w-px bg-hairline" />
+        <span className="mx-1 h-5 w-px bg-hairline max-md:hidden" />
 
-        <Button variant="ghost" size="sm" className={cn("h-8 gap-1.5 text-fg-2", panel === "list" && "bg-raised text-foreground")} onClick={onThreads}>
-          <MessageSquare className="size-3.5" /> Threads
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Threads"
+          className={cn("h-10 gap-1.5 px-2.5 text-fg-2 md:h-8", panel === "list" && "bg-raised text-foreground")}
+          onClick={onThreads}
+        >
+          <MessageSquare className="size-4 md:size-3.5" /> <span className="max-md:hidden">Threads</span>
           {threads ? <span className="font-mono text-[11px] text-muted-foreground">{threads}</span> : null}
         </Button>
         {unsent ? (
-          <Button size="sm" className="h-8 gap-1.5" onClick={onSend}>
-            <Send className="size-3.5" /> Send to {agentName ?? "agent"}
+          <Button size="sm" className="h-10 gap-1.5 px-3 md:h-8" onClick={onSend} aria-label="Send to agent">
+            <Send className="size-4 md:size-3.5" /> <span className="max-md:hidden">Send to agent</span>
             <span className="font-mono text-[11px] opacity-70">{unsent}</span>
           </Button>
         ) : null}
         {menu ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className={iconButton} aria-label="More">
+              <Button variant="ghost" size="icon" className={cn(iconButton, "size-10 md:size-7")} aria-label="More">
                 <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[220px]">
+            <DropdownMenuContent align="end" className="w-[240px]">
+              <div className="md:hidden">
+                {versions.length > 1
+                  ? versions.slice(0, 6).map((v) => (
+                      <DropdownMenuItem key={v.number} onSelect={() => onVersion(v.number)} className={cn("font-mono text-[13px]", v.number === version.number && "bg-raised")}>
+                        <span className="w-8">v{v.number}</span>
+                        <span className="flex-1 truncate text-muted-foreground">{v.authorName}</span>
+                        <span className="text-muted-foreground">{ago(v.createdAt)}</span>
+                      </DropdownMenuItem>
+                    ))
+                  : null}
+                {canCompare ? (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/a/${slug}/v/${version.number}?diff=${version.number - 1}`}>
+                      <Columns2 /> Compare with v{version.number - 1}
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
+                {canEdit ? (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/a/${slug}/edit`}>
+                      <Pencil /> Edit
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+              </div>
               {menu}
             </DropdownMenuContent>
           </DropdownMenu>

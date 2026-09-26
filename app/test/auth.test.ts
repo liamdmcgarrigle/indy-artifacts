@@ -139,7 +139,7 @@ describe("migration", () => {
     old.close();
 
     const db = openDb(path);
-    expect((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(1);
+    expect((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(2);
     expect(db.prepare("SELECT body FROM comments WHERE id = 'c1'").get()).toMatchObject({ body: "keep me" });
     expect(db.prepare("SELECT seen_version FROM artifacts WHERE id = 'a1'").get()).toMatchObject({ seen_version: 1 });
     const hit = db.prepare("SELECT artifact_id FROM search WHERE search MATCH 'scan*'").get();

@@ -7,7 +7,9 @@
  */
 
 ::highlight(art-anchor) {
-  background-color: color-mix(in srgb, var(--art-warn) 22%, transparent);
+  background-color: color-mix(in srgb, var(--art-warn) 24%, transparent);
+  text-decoration: underline 2px color-mix(in srgb, var(--art-warn) 70%, transparent);
+  text-underline-offset: 4px;
 }
 
 ::highlight(art-anchor-active) {
