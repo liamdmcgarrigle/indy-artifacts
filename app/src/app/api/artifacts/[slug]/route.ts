@@ -1,3 +1,4 @@
+import { setOrganisation } from "@/lib/service/library";
 import { requireMember } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { createHumanVersion, listVersions, requireArtifact, requireVersion, updateArtifact } from "@/lib/service/artifacts";
@@ -51,6 +52,25 @@ export async function PUT(request: Request, { params }: Params) {
     }
     const { expected_version: _ev, expectedVersion: _ev2, ...rest } = payload;
     return json(await updateArtifact(getContext(), slug, { ...rest, expectedVersion } as UpdateInput));
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Organisation only: pin, archive, move to a project or series. Never content. */
+export async function PATCH(request: Request, { params }: Params) {
+  try {
+    const ctx = getContext();
+    requireMember(ctx, request);
+    const { slug } = await params;
+    const input = await body(request);
+    setOrganisation(ctx, slug, {
+      pinned: typeof input.pinned === "boolean" ? input.pinned : undefined,
+      archived: typeof input.archived === "boolean" ? input.archived : undefined,
+      project: input.project === undefined ? undefined : (input.project as string | null),
+      series: input.series === undefined ? undefined : (input.series as string | null),
+    });
+    return json({ artifact: requireArtifact(ctx, slug) });
   } catch (err) {
     return fail(err);
   }

@@ -13,6 +13,7 @@ import { resetLiveDocument } from "./collab";
 /** The message the document server uses when it snapshots a live edit. */
 export const LIVE_EDIT_MESSAGE = "live edit";
 import { recordEvent } from "./events";
+import { searchableText } from "./plaintext";
 import {
   KINDS,
   LIMITS,
@@ -63,6 +64,7 @@ function toArtifact(row: Row): Artifact {
     kind: String(row.kind) as Kind,
     theme: String(row.theme),
     project: (row.project as string | null) ?? null,
+    series: (row.series as string | null) ?? null,
     description: (row.description as string | null) ?? null,
     tags: JSON.parse(String(row.tags_json ?? "[]")),
     agentName: (row.agent_name as string | null) ?? null,
@@ -71,6 +73,12 @@ function toArtifact(row: Row): Artifact {
     currentVersion: Number(row.current_version),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
+    pinnedAt: (row.pinned_at as string | null) ?? null,
+    archivedAt: (row.archived_at as string | null) ?? null,
+    seenVersion: Number(row.seen_version ?? 0),
+    seenAt: (row.seen_at as string | null) ?? null,
+    liveBy: (row.live_by as string | null) ?? null,
+    liveAt: (row.live_at as string | null) ?? null,
   };
 }
 
@@ -216,6 +224,7 @@ interface Meta {
   title: string;
   theme: string;
   project: string | null;
+  series: string | null;
   description: string | null;
   tags: string[];
 }
@@ -234,6 +243,7 @@ function resolveMeta(kind: Kind, input: PublishInput, source: string | null, exi
   const theme = (THEMES as readonly string[]).includes(themeRaw) ? themeRaw : DEFAULT_THEME;
 
   const fmProject = fm && typeof fm.project === "string" ? fm.project.trim() : undefined;
+  const fmSeries = fm && typeof fm.series === "string" ? fm.series.trim() : undefined;
   const fmDescription = fm && typeof fm.description === "string" ? fm.description.trim() : undefined;
   const fmTags = fm && Array.isArray(fm.tags) ? fm.tags.map(String).slice(0, 20) : undefined;
 
@@ -241,6 +251,7 @@ function resolveMeta(kind: Kind, input: PublishInput, source: string | null, exi
     title,
     theme,
     project: (fmProject ?? input.project?.trim() ?? existing?.project ?? null) || null,
+    series: ((fmSeries ?? input.series?.trim() ?? existing?.series ?? null) || null)?.slice(0, 80) ?? null,
     description: (fmDescription ?? input.description?.trim() ?? existing?.description ?? null) || null,
     tags: fmTags ?? input.tags ?? existing?.tags ?? [],
   };
@@ -263,13 +274,6 @@ function uniqueSlug(ctx: ServiceContext, wanted: string | undefined, title: stri
     if (!findArtifact(ctx, candidate)) return candidate;
   }
   throw new ValidationError("could not allocate a slug; pass one explicitly");
-}
-
-/** What search reads: the markdown or HTML, or a compiled artifact's source files. */
-function searchableText(content: { source: string | null; files: Record<string, string> | null }): string {
-  if (content.source !== null) return content.source;
-  if (!content.files) return "";
-  return Object.values(content.files).join("\n").slice(0, 200_000);
 }
 
 async function writeVersion(
@@ -339,8 +343,11 @@ async function writeVersion(
 
     ctx.db
       .prepare(
-        `UPDATE artifacts SET title = :title, theme = :theme, project = :project, description = :description,
+        `UPDATE artifacts SET title = :title, theme = :theme, project = :project, series = :series, description = :description,
            tags_json = :tags_json, current_version = :current_version, updated_at = :updated_at,
+           archived_at = NULL,
+           seen_version = CASE WHEN :by_human = 1 THEN :current_version ELSE seen_version END,
+           seen_at = CASE WHEN :by_human = 1 THEN :updated_at ELSE seen_at END,
            agent_name = COALESCE(:agent_name, agent_name),
            terminal_handle = COALESCE(:terminal_handle, terminal_handle),
            session_id = COALESCE(:session_id, session_id)
@@ -352,10 +359,12 @@ async function writeVersion(
           title: meta.title,
           theme: meta.theme,
           project: meta.project,
+          series: meta.series,
           description: meta.description,
           tags_json: JSON.stringify(meta.tags),
           current_version: number,
           updated_at: stamp,
+          by_human: authorKind === "human" ? 1 : 0,
           agent_name: input.agent?.name ?? null,
           terminal_handle: input.agent?.terminal ?? null,
           session_id: input.agent?.session ?? null,
@@ -366,7 +375,7 @@ async function writeVersion(
     ctx.db.prepare("DELETE FROM search WHERE artifact_id = ?").run(artifact.id);
     ctx.db
       .prepare("INSERT INTO search (artifact_id, title, description, body) VALUES (?, ?, ?, ?)")
-      .run(artifact.id, meta.title, meta.description ?? "", searchableText(content));
+      .run(artifact.id, meta.title, meta.description ?? "", searchableText(content, artifact.kind));
 
     if (authorKind === "human") {
       recordEvent(ctx, artifact.id, "version.created", {

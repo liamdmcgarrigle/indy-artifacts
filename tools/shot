@@ -17,4 +17,5 @@ fi
 podman run --rm --network host \
   -v "$(realpath "$recipe")":/recipe.json:ro,Z \
   -v "$(realpath "$out")":/out:Z \
+  -v "$here/screenshot/shot.mjs":/app/shot.mjs:ro,Z \
   localhost/artifacts-shot:latest /recipe.json /out

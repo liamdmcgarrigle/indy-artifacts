@@ -48,9 +48,15 @@ for (const shot of Array.isArray(shots) ? shots : [shots]) {
     colorScheme: scheme,
     reducedMotion: "reduce",
   });
+  // Signed-in pages: a recipe can carry the session cookie for the host.
+  if (shot.cookies?.length) {
+    const origin = new URL(shot.url).origin;
+    await context.addCookies(shot.cookies.map((c) => ({ name: c.name, value: c.value, url: origin })));
+  }
   // The app reads the scheme from localStorage before first paint.
   await context.addInitScript((value) => {
     try {
+      localStorage.setItem("indy-scheme", value);
       localStorage.setItem("art-scheme", value);
     } catch {
       /* private mode */
@@ -76,6 +82,7 @@ for (const shot of Array.isArray(shots) ? shots : [shots]) {
       if (step.hover) await page.hover(step.hover, { timeout: 5000 });
       if (step.press) await page.keyboard.press(step.press);
       if (step.type) await page.fill(step.type[0], step.type[1]);
+      if (step.keys) await page.keyboard.type(step.keys, { delay: 20 });
       if (step.scroll !== undefined) await page.evaluate((y) => window.scrollTo(0, y), step.scroll);
       if (step.eval) {
         // Ask the page a question and print the answer, for when a screenshot

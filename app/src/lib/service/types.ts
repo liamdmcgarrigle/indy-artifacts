@@ -54,6 +54,8 @@ export interface PublishInput {
   slug?: string;
   theme?: string;
   project?: string;
+  /** Groups recurring pages, such as nightly runs, under one name. */
+  series?: string;
   description?: string;
   tags?: string[];
   source?: string;
@@ -74,6 +76,7 @@ export interface Artifact {
   kind: Kind;
   theme: string;
   project: string | null;
+  series: string | null;
   description: string | null;
   tags: string[];
   agentName: string | null;
@@ -82,6 +85,12 @@ export interface Artifact {
   currentVersion: number;
   createdAt: string;
   updatedAt: string;
+  pinnedAt: string | null;
+  archivedAt: string | null;
+  seenVersion: number;
+  seenAt: string | null;
+  liveBy: string | null;
+  liveAt: string | null;
 }
 
 export interface Version {

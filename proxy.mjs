@@ -27,13 +27,24 @@ function forwardedHeaders(req) {
   return headers;
 }
 
+/** Headers that describe one connection, not the request, and must not be passed on. */
+const HOP = ["connection", "keep-alive", "proxy-connection", "transfer-encoding", "te", "trailer", "upgrade"];
+function withoutHopHeaders(headers) {
+  const out = { ...headers };
+  for (const name of HOP) delete out[name];
+  return out;
+}
+
 export function startProxy({ port, host = "0.0.0.0", appPort, collabPort, log = console.log }) {
   const ports = { app: appPort, collab: collabPort };
 
   const server = http.createServer((req, res) => {
     const { port: to, path } = target(req.url ?? "/", ports);
     const upstream = http.request(
-      { host: "127.0.0.1", port: to, method: req.method, path, headers: forwardedHeaders(req) },
+      // A fresh loopback connection per request. Reusing one after a streamed
+      // (event-stream) response let the next request land on a socket Next had
+      // finished with, and it came back as an empty 400.
+      { host: "127.0.0.1", port: to, method: req.method, path, headers: withoutHopHeaders(forwardedHeaders(req)), agent: false },
       (reply) => {
         res.writeHead(reply.statusCode ?? 502, reply.statusMessage, reply.headers);
         reply.pipe(res);
@@ -68,6 +79,13 @@ export function startProxy({ port, host = "0.0.0.0", appPort, collabPort, log = 
     };
     upstream.on("error", close);
     socket.on("error", close);
+  });
+
+  // A request Node cannot parse never reaches a handler; say why instead of
+  // answering an empty 400.
+  server.on("clientError", (err, socket) => {
+    log(`[indy] rejected a malformed request: ${err.code ?? ""} ${err.message}`);
+    if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\nconnection: close\r\n\r\n");
   });
 
   server.keepAliveTimeout = 65_000;
