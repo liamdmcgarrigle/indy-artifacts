@@ -30,7 +30,8 @@ body {
   background: var(--art-selection);
 }
 
-a {
+/* Links in artifact content; the app chrome colours its own. */
+.art-content a {
   color: var(--art-link);
 }
 

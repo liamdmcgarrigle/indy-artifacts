@@ -3,6 +3,7 @@ import { requireArtifact, requireVersion, listVersions } from "./service/artifac
 import { listComments } from "./service/comments";
 import { renderVersion } from "./service/render";
 import { capability } from "./auth/accounts";
+import { docForView } from "./doc";
 import type { ArtifactViewProps, ThreadView } from "@/components/ArtifactView";
 
 /** Everything the viewer needs for one version of one artifact. */
@@ -35,9 +36,19 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
     })),
   }));
 
+  const versions = listVersions(ctx, artifact.id);
   return {
     slug: artifact.slug,
     title: artifact.title,
+    project: artifact.project,
+    series: artifact.series,
+    description: artifact.description,
+    agentName: artifact.agentName ?? versions.find((v) => v.authorKind === "agent")?.authorName ?? null,
+    pinned: artifact.pinnedAt !== null,
+    archived: artifact.archivedAt !== null,
+    createdAt: version.createdAt,
+    doc: rendered && version.source !== null ? docForView(version.source, rendered) : null,
+    assetBase,
     kind: artifact.kind,
     theme: artifact.theme,
     currentVersion: artifact.currentVersion,
@@ -53,7 +64,7 @@ export function loadView(slug: string, versionNumber?: number): ArtifactViewProp
     source: version.source,
     embedBase,
     framed,
-    versions: listVersions(ctx, artifact.id).map((v) => ({
+    versions: versions.map((v) => ({
       number: v.number,
       authorKind: v.authorKind,
       authorName: v.authorName,

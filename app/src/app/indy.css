@@ -294,3 +294,60 @@ kbd.kbd {
   .swap-glow { animation: none; opacity: 0.35; }
   .swap-caption { animation: none; opacity: 1; }
 }
+
+/* ------------------------------------------------------------------ viewer */
+
+.doc-head {
+  box-sizing: border-box;
+  max-width: 900px;
+  margin: 8px auto 28px;
+  padding-inline: 16px;
+}
+.doc-head > * { max-width: var(--art-measure, 68ch); }
+.doc-head__kicker {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--art-text-faint, var(--muted-foreground));
+}
+.doc-head__title {
+  margin: 10px 0 0;
+  font-family: var(--art-font-display, inherit);
+  font-size: 34px;
+  line-height: 1.12;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--art-text, var(--foreground));
+}
+.doc-head__lede {
+  margin: 12px 0 0;
+  font-family: var(--art-font-body, inherit);
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--art-text-muted, var(--fg-2));
+}
+
+/* The editor is the page: no focus ring, no caret while reading. */
+.doc .ProseMirror { outline: none; }
+.doc .ProseMirror[contenteditable="false"] { caret-color: transparent; }
+
+/* Tailwind's preflight strips list markers; artifact content keeps them. */
+.art-content ul { list-style: disc; }
+.art-content ol { list-style: decimal; }
+.art-content ul ul { list-style: circle; }
+
+/* Tight lists come out of the pipeline without paragraphs inside the items;
+   the editor always has them, so take their spacing away. */
+.art-content ul[data-tight] > li > p,
+.art-content ol[data-tight] > li > p { margin: 0; }
+.art-content ul[data-type="taskList"] { list-style: none; padding-left: 0.25em; }
+.art-content ul[data-type="taskList"] > li { display: flex; gap: 0.5em; align-items: baseline; }
+.art-content ul[data-type="taskList"] > li > label { flex: none; }
+.art-content ul[data-type="taskList"] > li > div { flex: 1; min-width: 0; }
+.art-content ul[data-type="taskList"] > li > div > p { margin: 0; }
+
+.art-tabs__panels { display: contents; }
+/* Table cells hold a paragraph in the editor; the pipeline put text straight in. */
+.art-content th > p,
+.art-content td > p { margin: 0; }

@@ -32,6 +32,8 @@ export interface RenderResult {
   blocks: Block[];
   embeds: Embed[];
   warnings: Warning[];
+  /** Each top-level block's HTML, keyed by its first source line. */
+  blockHtml: Record<number, string>;
 }
 
 export interface ChartSpec {
@@ -62,6 +64,7 @@ export interface PipelineContext {
   frontmatter: Record<string, unknown> | null;
   embedCounter: number;
   assetBase?: string;
+  blockHtml: Record<number, string>;
   /** The markdown being rendered, for recovering the literal text of a node. */
   source?: string;
 }

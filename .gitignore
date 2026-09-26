@@ -5,3 +5,4 @@ data/
 *.tsbuildinfo
 .env
 .DS_Store
+app/test/.corpus/

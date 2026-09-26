@@ -17,7 +17,11 @@ import {
   type Anchor,
   type Spot,
 } from "@/lib/anchors";
-import { SchemeToggle } from "./SchemeToggle";
+import type { JSONContent } from "@tiptap/core";
+import { DocView } from "./viewer/DocView";
+import { ViewerHeader, ViewerMenuItem, ViewerMenuSeparator } from "./viewer/ViewerHeader";
+import { readNavList, type NavList } from "./library/nav-list";
+import { agoLong } from "@/lib/time";
 
 export interface ThreadView {
   id: string;
@@ -50,6 +54,16 @@ export interface VersionStub {
 export interface ArtifactViewProps {
   slug: string;
   title: string;
+  project: string | null;
+  series: string | null;
+  description: string | null;
+  agentName: string | null;
+  pinned: boolean;
+  archived: boolean;
+  createdAt: string;
+  /** The markdown as a document for the editor; null for framed artifacts. */
+  doc: JSONContent | null;
+  assetBase: string;
   kind: string;
   theme: string;
   currentVersion: number;
@@ -130,6 +144,8 @@ export function ArtifactView(props: ArtifactViewProps) {
   } | null>(null);
 
   const isLatest = props.versionNumber === props.currentVersion;
+  const somethingOpen = useRef(false);
+  somethingOpen.current = tool || draft !== null || activeId !== null || panel !== "none" || bubble !== null || edit !== null;
   const visible = useMemo(
     () => threads.filter((t) => (showResolved ? true : t.status === "open")),
     [threads, showResolved],
@@ -371,6 +387,37 @@ export function ArtifactView(props: ArtifactViewProps) {
     return () => window.removeEventListener("art:scheme", onScheme);
   }, []);
 
+  // ---- moving between pages and versions ------------------------------------
+
+  const [nav, setNav] = useState<NavList | null>(null);
+  useEffect(() => setNav(readNavList()), []);
+  const navIndex = nav ? nav.slugs.indexOf(props.slug) : -1;
+
+  const goNav = useCallback(
+    (step: 1 | -1) => {
+      if (!nav || navIndex < 0) return;
+      const next = nav.slugs[navIndex + step];
+      if (next) router.push(`/a/${next}`);
+    },
+    [nav, navIndex, router],
+  );
+
+  const versionRef = useRef(props.versionNumber);
+  versionRef.current = props.versionNumber;
+  const goVersion = useCallback(
+    (n: number) => {
+      if (n < 1 || n > props.currentVersion || n === props.versionNumber) return;
+      router.push(n === props.currentVersion ? `/a/${props.slug}` : `/a/${props.slug}/v/${n}`);
+    },
+    [props.currentVersion, props.versionNumber, props.slug, router],
+  );
+
+  // Opening the latest version counts as having seen it.
+  useEffect(() => {
+    if (!isLatest) return;
+    void fetch(`/api/artifacts/${props.slug}/seen`, { method: "POST" }).catch(() => {});
+  }, [isLatest, props.slug, props.versionNumber]);
+
   // ---- placing comments ----------------------------------------------------
 
   const setFramePicking = useCallback((on: boolean) => {
@@ -394,9 +441,21 @@ export function ArtifactView(props: ArtifactViewProps) {
         if (event.key === "Escape") (target as HTMLElement).blur();
         return;
       }
-      if (event.key === "c" && !event.metaKey && !event.ctrlKey) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "c") {
         event.preventDefault();
         toggleTool();
+      } else if (event.key === "j" || event.key === "k") {
+        event.preventDefault();
+        goNav(event.key === "j" ? 1 : -1);
+      } else if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        goVersion(versionRef.current + (event.key === "]" ? 1 : -1));
+      } else if (event.key === "e" && isLatest && !props.framed) {
+        event.preventDefault();
+        router.push(`/a/${props.slug}/edit`);
+      } else if (event.key === "Escape" && !somethingOpen.current) {
+        router.push("/");
       } else if (event.key === "Escape") {
         setTool(false);
         setFramePicking(false);
@@ -409,7 +468,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleTool, setFramePicking]);
+  }, [toggleTool, setFramePicking, goNav, goVersion, isLatest, props.framed, props.slug, router]);
 
   // A click outside the open card closes it. The draft composer stays put, so a
   // half-typed comment is never thrown away by a stray click.
@@ -670,61 +729,36 @@ export function ArtifactView(props: ArtifactViewProps) {
   return (
     <>
       <link rel="stylesheet" href={`/themes/${props.theme}.css`} />
-      <header className="top">
-        <Link className="top__home" href="/">
-          <span className="top__dot" /> Artifacts
-        </Link>
-        <div className="top__title">
-          {props.title} <span className="top__meta">v{props.versionNumber}</span>
-        </div>
-        <div className="top__actions">
-          <select
-            className="select"
-            value={props.versionNumber}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              window.location.href = n === props.currentVersion ? `/a/${props.slug}` : `/a/${props.slug}/v/${n}`;
-            }}
-            aria-label="Version"
-          >
-            {props.versions.map((v) => (
-              <option key={v.number} value={v.number}>
-                v{v.number} · {v.authorKind === "human" ? "edited" : "agent"} · {when(v.createdAt)}
-              </option>
-            ))}
-          </select>
-          {props.versionNumber > 1 ? (
-            <Link className="btn btn--ghost" href={`/a/${props.slug}/v/${props.versionNumber}?diff=${props.versionNumber - 1}`}>
-              Diff
-            </Link>
-          ) : null}
-          <button className={tool ? "btn btn--on" : "btn"} onClick={toggleTool} title="Comment tool (c)">
-            {tool ? "Click a spot…" : "Comment"}
-          </button>
-          <button
-            className={panel === "list" ? "btn btn--on panel-btn" : "btn panel-btn"}
-            onClick={() => setPanel((p) => (p === "list" ? "none" : "list"))}
-            title="All comments"
-          >
-            {visible.length > 0 ? `Threads ${visible.length}` : "Threads"}
-          </button>
-          {unsent > 0 ? (
-            <button
-              className="btn btn--primary panel-btn"
-              onClick={() => setPanel((p) => (p === "send" ? "none" : "send"))}
-              disabled={busy}
-            >
-              Send {unsent}
-            </button>
-          ) : null}
-          {isLatest ? (
-            <Link className="btn" href={`/a/${props.slug}/edit`}>
-              Edit
-            </Link>
-          ) : null}
-          <SchemeToggle />
-        </div>
-      </header>
+      <ViewerHeader
+        slug={props.slug}
+        title={props.title}
+        project={props.project}
+        series={props.series}
+        version={{ number: props.versionNumber, authorName: props.authorName, createdAt: props.createdAt }}
+        latest={props.currentVersion}
+        versions={props.versions}
+        nav={nav && navIndex >= 0 ? { label: nav.label, index: navIndex, count: nav.slugs.length } : null}
+        threads={visible.length}
+        unsent={unsent}
+        agentName={props.agentName}
+        panel={panel}
+        canEdit={isLatest && !props.framed}
+        canCompare={props.versionNumber > 1}
+        onVersion={goVersion}
+        onNav={goNav}
+        onThreads={() => setPanel((p) => (p === "list" ? "none" : "list"))}
+        onSend={() => setPanel((p) => (p === "send" ? "none" : "send"))}
+        menu={
+          <>
+            <ViewerMenuItem onSelect={toggleTool}>Comment on a spot</ViewerMenuItem>
+            <ViewerMenuItem onSelect={() => setShowResolved((v) => !v)}>
+              {showResolved ? "Hide resolved threads" : "Show resolved threads"}
+            </ViewerMenuItem>
+            <ViewerMenuSeparator />
+            <ViewerMenuItem onSelect={() => void navigator.clipboard?.writeText(window.location.href)}>Copy link</ViewerMenuItem>
+          </>
+        }
+      />
 
       {panel === "list" ? (
         <div className="panel">
@@ -824,7 +858,7 @@ export function ArtifactView(props: ArtifactViewProps) {
           ) : null}
 
           <div
-            className="art-content"
+            className="doc"
             ref={contentRef}
             onMouseUp={onContentMouseUp}
             onDoubleClick={commentOnBlock}
@@ -849,7 +883,14 @@ export function ArtifactView(props: ArtifactViewProps) {
                 />
               </div>
             ) : (
-              <div dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
+              <>
+                <ArticleHead {...props} />
+                {props.doc ? (
+                  <DocView doc={props.doc} fallbackHtml={props.html ?? ""} assetBase={props.assetBase} />
+                ) : (
+                  <div className="art-content" dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
+                )}
+              </>
             )}
           </div>
 
@@ -1016,6 +1057,23 @@ export function ArtifactView(props: ArtifactViewProps) {
         </div>
       ) : null}
     </>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = { markdown: "Page", html: "HTML page", react: "React app", svelte: "Svelte app" };
+
+/** Kicker, title and lede above the page, unless the page opens with its own title. */
+function ArticleHead(props: ArtifactViewProps) {
+  const first = props.doc?.content?.[0];
+  const ownTitle = first?.type === "heading" && first.attrs?.level === 1;
+  return (
+    <div className="doc-head">
+      <div className="doc-head__kicker">
+        {KIND_LABEL[props.kind] ?? "Page"} · updated {agoLong(props.createdAt)} by {props.authorName}
+      </div>
+      {ownTitle ? null : <h1 className="doc-head__title">{props.title}</h1>}
+      {props.description && !ownTitle ? <p className="doc-head__lede">{props.description}</p> : null}
+    </div>
   );
 }
 
