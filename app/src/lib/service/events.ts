@@ -52,6 +52,14 @@ export interface ListEventsOptions {
   undeliveredOnly?: boolean;
 }
 
+/** The newest event on an artifact, so a wait starts after everything already there. */
+export function latestEventId(ctx: ServiceContext, slug: string): number {
+  const row = ctx.db
+    .prepare("SELECT MAX(e.id) AS id FROM events e JOIN artifacts a ON a.id = e.artifact_id WHERE a.slug = ?")
+    .get(slug) as { id: number | null } | undefined;
+  return Number(row?.id ?? 0);
+}
+
 export function listEvents(ctx: ServiceContext, opts: ListEventsOptions = {}): { events: EventRecord[]; lastId: number } {
   const after = Math.max(opts.after ?? 0, 0);
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);

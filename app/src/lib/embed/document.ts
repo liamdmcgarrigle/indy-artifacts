@@ -51,6 +51,7 @@ function head(options: EmbedOptions, extra = ""): string {
   return `<meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${escapeHtml(EMBED_CSP)}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="darkreader-lock">
 <title>${escapeHtml(options.title)}</title>
 <link rel="stylesheet" href="/themes/${encodeURIComponent(options.theme)}.css">
 <link rel="stylesheet" href="/primitives/primitives.css">

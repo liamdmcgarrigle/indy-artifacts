@@ -15,6 +15,7 @@ export function fail(err: unknown): Response {
   if (err instanceof ServiceError) {
     const payload: Record<string, unknown> = { error: { code: err.code, message: err.message } };
     if ("currentVersion" in err) payload.current_version = (err as { currentVersion: number }).currentVersion;
+    if ("details" in err && err.details) Object.assign(payload.error as object, err.details);
     return json(payload, { status: err.status });
   }
   const message = err instanceof Error ? err.message : String(err);

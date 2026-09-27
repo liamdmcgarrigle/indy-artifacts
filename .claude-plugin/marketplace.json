@@ -1,18 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "artifacts-local",
-  "description": "Local marketplace for the agentbox artifacts system",
+  "name": "indy",
+  "description": "Indy: a self-hosted home for the pages your coding agents make",
   "owner": {
-    "name": "Liam McGarrigle",
-    "email": "ldmcgarrigle@gmail.com"
+    "name": "Liam McGarrigle"
   },
   "plugins": [
     {
-      "name": "artifacts",
-      "description": "Publish and review versioned, sandboxed visual artifacts on agentbox",
-      "author": {
-        "name": "Liam McGarrigle"
-      },
+      "name": "indy",
+      "description": "Publish reports, plans and forms to your Indy, and pick up the comments you leave on them",
       "category": "productivity",
       "source": "./plugin"
     }

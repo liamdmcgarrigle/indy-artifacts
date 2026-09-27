@@ -8,6 +8,7 @@ import rehypeSanitize from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import { parse as parseYaml } from "yaml";
 import { visit } from "unist-util-visit";
+import { toHtml } from "hast-util-to-html";
 
 import { artifactsDirectives } from "./directives";
 import { assignBlocks } from "./blocks";
@@ -53,6 +54,17 @@ function stripRawHtml() {
   };
 }
 
+/** Keep each top-level block's finished HTML by its first line, for blocks the editor shows as-is. */
+function captureBlocks(ctx: PipelineContext) {
+  return (tree: AnyNode) => {
+    for (const child of tree.children ?? []) {
+      const lines = child.type === "element" ? String(child.properties?.dataLines ?? "") : "";
+      const start = Number(lines.split("-")[0]);
+      if (start) ctx.blockHtml[start] = (ctx.blockHtml[start] ?? "") + toHtml(child);
+    }
+  };
+}
+
 export function normalizeFrontmatter(raw: Record<string, unknown> | null, fallbackTitle = "Untitled"): Frontmatter {
   const o = raw ?? {};
   const themeRaw = typeof o.theme === "string" ? o.theme : DEFAULT_THEME;
@@ -75,6 +87,7 @@ export function renderMarkdown(source: string, fallbackTitle = "Untitled", optio
     frontmatter: null,
     embedCounter: 0,
     assetBase: options.assetBase,
+    blockHtml: {},
   };
 
   const processor = unified()
@@ -88,6 +101,7 @@ export function renderMarkdown(source: string, fallbackTitle = "Untitled", optio
     .use(remarkRehype, { allowDangerousHtml: false })
     .use(assignBlocks, ctx)
     .use(rehypeSanitize, schema as never)
+    .use(captureBlocks, ctx)
     .use(rehypeStringify);
 
   // Widen nested container fences before remark sees them. Line numbers survive,
@@ -104,6 +118,7 @@ export function renderMarkdown(source: string, fallbackTitle = "Untitled", optio
     blocks: ctx.blocks,
     embeds: ctx.embeds,
     warnings: ctx.warnings,
+    blockHtml: ctx.blockHtml,
   };
 }
 

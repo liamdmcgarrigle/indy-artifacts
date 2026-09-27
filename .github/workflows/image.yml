@@ -1,0 +1,186 @@
+# Tests, then builds the image for amd64 and arm64 and publishes it to
+# ghcr.io/<owner>/indy-artifacts.
+#
+#   push to main      :latest and :sha-<short>
+#   new VERSION       also :1.2.3, :1.2 and :1, a v1.2.3 tag and a GitHub release
+#   pull request      tests and a build, nothing published
+#   manual run        on main as a push; on another branch, a build only
+#
+# VERSION at the repo root is the version. Bump it with `npm run set-version
+# 1.2.3`; the first push to main that carries a version with no tag yet
+# releases it. Later pushes on the same version only move :latest.
+#
+# Each architecture builds on its own native runner (no QEMU, which is slow
+# for a Next build), pushes by digest, and a last job joins the two into one
+# multi-arch tag. The image's source label links the package to this repo.
+# GitHub makes a new package private even so: after the first publish, set
+# its visibility to public once in the package settings (see the README).
+
+name: image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push cancels an older pull request build, never a run on main,
+# which may be halfway through publishing a release.
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      release: ${{ steps.read.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read VERSION, and whether it is released yet
+        id: read
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          release=false
+          if [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$GITHUB_EVENT_NAME" = "push" ] \
+             && [ -z "$(git ls-remote --tags origin "refs/tags/v$version")" ]; then
+            release=true
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "Indy $version, new release: $release"
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # Tests first: they build the primitives package the typecheck reads.
+      - run: npm test
+      - run: npm run typecheck
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name
+        id: name
+        # ghcr.io wants lower case; an owner name may not be.
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          outputs: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'type=cacheonly' || format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) }}
+
+      - name: Keep the digest
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          name: digest-${{ matrix.runner }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    needs: [build, version]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Image name
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.name.outputs.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,enable={{is_default_branch}}
+            type=semver,pattern={{version}},value=v${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+            type=semver,pattern={{major}},value=v${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+
+      - name: Join the architectures under each tag
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ steps.name.outputs.image }}@sha256:%s ' *)
+
+      - name: Show the result
+        run: docker buildx imagetools inspect ${{ steps.name.outputs.image }}:${{ steps.meta.outputs.version }}
+
+  release:
+    needs: [publish, version]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Tag v${{ needs.version.outputs.version }} and write the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Indy $VERSION" --generate-notes

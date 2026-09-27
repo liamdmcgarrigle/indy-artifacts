@@ -1,18 +1,21 @@
 import { createHash } from "node:crypto";
+import { rm } from "node:fs/promises";
 import { customAlphabet } from "nanoid";
 import { createTwoFilesPatch } from "diff";
 import { bind, withTx } from "../db/index";
 import { readFrontmatter, normalizeFrontmatter, renderMarkdown } from "../pipeline/index";
 import { DEFAULT_THEME, THEMES } from "../pipeline/types";
 import { buildArtifact } from "../build/index";
-import { artifactUrl, buildDir, type ServiceContext } from "./context";
+import { artifactUrl, assetDir, buildDir, type ServiceContext } from "./context";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { carryAssets, copyAssets } from "./assets";
+import { assertRoom, grewBy } from "./storage";
 import { resetLiveDocument } from "./collab";
 
 /** The message the document server uses when it snapshots a live edit. */
 export const LIVE_EDIT_MESSAGE = "live edit";
 import { recordEvent } from "./events";
+import { searchableText } from "./plaintext";
 import {
   KINDS,
   LIMITS,
@@ -63,6 +66,8 @@ function toArtifact(row: Row): Artifact {
     kind: String(row.kind) as Kind,
     theme: String(row.theme),
     project: (row.project as string | null) ?? null,
+    series: (row.series as string | null) ?? null,
+    branch: (row.branch as string | null) ?? null,
     description: (row.description as string | null) ?? null,
     tags: JSON.parse(String(row.tags_json ?? "[]")),
     agentName: (row.agent_name as string | null) ?? null,
@@ -71,6 +76,12 @@ function toArtifact(row: Row): Artifact {
     currentVersion: Number(row.current_version),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
+    pinnedAt: (row.pinned_at as string | null) ?? null,
+    archivedAt: (row.archived_at as string | null) ?? null,
+    seenVersion: Number(row.seen_version ?? 0),
+    seenAt: (row.seen_at as string | null) ?? null,
+    liveBy: (row.live_by as string | null) ?? null,
+    liveAt: (row.live_at as string | null) ?? null,
   };
 }
 
@@ -112,32 +123,30 @@ export interface ArtifactSummary extends Artifact {
   updatedBy: AuthorKind | null;
 }
 
+/** Comments an agent can see: the owner's, and visitor threads the owner forwarded. */
+export const WAITING = "(c.author_kind = 'human' OR (c.author_kind = 'visitor' AND c.approved_at IS NOT NULL))";
+
 export function listArtifacts(
   ctx: ServiceContext,
   opts: { project?: string; limit?: number } = {},
 ): ArtifactSummary[] {
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
-  const rows = (
-    opts.project
-      ? ctx.db
-          .prepare("SELECT * FROM artifacts WHERE project = ? ORDER BY updated_at DESC LIMIT ?")
-          .all(opts.project, limit)
-      : ctx.db.prepare("SELECT * FROM artifacts ORDER BY updated_at DESC LIMIT ?").all(limit)
-  ) as Row[];
-
-  const counts = ctx.db
+  // Counts and the last author are worked out for the returned rows only.
+  // "Waiting" means what the agent would see: the owner's comments and the
+  // visitor threads the owner forwarded, as countUnsent counts them.
+  const rows = ctx.db
     .prepare(
-      "SELECT artifact_id, COUNT(*) AS open_count, SUM(CASE WHEN sent_at IS NULL THEN 1 ELSE 0 END) AS unsent_count FROM comments WHERE status = 'open' AND author_kind = 'human' GROUP BY artifact_id",
+      `SELECT a.*, v.author_kind AS last_kind,
+         (SELECT COUNT(*) FROM comments c WHERE c.artifact_id = a.id AND c.status = 'open' AND ${WAITING}) AS open_count,
+         (SELECT COUNT(*) FROM comments c WHERE c.artifact_id = a.id AND c.status = 'open' AND c.sent_at IS NULL AND ${WAITING}) AS unsent_count
+       FROM artifacts a
+       LEFT JOIN versions v ON v.artifact_id = a.id AND v.number = a.current_version
+       ${opts.project ? "WHERE a.project = :project" : ""}
+       ORDER BY a.updated_at DESC LIMIT :limit`,
     )
-    .all() as Row[];
-  const byId = new Map(counts.map((c) => [String(c.artifact_id), c]));
-
-  const lastAuthor = ctx.db
-    .prepare(
-      "SELECT artifact_id, author_kind FROM versions v WHERE number = (SELECT MAX(number) FROM versions WHERE artifact_id = v.artifact_id)",
-    )
-    .all() as Row[];
-  const authorById = new Map(lastAuthor.map((r) => [String(r.artifact_id), String(r.author_kind) as AuthorKind]));
+    .all(bind(opts.project ? { project: opts.project, limit } : { limit })) as Row[];
+  const byId = new Map(rows.map((r) => [String(r.id), r]));
+  const authorById = new Map(rows.map((r) => [String(r.id), (r.last_kind as AuthorKind | null) ?? null]));
 
   return rows.map((row) => {
     const artifact = toArtifact(row);
@@ -152,9 +161,18 @@ export function listArtifacts(
   });
 }
 
+/**
+ * Every version's details, without its content: the history of a busy page
+ * can hold megabytes of source nobody asked for. `source` and `files` come
+ * back null; read a version with getVersion for those.
+ */
 export function listVersions(ctx: ServiceContext, artifactId: string): Version[] {
   const rows = ctx.db
-    .prepare("SELECT * FROM versions WHERE artifact_id = ? ORDER BY number DESC")
+    .prepare(
+      `SELECT id, artifact_id, number, author_kind, author_name, message, assets_json, build_status,
+         content_hash, created_at, NULL AS source, NULL AS files_json, NULL AS build_log, '{}' AS frontmatter_json, '[]' AS warnings_json
+       FROM versions WHERE artifact_id = ? ORDER BY number DESC`,
+    )
     .all(artifactId) as Row[];
   return rows.map(toVersion);
 }
@@ -164,6 +182,13 @@ export function getVersion(ctx: ServiceContext, artifactId: string, number: numb
     .prepare("SELECT * FROM versions WHERE artifact_id = ? AND number = ?")
     .get(artifactId, number) as Row | undefined;
   return row ? toVersion(row) : null;
+}
+
+/** A version's attached files only, for serving them: no source is read. */
+export function versionAssets(ctx: ServiceContext, artifact: Artifact, number: number): Version["assets"] {
+  const row = ctx.db.prepare("SELECT assets_json FROM versions WHERE artifact_id = ? AND number = ?").get(artifact.id, number) as Row | undefined;
+  if (!row) throw new NotFoundError(`artifact "${artifact.slug}" has no version ${number}`);
+  return JSON.parse(String(row.assets_json ?? "[]"));
 }
 
 export function requireVersion(ctx: ServiceContext, artifact: Artifact, number?: number): Version {
@@ -216,6 +241,8 @@ interface Meta {
   title: string;
   theme: string;
   project: string | null;
+  series: string | null;
+  branch: string | null;
   description: string | null;
   tags: string[];
 }
@@ -224,7 +251,7 @@ function resolveMeta(kind: Kind, input: PublishInput, source: string | null, exi
   const fm = kind === "markdown" && source ? readFrontmatter(source) : null;
   const fmTitle = fm && typeof fm.title === "string" && fm.title.trim() ? fm.title.trim() : undefined;
 
-  const title = fmTitle ?? input.title?.trim() ?? existing?.title;
+  const title = fmTitle ?? (input.title?.trim() || undefined) ?? existing?.title;
   if (!title)
     throw new ValidationError('"title" is required (in frontmatter for markdown, or as a "title" argument)');
   if (title.length > LIMITS.titleChars) throw new ValidationError(`title is over ${LIMITS.titleChars} characters`);
@@ -234,6 +261,7 @@ function resolveMeta(kind: Kind, input: PublishInput, source: string | null, exi
   const theme = (THEMES as readonly string[]).includes(themeRaw) ? themeRaw : DEFAULT_THEME;
 
   const fmProject = fm && typeof fm.project === "string" ? fm.project.trim() : undefined;
+  const fmSeries = fm && typeof fm.series === "string" ? fm.series.trim() : undefined;
   const fmDescription = fm && typeof fm.description === "string" ? fm.description.trim() : undefined;
   const fmTags = fm && Array.isArray(fm.tags) ? fm.tags.map(String).slice(0, 20) : undefined;
 
@@ -241,6 +269,9 @@ function resolveMeta(kind: Kind, input: PublishInput, source: string | null, exi
     title,
     theme,
     project: (fmProject ?? input.project?.trim() ?? existing?.project ?? null) || null,
+    series: ((fmSeries ?? input.series?.trim() ?? existing?.series ?? null) || null)?.slice(0, 80) ?? null,
+    // The latest publish wins: a page updated from another branch now belongs to it.
+    branch: ((input.branch?.trim() ?? existing?.branch ?? null) || null)?.slice(0, 120) ?? null,
     description: (fmDescription ?? input.description?.trim() ?? existing?.description ?? null) || null,
     tags: fmTags ?? input.tags ?? existing?.tags ?? [],
   };
@@ -254,7 +285,7 @@ function uniqueSlug(ctx: ServiceContext, wanted: string | undefined, title: stri
         `slug must be 3-64 characters of a-z, 0-9 and dashes, starting with a letter or digit: "${wanted}"`,
       );
     if (findArtifact(ctx, slug))
-      throw new ValidationError(`slug "${slug}" is taken; use artifacts_update to change that artifact`);
+      throw new ValidationError(`slug "${slug}" is taken; use artifact_update to change that artifact`);
     return slug;
   }
   const base = slugify(title);
@@ -277,6 +308,15 @@ async function writeVersion(
 ): Promise<PublishResult> {
   const number = artifact.currentVersion + 1;
   const contentHash = hashContent(artifact.kind, content.source, content.files);
+  const textBytes =
+    Buffer.byteLength(content.source ?? "") + Object.values(content.files ?? {}).reduce((n, f) => n + Buffer.byteLength(f), 0);
+  await assertRoom(ctx, textBytes);
+
+  // No row points at this version's folders yet, so anything in them is left
+  // over from an attempt that failed: a stale bundle.css would be served.
+  await Promise.all(
+    [assetDir(ctx, artifact.id, number), buildDir(ctx, artifact.id, number)].map((dir) => rm(dir, { recursive: true, force: true })),
+  );
 
   let assets = previous?.assets ?? [];
   if (input.assets !== undefined) {
@@ -332,8 +372,11 @@ async function writeVersion(
 
     ctx.db
       .prepare(
-        `UPDATE artifacts SET title = :title, theme = :theme, project = :project, description = :description,
+        `UPDATE artifacts SET title = :title, theme = :theme, project = :project, series = :series, branch = :branch, description = :description,
            tags_json = :tags_json, current_version = :current_version, updated_at = :updated_at,
+           archived_at = NULL,
+           seen_version = CASE WHEN :by_human = 1 THEN :current_version ELSE seen_version END,
+           seen_at = CASE WHEN :by_human = 1 THEN :updated_at ELSE seen_at END,
            agent_name = COALESCE(:agent_name, agent_name),
            terminal_handle = COALESCE(:terminal_handle, terminal_handle),
            session_id = COALESCE(:session_id, session_id)
@@ -345,15 +388,24 @@ async function writeVersion(
           title: meta.title,
           theme: meta.theme,
           project: meta.project,
+          series: meta.series,
+          branch: meta.branch,
           description: meta.description,
           tags_json: JSON.stringify(meta.tags),
           current_version: number,
           updated_at: stamp,
+          by_human: authorKind === "human" ? 1 : 0,
           agent_name: input.agent?.name ?? null,
           terminal_handle: input.agent?.terminal ?? null,
           session_id: input.agent?.session ?? null,
         }),
       );
+
+    // One row per artifact in the search index, holding its latest text.
+    ctx.db.prepare("DELETE FROM search WHERE artifact_id = ?").run(artifact.id);
+    ctx.db
+      .prepare("INSERT INTO search (artifact_id, title, description, body) VALUES (?, ?, ?, ?)")
+      .run(artifact.id, meta.title, meta.description ?? "", searchableText(content, artifact.kind));
 
     if (authorKind === "human") {
       recordEvent(ctx, artifact.id, "version.created", {
@@ -366,8 +418,9 @@ async function writeVersion(
   // written anywhere else has to replace it. The snapshot path is the one
   // exception: that text came from the document in the first place.
   if (artifact.kind === "markdown" && input.message !== LIVE_EDIT_MESSAGE) {
-    resetLiveDocument(artifact.slug, content.source);
+    resetLiveDocument(ctx, artifact.slug, content.source, number);
   }
+  grewBy("database", textBytes);
 
   return {
     slug: artifact.slug,
@@ -423,17 +476,36 @@ export async function publishArtifact(ctx: ServiceContext, input: PublishInput):
   }
 }
 
-export async function updateArtifact(
-  ctx: ServiceContext,
-  slug: string,
-  input: UpdateInput,
-): Promise<PublishResult> {
+/**
+ * Writes to one artifact happen one at a time. A version's assets and build
+ * output are written to its folder before its row exists, so two updates that
+ * both passed the version check would write into the same folder. In turn,
+ * the second sees the first's version and gets an honest conflict.
+ */
+const writing = new Map<string, Promise<unknown>>();
+
+function oneAtATime<T>(slug: string, run: () => Promise<T>): Promise<T> {
+  const before = writing.get(slug) ?? Promise.resolve();
+  const mine = before.catch(() => undefined).then(run);
+  const settled = mine.catch(() => undefined);
+  writing.set(slug, settled);
+  void settled.then(() => {
+    if (writing.get(slug) === settled) writing.delete(slug);
+  });
+  return mine;
+}
+
+export function updateArtifact(ctx: ServiceContext, slug: string, input: UpdateInput): Promise<PublishResult> {
+  return oneAtATime(slug, () => updateNow(ctx, slug, input));
+}
+
+async function updateNow(ctx: ServiceContext, slug: string, input: UpdateInput): Promise<PublishResult> {
   const artifact = requireArtifact(ctx, slug);
-  if (typeof input.expectedVersion !== "number")
+  if (typeof input.expectedVersion !== "number" || !Number.isInteger(input.expectedVersion))
     throw new ValidationError('"expected_version" is required; pass the version you last saw');
   if (input.expectedVersion !== artifact.currentVersion)
     throw new ConflictError(
-      `artifact "${slug}" is at version ${artifact.currentVersion}, not ${input.expectedVersion}; read it again with artifacts_get before updating`,
+      `artifact "${slug}" is at version ${artifact.currentVersion}, not ${input.expectedVersion}; read it again with artifact_get before updating`,
       artifact.currentVersion,
     );
   if (input.kind && input.kind !== artifact.kind)
@@ -454,18 +526,22 @@ export async function updateArtifact(
   );
 }
 
-export async function createHumanVersion(
-  ctx: ServiceContext,
-  slug: string,
-  input: {
-    source?: string;
-    files?: Record<string, string>;
-    message?: string;
-    authorName: string;
-    expectedVersion: number;
-  },
-): Promise<PublishResult> {
+type HumanEdit = {
+  source?: string;
+  files?: Record<string, string>;
+  message?: string;
+  authorName: string;
+  expectedVersion: number;
+};
+
+export function createHumanVersion(ctx: ServiceContext, slug: string, input: HumanEdit): Promise<PublishResult> {
+  return oneAtATime(slug, () => humanVersionNow(ctx, slug, input));
+}
+
+async function humanVersionNow(ctx: ServiceContext, slug: string, input: HumanEdit): Promise<PublishResult> {
   const artifact = requireArtifact(ctx, slug);
+  if (!Number.isInteger(input.expectedVersion))
+    throw new ValidationError('"expected_version" is required; pass the version you last saw');
   if (input.expectedVersion !== artifact.currentVersion)
     throw new ConflictError(
       `this artifact moved to version ${artifact.currentVersion} while you were editing; reload before saving`,

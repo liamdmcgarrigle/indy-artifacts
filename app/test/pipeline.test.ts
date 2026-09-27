@@ -305,3 +305,12 @@ describe("colons in prose", () => {
     expect(out.html).toContain("art-callout");
   });
 });
+
+describe("plain text for search", () => {
+  it("stays linear on a page of blank lines", async () => {
+    const { plainText } = await import("@/lib/service/plaintext");
+    const started = Date.now();
+    plainText("a" + "\n".repeat(400_000) + "b");
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+});

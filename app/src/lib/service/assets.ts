@@ -1,8 +1,11 @@
-import { copyFile, link, mkdir, readdir, realpath, stat } from "node:fs/promises";
+import { copyFile, link, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { assetDir, type ServiceContext } from "./context";
 import { ValidationError } from "./errors";
 import { LIMITS, type AssetInput, type AssetRecord } from "./types";
+import { compressible, compressImage } from "./images";
+import { getSettings } from "./settings";
+import { assertRoom, grewBy } from "./storage";
 
 const TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -46,9 +49,11 @@ export async function copyAssets(
   if (assets.length > LIMITS.assetCount)
     throw new ValidationError(`too many assets: ${assets.length}, the limit is ${LIMITS.assetCount}`);
   const dir = assetDir(ctx, artifactId, version);
-  await mkdir(dir, { recursive: true });
+  const settings = getSettings(ctx);
   const out: AssetRecord[] = [];
   const seen = new Set<string>();
+  const checked: { name: string; real: string; type: string }[] = [];
+  let incoming = 0;
   for (const asset of assets) {
     if (!NAME.test(asset.name)) throw new ValidationError(`asset name must match [A-Za-z0-9._-]{1,80}: ${asset.name}`);
     if (seen.has(asset.name)) throw new ValidationError(`duplicate asset name: ${asset.name}`);
@@ -60,9 +65,25 @@ export async function copyAssets(
     if (!info.isFile()) throw new ValidationError(`asset is not a file: ${asset.path}`);
     if (info.size > LIMITS.assetBytes)
       throw new ValidationError(`asset ${asset.name} is ${(info.size / 1048576).toFixed(1)} MB, over the 20 MB limit`);
-    await copyFile(real, join(dir, asset.name));
-    out.push({ name: asset.name, size: info.size, type });
+    incoming += info.size;
+    checked.push({ name: asset.name, real, type });
   }
+
+  // Checked against what the agent sent; compression only ever makes it fit better.
+  await assertRoom(ctx, incoming);
+  await mkdir(dir, { recursive: true });
+  for (const { name, real, type } of checked) {
+    if (!settings.compressImages || !compressible(type)) {
+      await copyFile(real, join(dir, name));
+      out.push({ name, size: (await stat(join(dir, name))).size, type });
+      continue;
+    }
+    const { data, changed } = await compressImage(await readFile(real), type, settings);
+    if (changed) await writeFile(join(dir, name), data);
+    else await copyFile(real, join(dir, name));
+    out.push({ name, size: data.length, type });
+  }
+  grewBy("assets", out.reduce((n, a) => n + a.size, 0));
   return out;
 }
 

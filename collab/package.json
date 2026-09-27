@@ -1,7 +1,8 @@
 {
   "name": "collab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "description": "Yjs document server: live editing, and agents typing into an artifact.",
   "scripts": {
@@ -9,6 +10,6 @@
   },
   "dependencies": {
     "@hocuspocus/server": "4.7.0",
-    "yjs": "13.6.32"
+    "yjs": "13.6.33"
   }
 }

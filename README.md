@@ -1,25 +1,240 @@
-# Artifacts
+# Indy
 
-A self-hosted place for the agents on this box to publish visual reports, and for the operator to
-read them, comment on them and edit them. Agents talk to it over MCP. Comments come back to the
-agent that published the page, through its Orca terminal.
+A self-hosted home for the pages your coding agents make. An agent publishes a report, a plan or a
+form over MCP; you read it in the browser, edit it in place, pin comments on the exact spot, and
+send your notes back to the agent. When a page is ready for someone else, you share a link.
 
-Reachable at http://agentbox:5174 from the operator's Mac over the tailnet. A second process on
-5175 holds the live documents, so you can watch an agent type into a page while it is open.
+It runs as one container with one port and one volume, for one owner.
 
-## What an artifact is
+A page is markdown with cards, callouts, number tiles, charts, tables, tabs and columns, or a
+compiled React, Svelte or HTML app in a sandbox. Comment pins sit on the words or the element they
+are about, and nothing reaches the agent until you press Send. Editing happens on the page itself:
+text, titles, number tiles, chart data and form questions are typed into in place. Saving writes a
+new version, and blocks you did not touch keep their markdown byte for byte. Every version stays,
+so you can step back through them and compare any two.
 
-One page with a stable slug and an ordered list of immutable versions. Four kinds:
+Pages can also ask questions. An agent puts a form on a page, you or whoever you share it with
+answer, and the agent reads the responses. Pages are private until you share them, either with
+anyone who has the link or only with people who confirm their email with a code. A visitor's
+comments and answers wait for you before any agent sees them.
 
-| kind | the agent sends | rendered as |
+## Running Indy
+
+You need Docker (or Podman) with Compose, and a machine that stays on.
+
+### 1. Start it
+
+```bash
+mkdir indy && cd indy
+curl -fsSLO https://raw.githubusercontent.com/liamdmcgarrigle/indy-artifacts/main/compose.yaml
+curl -fsSL https://raw.githubusercontent.com/liamdmcgarrigle/indy-artifacts/main/.env.example -o .env
+```
+
+Open `.env` and set `INDY_URL` to the address you will open Indy at, for example
+`http://192.168.1.20:1936` on a home network or `https://indy.example.com` on a server. Then:
+
+```bash
+docker compose up -d
+```
+
+### 2. Create your account
+
+Open `INDY_URL` in a browser. A fresh install goes straight to setup, where you create the one
+account. Until you do, anyone who can reach the address can create it, so do this right after the
+first start. If someone else gets there first, remove Indy's data and start again:
+
+```bash
+docker compose down
+docker volume rm indy_indy-data
+docker compose up -d
+```
+
+This leaves Caddy's certificates alone, so a reinstall doesn't count against Let's Encrypt's
+limits. Setup ends on the Connect page, which walks you through connecting your first agent.
+
+### 3. Connect an agent
+
+Indy's Connect page (`<INDY_URL>/connect`, and the last step of setup) walks through this with your
+address filled in, and shows when the agent reaches Indy.
+
+Agents connect over MCP at `<INDY_URL>/mcp` and sign in through the browser with OAuth: the agent
+opens Indy, you approve it, and nothing needs copying. For Claude Code:
+
+```bash
+claude mcp add --transport http --scope user indy https://indy.example.com/mcp
+# then in Claude Code: /mcp, pick indy, Authenticate
+```
+
+For Codex, which starts the sign-in by itself:
+
+```bash
+codex mcp add indy --url https://indy.example.com/mcp
+```
+
+Claude Code only signs in this way when Indy is on HTTPS. On plain HTTP, or on a machine with no
+browser, make a token on the Connect page and pass it as a header instead. Settings › Agents lists
+every connected agent and disconnects any one of them.
+
+The optional Indy plugin adds two skills, `publish` for making pages and `feedback` for picking up
+your comments, and tells the agent at the start of each session that Indy is there:
+
+```bash
+claude plugin marketplace add liamdmcgarrigle/indy-artifacts && claude plugin install indy@indy
+codex plugin marketplace add liamdmcgarrigle/indy-artifacts && codex plugin add indy@indy
+```
+
+Any other MCP client takes `<INDY_URL>/mcp` over streamable HTTP, and either discovers the OAuth
+sign-in from it or sends a token in an `Authorization: Bearer` header. claude.ai and Claude Desktop
+can add it as a custom connector when Indy is on a public HTTPS address. The server describes its own tools and serves the full block
+reference as `indy://reference`, so an agent can learn the format without the plugin. The tools are
+`artifact_publish`, `artifact_update`, `artifact_type`, `artifact_get`, `artifact_list`,
+`artifact_diff`, `artifact_comments`, `artifact_reply`, `artifact_resolve`, `artifact_wait` and
+`artifact_responses`.
+
+### HTTPS
+
+Anything reachable from the internet should be on HTTPS: sign-in cookies are only marked Secure
+when `INDY_URL` starts with `https://`.
+
+To use the bundled Caddy, point a domain's DNS at the server, open ports 80 and 443, and add to
+`.env`:
+
+```bash
+INDY_URL=https://indy.example.com
+INDY_DOMAIN=indy.example.com
+INDY_BIND=127.0.0.1
+```
+
+Then start with the `https` profile. Caddy gets the certificate and renews it on its own.
+
+```bash
+docker compose --profile https up -d
+```
+
+If you already run a proxy, forward everything to port 1936. It has to pass websockets on `/collab`
+(live editing) and must not buffer responses on `/api/live`, which keeps open pages up to date.
+For nginx:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:1936;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+}
+```
+
+On a tailnet or a home network, plain HTTP is fine and nothing else is needed.
+
+### Settings
+
+Everything is an environment variable in `.env`. Only `INDY_URL` is required.
+
+| Variable | Default | What it does |
 |---|---|---|
-| `markdown` | one markdown document with frontmatter | real DOM in the trusted page; html and mermaid blocks in sandboxed frames |
-| `react` | a files map with `App.tsx` | compiled at publish with esbuild, run in one sandboxed frame |
-| `svelte` | a files map with `App.svelte` | the same, through the Svelte 5 compiler |
-| `html` | one complete HTML document | served into one sandboxed frame with our CSP |
+| `INDY_URL` | `http://localhost:1936` | The address people open Indy at. Share links, agent snippets and cookies are built from it. |
+| `INDY_PORT` | `1936` | The host port. |
+| `INDY_BIND` | `0.0.0.0` | The host address the port is published on. Use `127.0.0.1` behind a proxy. |
+| `INDY_DOMAIN` | | The domain Caddy gets a certificate for, with `--profile https`. |
+| `RESEND_API_KEY` | | Turns on email, through [Resend](https://resend.com). See below. |
+| `INDY_EMAIL_FROM` | `Indy <onboarding@resend.dev>` | The sender for emails. |
+| `INDY_AUTH` | `password` | `local` skips sign-in and treats every request as you. Only for an install nobody else can reach. |
+| `INDY_ASSET_ROOTS` | | Colon-separated folders a page may load images from by absolute path. Each must also be mounted into the container. |
+| `INDY_IMAGE` | `ghcr.io/liamdmcgarrigle/indy-artifacts:latest` | The image to run. Pin a release such as `:1.2` to update on your own schedule. |
+
+Older installs that still set `ARTIFACTS_PUBLIC_URL`, `ARTIFACTS_DATA` and the other `ARTIFACTS_*`
+names keep working; each is read when its `INDY_*` name is not set.
+
+For anything compose itself does not expose, such as mounting a folder of screenshots for
+`INDY_ASSET_ROOTS`, put it in a `compose.override.yaml` next to `compose.yaml`. Compose merges it in
+on every command. `compose.override.example.yaml` in this repo shows the shape.
+
+### Email
+
+Email is optional. Without it Indy works fully, apart from two things that need it:
+
+- a sign-in code as a second step after your password, and
+- share links that ask visitors to confirm their email before opening a page.
+
+Set `RESEND_API_KEY` to turn both on. Resend's shared test sender only delivers to the address on
+your own Resend account, which is enough for sign-in codes. To email visitors, verify a domain with
+Resend and set `INDY_EMAIL_FROM` to an address on it.
+
+### Storage and images
+
+Indy limits its own disk use to 5 GB by default. Once the data folder reaches the limit, agents
+can't publish or update pages and get a message explaining why. Reading, comments and sharing
+still work. You can raise the limit or remove it under Settings › Data, which also shows what is
+using the space.
+
+Images an agent attaches are compressed as they are stored. They are scaled to fit 2560 px on the
+longest side, re-encoded at quality 80 in their own format (a PNG stays a PNG), and stripped of
+EXIF data. GIFs and SVGs are stored as they are. You can change all of this under Settings › Data
+or turn compression off. Changes apply only to images attached afterwards.
+
+### Updating
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Your data lives in the `indy-data` volume and is untouched by updates. Database changes are applied
+automatically on start.
+
+### Backups
+
+Everything is in the `indy-data` volume: one SQLite database plus uploaded assets. Stop Indy for a
+moment so the database is consistent, archive the volume, and start it again:
+
+```bash
+docker compose stop indy
+docker run --rm -v indy_indy-data:/data:ro -v "$PWD":/backup alpine \
+  tar czf /backup/indy-$(date +%F).tgz -C /data .
+docker compose start indy
+```
+
+To restore, into a fresh install before its first start:
+
+```bash
+docker volume create indy_indy-data
+docker run --rm -v indy_indy-data:/data -v "$PWD":/backup alpine \
+  sh -c "tar xzf /backup/indy-2026-09-26.tgz -C /data && chown -R 1000:1000 /data"
+docker compose up -d
+```
+
+The volume is always called `indy_indy-data`, because `compose.yaml` names the project `indy`.
+
+### Building the image yourself
+
+```bash
+git clone https://github.com/liamdmcgarrigle/indy-artifacts
+cd indy-artifacts
+docker build -t indy:local .
+```
+
+Then set `INDY_IMAGE=indy:local` in `.env`. Published images are built for `linux/amd64` and
+`linux/arm64` by `.github/workflows/image.yml`: `:latest` follows `main`, and each new version in
+`VERSION` also publishes its own tags (see Versions below).
+
+## What a page is
+
+A page has a stable address and an ordered list of versions that never change once written. There
+are four kinds:
+
+| kind | the agent sends | shown as |
+|---|---|---|
+| `markdown` | one markdown document with frontmatter | the page itself, with HTML and Mermaid blocks in sandboxed frames |
+| `react` | a map of files with `App.tsx` | compiled on publish with esbuild, run in one sandboxed frame |
+| `svelte` | a map of files with `App.svelte` | the same, through the Svelte 5 compiler |
+| `html` | one complete HTML document | one sandboxed frame |
 
 Markdown is the cheap path. Beyond ordinary markdown it understands a small set of blocks, so an
-agent writes about thirty lines and gets a report:
+agent writes thirty lines and gets a report:
 
 ````markdown
 ---
@@ -48,145 +263,67 @@ data:
 ```
 ````
 
-The full vocabulary is `:::card`, `:::callout`, `:::kpis`, `:::columns` with `:::col`, `:::tabs`
-with `:::tab`, `:::details`, and the fences `chart`, `table`, `mermaid` and `html`. It is documented
-for agents in `plugin/skills/artifacts/reference.md` and served over MCP as `artifacts://reference`.
+The full set is `:::card`, `:::callout`, `:::kpis`, `:::columns` with `:::col`, `:::tabs` with
+`:::tab`, `:::details`, the form blocks `::field` and `:::choice` with `:::option`, and the fences
+`chart`, `table`, `mermaid` and `html`. The reference agents learn from is
+`plugin/skills/publish/reference.md`, the same text MCP serves as `indy://reference`.
 
-## Themes
+### Themes
 
-A theme is one CSS file defining a fixed set of `--art-*` custom properties. Colour tokens are
-declared twice, for light and dark; the shape of the design, meaning the type stack, the spacing
-scale, the radii, the measure and the shadows, is declared once. Three themes ship: `default`,
-`picaflick` and `backup-studio`, the last two carrying those products' real colours. A fourth theme
-is a file dropped into `themes/`, which the server picks up without a rebuild.
+A theme is one CSS file that sets a fixed list of `--art-*` custom properties, with colours for
+light and dark. `default`, `picaflick` and `backup-studio` ship in the image. Indy serves its own
+fonts, all under the Open Font License, so pages make no requests to a font CDN.
 
-Type comes from variable fonts served from the container, not from a CDN: Inter, Source Serif 4,
-JetBrains Mono, Nunito Sans and Manrope, all under the Open Font License. Body copy sits in a serif
-at a 68-character measure, headings in the theme's display face, and data blocks run wider than the
-prose so a table or a chart uses the page. The tokens reach compiled and raw-HTML artifacts too, so
-a React artifact can use `var(--art-accent)` and match.
+## Security
 
-## Comments
+There is one account. Each agent gets its own token, and you can revoke one without touching the
+others.
 
-Comments are pins in the margin, the way Figma and Notion do it. Select text and a Comment bubble
-appears. Press `c` and click to drop a pin anywhere a caret goes, or on a chart, a card, or an
-element inside a sandboxed frame. The card opens on the spot: beside the caret, or under the
-selection, lined up with the words it quotes, floating over the page rather than parked at the edge
-of the window. It flips above the spot when there is no room below. Every anchor carries the source
-line range, so the agent is told which lines a comment is about.
+Anything an agent wrote that can run goes in an `<iframe sandbox="allow-scripts">` without
+`allow-same-origin`, so it has no cookies, no storage and no access to the page around it. The frame
+also gets a Content Security Policy that blocks network access. Markdown is sanitized before it
+reaches the page. Compiled apps may import react, react-dom, svelte, chart.js, d3, lucide-react and
+their own files; any other import fails the build, and the error goes back to the agent.
 
-A pin holds its place when the text under it changes. The anchor stores the run of words around the
-spot; if an edit means that run no longer appears, the resolver gives up characters from whichever
-end changed until what is left matches again. A pin that had to guess is drawn hollow.
+A visitor on a share link sees only that page and the comments made through that link. Their
+comments and answers reach an agent only after you forward them, and they arrive marked untrusted so
+the agent treats them as data.
 
-Nothing reaches the agent until you say so. The composer has a Notify agent checkbox, off by
-default. Leave it off, work through the page, then press Send in the header to deliver them all as
-one message with an optional note. The Threads button lists every comment when you want to go
-through them in order, including any whose anchor no longer resolves.
-
-## Editing
-
-Hover any block on the page and a pencil appears in the margin. Press it and that block alone
-becomes a text area holding its own source lines; save and only those lines are spliced into a new
-version. Fixing one sentence does not mean opening the whole document and hunting for it.
-
-The pencil is kept alive by where the pointer is rather than by what it entered and left, so setting
-off to click it does not take it away.
-
-The Edit button still opens the full source in CodeMirror for larger work. Saving creates a new
-version authored by you, and the agent can read it back with `artifacts_get` or see exactly what
-changed with `artifacts_diff`. An agent that tries to update against a stale version gets a 409
-naming the current one.
-
-## Live documents
-
-A markdown artifact open in the editor is a shared document, held as a CRDT by the collaboration
-server on 5175 and stored beside the versions in SQLite. Two browsers editing one artifact see each
-other's carets and changes.
-
-An agent joins the same document with `artifacts_type`, which types its text in a few characters at
-a time rather than replacing the page. You watch the words arrive, with a chip naming the agent that
-is writing them. Typing does not create a version on every keystroke: once the document has been
-quiet for a couple of seconds the collaboration server asks the app to snapshot it, and only then,
-and only if the text actually changed, does a new version appear.
-
-Pages that are open but not being edited follow along too. The viewer holds a server-sent events
-stream and redraws when the version number or the comments change, so a page left open on the Mac
-does not go stale while an agent works on it.
-
-## Running it
+## Working on Indy
 
 ```bash
-cp .env.example .env          # port, public URL, asset roots
-podman build -t localhost/artifacts:latest .
-docker compose up -d
+docker compose -f compose.dev.yaml up
 ```
 
-Then install the host-side poller that carries comments into agent terminals:
+That runs Indy from the source tree with hot reload on port 5178, against `./data`. Tests and the
+typecheck:
 
 ```bash
-cp hook/artifacts-hook.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now artifacts-hook
-journalctl --user -u artifacts-hook -f
+npm ci
+npm test
+npm run typecheck
 ```
 
-## Connecting an agent
+Layout: `app/` is the Next.js server, viewer, API and MCP endpoint. `collab/` is the document
+server behind live editing. `packages/primitives` holds the `<art-*>` elements pages are built from.
+`themes/` has the theme files, `plugin/` the Claude Code and Codex plugin, and `tools/` a
+Playwright screenshot harness.
 
-```bash
-claude plugin marketplace add /home/liam/work/artifacts
-claude plugin install artifacts@artifacts-local --scope user
+### Versions
 
-codex plugin marketplace add /home/liam/work/artifacts
-codex plugin add artifacts@artifacts-local
-```
+`VERSION` holds the version. To release, run `npm run set-version 0.3.0`, which also writes it into
+the package manifests and both plugin manifests, then merge to `main`. The first build of a new
+version publishes `:0.3.0`, `:0.3` and `:0`, tags `v0.3.0` and writes a GitHub release. A test
+fails if any copy of the version disagrees with `VERSION`. Bump it for every plugin change too:
+Claude Code only offers a plugin update when its version changes.
 
-Both get the same MCP server at `http://127.0.0.1:5174/mcp` and the same skill. Details and the
-fallback commands are in `plugin/README.md`.
+GitHub makes a new container package private, even when the repository is public. After the first
+image is published, open the `indy-artifacts` package on GitHub, go to Package settings, and set
+its visibility to public. Until then, `docker compose pull` fails for everyone else with
+"unauthorized". This only needs doing once.
 
-The ten tools are `artifacts_publish`, `artifacts_update`, `artifacts_type`, `artifacts_get`,
-`artifacts_list`, `artifacts_diff`, `artifacts_comments`, `artifacts_reply`, `artifacts_resolve` and
-`artifacts_wait`.
+## Licence
 
-## Sandboxing
-
-Anything an agent wrote that can execute runs in an `<iframe sandbox="allow-scripts">` with no
-`allow-same-origin`, so it has an opaque origin: no cookies, no storage, no access to the page
-around it, no credentialed requests. On top of that the frame gets
-`default-src 'none'; connect-src 'none'; script-src 'self'`, sent as a header and repeated as a meta
-tag so a same-document navigation cannot shed it. Markdown is sanitized before it reaches the
-trusted page, and inline HTML in markdown is stripped rather than rendered.
-
-Compiled artifacts may import only react, react-dom, svelte, chart.js, d3, lucide-react and their
-own files. Anything else fails the build with a message naming the import, which comes straight back
-in the tool result.
-
-## Development
-
-No toolchain on the host. Everything runs in a worker:
-
-```bash
-W_CACHE=artifacts spawn-worker docker.io/library/node:24-bookworm-slim "npm test"
-W_CACHE=artifacts W_NET=bridge spawn-worker docker.io/library/node:24-bookworm-slim "npm install"
-python3 -m unittest discover -s hook      # the poller runs on the host
-docker compose -f compose.dev.yaml up -d  # dev server on 5176, its collab on 5177
-```
-
-The server is headless, so seeing the work means taking a picture of it:
-
-```bash
-./tools/shot tools/recipes/baseline.json /tmp/shots
-```
-
-That runs Playwright in a container against a recipe of URLs, each with a width, a colour scheme and
-a list of steps to perform first, and writes a PNG and a `report.json` carrying any console errors.
-It has already caught three things curl could not: artifacts that compiled and then rendered blank,
-a page that stopped hydrating, and pins landing on the wrong line.
-
-Layout: `app/` is the Next.js server, viewer, API and MCP endpoint; `collab/` is the document
-server; `packages/primitives` is the `<art-*>` element bundle; `themes/` holds the token files;
-`plugin/` is what installs into Claude Code and Codex; `hook/` is the host poller; `tools/` holds
-the screenshot harness.
-
-Design and plan are in `docs/superpowers/`. Judgment calls made while building, including the bugs
-found in end-to-end testing, are in `DECISIONS.md`.
+Indy is free software under the [GNU Affero General Public License v3.0](LICENSE) or any later
+version. You can run it, change it and share it. If you run a modified Indy that other people use
+over a network, you have to offer them the source of your version too.

@@ -1,5 +1,9 @@
-import { join, resolve } from "node:path";
-import { openDb, type DatabaseSync } from "../db/index";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { openDb, type DatabaseSync, withTx } from "../db/index";
+import { config } from "../config";
+import { searchableText } from "./plaintext";
+import type { Kind } from "./types";
 
 export interface ServiceContext {
   db: DatabaseSync;
@@ -10,34 +14,64 @@ export interface ServiceContext {
 
 let singleton: ServiceContext | null = null;
 
+/** An install from before the rename keeps its database file name. */
+export function dbFile(dataDir: string): string {
+  return existsSync(join(dataDir, "artifacts.db")) ? "artifacts.db" : "indy.db";
+}
+
 export function defaultDataDir(): string {
-  return process.env.ARTIFACTS_DATA ?? resolve(process.cwd(), "data");
+  return config().dataDir;
 }
 
 export function defaultPublicUrl(): string {
-  return (process.env.ARTIFACTS_PUBLIC_URL ?? "http://agentbox:5174").replace(/\/+$/, "");
+  return config().url;
 }
 
 export function defaultAssetRoots(): string[] {
-  const raw = process.env.ARTIFACTS_ASSET_ROOTS ?? "/home/liam/work:/home/liam/orca:/tmp";
-  return raw
-    .split(":")
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => resolve(p));
+  return config().assetRoots;
 }
 
 export function getContext(): ServiceContext {
   if (!singleton) {
     const dataDir = defaultDataDir();
-    singleton = {
-      db: openDb(join(dataDir, "artifacts.db")),
+    const created: ServiceContext = {
+      db: openDb(join(dataDir, dbFile(dataDir))),
       dataDir,
       publicUrl: defaultPublicUrl(),
       assetRoots: defaultAssetRoots(),
     };
+    reindexIfStale(created);
+    singleton = created;
   }
   return singleton;
+}
+
+/** Bump when what the search index holds changes; the next start rebuilds it. */
+const SEARCH_FORMAT = "3";
+
+function reindexIfStale(ctx: ServiceContext): void {
+  const row = ctx.db.prepare("SELECT value FROM settings WHERE key = 'search_format'").get() as { value?: string } | undefined;
+  if (row?.value === SEARCH_FORMAT) return;
+  // One page at a time, in one transaction: a big library is neither held in
+  // memory at once nor written row by row.
+  const rows = ctx.db
+    .prepare(
+      `SELECT a.id, a.title, a.kind, COALESCE(a.description, '') AS description, v.source, v.files_json
+         FROM artifacts a LEFT JOIN versions v ON v.artifact_id = a.id AND v.number = a.current_version`,
+    )
+    .iterate() as Iterable<Record<string, unknown>>;
+  withTx(ctx.db, () => {
+    ctx.db.exec("DELETE FROM search");
+    const insert = ctx.db.prepare("INSERT INTO search (artifact_id, title, description, body) VALUES (?, ?, ?, ?)");
+    for (const r of rows) {
+      const body = searchableText(
+        { source: (r.source as string | null) ?? null, files: r.files_json ? JSON.parse(String(r.files_json)) : null },
+        String(r.kind) as Kind,
+      );
+      insert.run(String(r.id), String(r.title), String(r.description), body);
+    }
+    ctx.db.prepare("INSERT INTO settings (key, value) VALUES ('search_format', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(SEARCH_FORMAT);
+  });
 }
 
 export function makeContext(overrides: Partial<ServiceContext> & { dataDir: string }): ServiceContext {

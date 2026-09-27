@@ -42,6 +42,10 @@ for (const name of ["primitives.js", "primitives.css"]) {
 // Sandbox frames have no network, so the typefaces are served from this origin
 // like everything else. Variable woff2 only: one file covers every weight.
 const FONTS = [
+  // Indy's own interface: Geist for the app, Bricolage Grotesque for the wordmark.
+  { pkg: "@fontsource-variable/geist", family: "Geist", axis: "wght", italic: true },
+  { pkg: "@fontsource-variable/geist-mono", family: "Geist Mono", axis: "wght", italic: false },
+  { pkg: "@fontsource-variable/bricolage-grotesque", family: "Bricolage Grotesque", axis: "wght", italic: false },
   { pkg: "@fontsource-variable/inter", family: "Inter", axis: "opsz", italic: true },
   { pkg: "@fontsource-variable/source-serif-4", family: "Source Serif 4", axis: "wght", italic: true },
   { pkg: "@fontsource-variable/jetbrains-mono", family: "JetBrains Mono", axis: "wght", italic: false },

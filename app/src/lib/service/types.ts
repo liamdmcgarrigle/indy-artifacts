@@ -1,8 +1,10 @@
 export type Kind = "markdown" | "react" | "svelte" | "html";
 export type AuthorKind = "agent" | "human";
+/** Who wrote a comment: an author, or a visitor on a share link. */
+export type CommentAuthorKind = AuthorKind | "visitor";
 export type BuildStatus = "none" | "ok" | "error";
 export type CommentStatus = "open" | "resolved";
-export type EventKind = "comment.created" | "feedback.sent" | "version.created";
+export type EventKind = "comment.created" | "feedback.sent" | "version.created" | "response.created";
 
 export const KINDS: Kind[] = ["markdown", "react", "svelte", "html"];
 
@@ -54,6 +56,10 @@ export interface PublishInput {
   slug?: string;
   theme?: string;
   project?: string;
+  /** Groups recurring pages, such as nightly runs, under one name. */
+  series?: string;
+  /** The git branch the agent is on, e.g. feat/share-links. */
+  branch?: string;
   description?: string;
   tags?: string[];
   source?: string;
@@ -74,6 +80,8 @@ export interface Artifact {
   kind: Kind;
   theme: string;
   project: string | null;
+  series: string | null;
+  branch: string | null;
   description: string | null;
   tags: string[];
   agentName: string | null;
@@ -82,6 +90,12 @@ export interface Artifact {
   currentVersion: number;
   createdAt: string;
   updatedAt: string;
+  pinnedAt: string | null;
+  archivedAt: string | null;
+  seenVersion: number;
+  seenAt: string | null;
+  liveBy: string | null;
+  liveAt: string | null;
 }
 
 export interface Version {
@@ -107,12 +121,15 @@ export interface Comment {
   artifactId: string;
   versionNumber: number;
   parentId: string | null;
-  authorKind: AuthorKind;
+  authorKind: CommentAuthorKind;
   authorName: string;
   body: string;
   anchor: Anchor | null;
   status: CommentStatus;
   sentAt: string | null;
+  /** Visitors only: the share link it came through, and when the owner forwarded it. */
+  linkId: string | null;
+  approvedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

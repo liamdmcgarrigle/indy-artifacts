@@ -1,31 +1,36 @@
-# A hot-reloading dev server for design work, so a CSS change can be looked at
-# without a 3 minute image build. Same data directory as the real container, so
-# the same artifacts are on screen. Not used in production.
-services:
-  artifacts-dev:
-    image: docker.io/library/node:24-bookworm-slim
-    container_name: artifacts-dev
-    userns_mode: "keep-id"
-    working_dir: /work
-    # Both processes in one container: the document server has to reach the app
-    # over HTTP, and container to container DNS is not dependable here.
-    command: sh -c "node collab/server.mjs & cd app && node scripts/build-vendor.mjs && npx next dev --hostname 0.0.0.0 --port 5176"
-    ports:
-      - "5176:5176"
-      - "5177:5177"
-    environment:
-      ARTIFACTS_PUBLIC_URL: "http://agentbox:5176"
-      ARTIFACTS_DATA: "/work/data"
-      ARTIFACTS_THEMES: "/work/themes"
-      ARTIFACTS_ASSET_ROOTS: "/home/liam/work:/home/liam/orca:/tmp"
-      ARTIFACTS_TMP: "/work/data/tmp"
-      NEXT_TELEMETRY_DISABLED: "1"
-      COLLAB_PORT: "5177"
-      ARTIFACTS_COLLAB_PORT: "5177"
-      ARTIFACTS_APP_URL: "http://127.0.0.1:5176"
-    volumes:
-      - .:/work:Z
-      - /home/liam/orca:/home/liam/orca:ro
-    mem_limit: 2g
-    cpus: 3
+# Indy with hot reload, for working on Indy itself. Runs from the source tree
+# with the same one-port layout as the image (dev.mjs), against ./data.
+#
+#   docker compose -f compose.dev.yaml up
+#
+# The first start installs dependencies into ./node_modules, so it needs network.
+#
+# It runs as the container's root. Under rootless Podman that is your own user,
+# so files it writes stay yours. Under Docker on Linux, ./node_modules and
+# ./data end up owned by root; on a Mac, the install replaces the host's native
+# esbuild and sharp with Linux builds, so run `npm ci` again before using them
+# outside the container.
+name: indy-dev
 
+services:
+  indy-dev:
+    image: docker.io/library/node:24-bookworm-slim
+    working_dir: /work
+    command: >
+      sh -c "npm ci --no-audit --no-fund --prefer-offline
+      && npm run build:primitives
+      && (cd app && node scripts/build-vendor.mjs)
+      && node dev.mjs"
+    ports:
+      - "${INDY_DEV_PORT:-5178}:${INDY_DEV_PORT:-5178}"
+    environment:
+      PORT: ${INDY_DEV_PORT:-5178}
+      INDY_URL: ${INDY_DEV_URL:-http://localhost:5178}
+      # Other hostnames you open the dev server by, comma separated.
+      INDY_DEV_ORIGINS: ${INDY_DEV_ORIGINS:-}
+      INDY_DATA: /work/data
+      INDY_TMP: /work/data/tmp
+      INDY_THEMES: /work/themes
+      NEXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      - .:/work

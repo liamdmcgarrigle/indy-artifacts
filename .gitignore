@@ -5,3 +5,15 @@ data/
 *.tsbuildinfo
 .env
 .DS_Store
+app/test/.corpus/
+compose.override.yaml
+
+# Local agent and planning files: useful on this machine, not part of Indy.
+.orca/
+.claude/
+.codex/
+.agents/
+docs/superpowers/
+DECISIONS.md
+# The Orca terminal bridge is specific to agentbox.
+hook/

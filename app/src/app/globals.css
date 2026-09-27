@@ -30,7 +30,8 @@ body {
   background: var(--art-selection);
 }
 
-a {
+/* Links in artifact content; the app chrome colours its own. */
+.art-content a {
   color: var(--art-link);
 }
 
@@ -163,14 +164,14 @@ kbd {
 }
 
 .btn--primary {
-  background: var(--art-accent);
+  background: var(--primary, var(--art-accent));
   border-color: transparent;
-  color: var(--art-on-accent);
+  color: var(--primary-foreground, var(--art-on-accent));
   font-weight: 560;
 }
 
 .btn--primary:hover {
-  background: var(--art-accent-hover);
+  background: color-mix(in oklab, var(--primary, var(--art-accent)), white 8%);
   border-color: transparent;
 }
 
@@ -431,10 +432,125 @@ kbd {
   cursor: crosshair;
 }
 
-.stage--picking .art-content [data-block]:hover {
-  outline: 2px solid var(--art-accent);
-  outline-offset: 4px;
-  border-radius: var(--art-radius-sm);
+/* What a click in comment mode would pick; drawn by the viewer, since the
+   page belongs to the editor and must not be restyled underneath it. */
+.pick-box {
+  position: absolute;
+  border: 2px solid var(--art-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--art-accent) 7%, transparent);
+  pointer-events: none;
+  transition: all 90ms ease-out;
+}
+
+/* Where comments sit: an outline round a picked element, a caret at a spot. */
+.mark-box {
+  position: absolute;
+  border: 1.5px dashed color-mix(in srgb, var(--art-warn) 75%, transparent);
+  border-radius: 9px;
+  pointer-events: none;
+}
+.mark-box--active {
+  border-style: solid;
+  border-color: var(--art-accent);
+}
+
+.pin--draft {
+  pointer-events: none;
+  background: var(--primary, var(--art-accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, var(--art-accent)) 30%, transparent);
+}
+
+/* Press and hold: what to comment on. */
+.pressmenu {
+  position: absolute;
+  z-index: 44;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--art-border);
+  border-radius: 14px;
+  background: var(--art-surface);
+  box-shadow: var(--art-shadow-lg);
+  pointer-events: auto;
+}
+.pressmenu button {
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--art-text);
+  font: 500 15px var(--art-font-sans);
+  text-align: left;
+}
+.pressmenu button:active,
+.pressmenu button:hover {
+  background: var(--art-surface-2);
+}
+.pressmenu .pressmenu__cancel {
+  color: var(--art-text-muted);
+}
+
+/* Holding a finger on an image or chart offers comments, not the save sheet. */
+.doc img,
+.doc canvas,
+.doc art-kpi {
+  -webkit-touch-callout: none;
+}
+
+/* Touch screens: a round button to comment, and a bar for a selection. */
+.touchbar {
+  position: fixed;
+  right: 16px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  left: 16px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+.touchbar > * {
+  pointer-events: auto;
+}
+.touchbar__fab {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary, var(--art-accent));
+  color: var(--primary-foreground, var(--art-on-accent));
+  font-size: 26px;
+  line-height: 1;
+  box-shadow: var(--art-shadow-lg);
+}
+.touchbar__fab--on {
+  background: var(--art-surface-2);
+  color: var(--art-text);
+  font-size: 20px;
+}
+.touchbar__select {
+  flex: 1;
+  height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--primary, var(--art-accent));
+  color: var(--primary-foreground, var(--art-on-accent));
+  font: 600 15px var(--art-font-sans);
+  box-shadow: var(--art-shadow-lg);
+}
+.touchbar__hint {
+  flex: 1;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--art-surface);
+  color: var(--art-text);
+  font: 14px var(--art-font-sans);
+  box-shadow: var(--art-shadow-lg);
 }
 
 .warnings {
@@ -487,11 +603,13 @@ kbd {
   z-index: 20;
 }
 
+/* A pin's sharp corner is its point: it sits on the spot, the bubble above. */
 .pin {
   position: absolute;
   width: 26px;
   height: 26px;
-  margin-top: -13px;
+  transform: translateY(-100%);
+  transform-origin: 0 100%;
   border-radius: 50% 50% 50% 4px;
   border: 0;
   background: var(--art-accent);
@@ -510,7 +628,7 @@ kbd {
 
 .pin:hover,
 .pin--active {
-  transform: scale(1.1);
+  transform: translateY(-100%) scale(1.12);
   box-shadow: var(--art-shadow-lg);
   z-index: 2;
 }
@@ -1037,11 +1155,12 @@ kbd {
   display: flex;
   align-items: center;
   gap: var(--art-space-2);
-  padding: 0 var(--art-space-4);
-  height: 52px;
+  padding: var(--art-space-2) var(--art-space-4);
+  min-height: 52px;
   border-bottom: 1px solid var(--art-hairline);
   background: var(--art-surface);
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .editor__panes {
@@ -1116,8 +1235,9 @@ kbd {
 /* ---------- narrow screens ---------- */
 
 @media (max-width: 760px) {
+  /* The page supplies its own side padding; the stage adds none. */
   .stage {
-    padding: var(--art-space-4) var(--art-space-3) 64px;
+    padding: var(--art-space-3) 0 110px;
   }
 
   .index {
@@ -1134,6 +1254,12 @@ kbd {
     backdrop-filter: none;
   }
 
+  .pin {
+    width: 30px;
+    height: 30px;
+    font-size: 11px;
+  }
+
   /* No room beside a pin, so the card becomes a sheet at the bottom. */
   .pop {
     position: fixed;
@@ -1145,6 +1271,19 @@ kbd {
     max-width: none;
     max-height: 70vh;
     overflow-y: auto;
+    z-index: 45;
+    border-radius: 16px;
+    box-shadow: 0 -8px 40px rgb(0 0 0 / 0.45);
+  }
+
+  .panel {
+    position: fixed;
+    inset: auto 0 0 0;
+    max-height: 75vh;
+    width: auto;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    z-index: 45;
   }
 }
 

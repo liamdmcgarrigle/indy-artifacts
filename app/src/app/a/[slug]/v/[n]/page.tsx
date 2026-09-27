@@ -1,3 +1,4 @@
+import { pageOwner } from "@/lib/auth/page";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArtifactView } from "@/components/ArtifactView";
@@ -24,6 +25,7 @@ export default async function VersionPage({
   params: Promise<{ slug: string; n: string }>;
   searchParams: Promise<{ diff?: string }>;
 }) {
+  const { user } = await pageOwner();
   const { slug, n } = await params;
   const { diff } = await searchParams;
   const number = Number(n);
@@ -40,7 +42,7 @@ export default async function VersionPage({
           <link rel="stylesheet" href={`/themes/${artifact.theme}.css`} />
           <header className="top">
             <Link className="top__home" href="/">
-              <span className="top__dot" /> Artifacts
+              <span className="top__dot" /> Indy
             </Link>
             <div className="top__title">
               {artifact.title} <span className="top__meta">v{from} to v{number}</span>
@@ -62,7 +64,7 @@ export default async function VersionPage({
         </>
       );
     }
-    return <ArtifactView {...loadView(slug, number)} />;
+    return <ArtifactView {...loadView(slug, number)} userName={user?.name ?? null} />;
   } catch (err) {
     if (err instanceof NotFoundError) notFound();
     throw err;

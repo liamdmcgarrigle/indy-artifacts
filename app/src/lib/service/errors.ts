@@ -16,7 +16,11 @@ export class NotFoundError extends ServiceError {
 }
 
 export class ValidationError extends ServiceError {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** Per-field problems, for a form to show beside each question. */
+    public details?: Record<string, unknown>,
+  ) {
     super("invalid", message, 400);
   }
 }
@@ -26,5 +30,17 @@ export class ConflictError extends ServiceError {
   constructor(message: string, currentVersion: number) {
     super("conflict", message, 409);
     this.currentVersion = currentVersion;
+  }
+}
+
+export class UnauthorizedError extends ServiceError {
+  constructor(message = "sign in first") {
+    super("unauthorized", message, 401);
+  }
+}
+
+export class ForbiddenError extends ServiceError {
+  constructor(message = "not allowed") {
+    super("forbidden", message, 403);
   }
 }

@@ -1,3 +1,4 @@
+import { requireMember } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { listEvents } from "@/lib/service/events";
 import type { EventRecord } from "@/lib/service/types";
@@ -33,6 +34,7 @@ function wire(event: EventRecord) {
 
 export async function GET(request: Request) {
   try {
+    requireMember(getContext(), request);
     const ctx = getContext();
     const url = new URL(request.url);
     const after = Number(url.searchParams.get("after") ?? 0);
@@ -43,7 +45,8 @@ export async function GET(request: Request) {
     const deadline = Date.now() + wait * 1000;
     for (;;) {
       const page = listEvents(ctx, { after, slug, undeliveredOnly });
-      if (page.events.length || Date.now() >= deadline)
+      // A caller that has gone away gets no answer, and stops the polling.
+      if (page.events.length || Date.now() >= deadline || request.signal.aborted)
         return json({ events: page.events.map(wire), last_id: page.lastId });
       await sleep(1000);
     }

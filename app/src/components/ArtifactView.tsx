@@ -1,37 +1,53 @@
 "use client";
 
+import { Ago } from "@/components/indy/Ago";
+import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCommands, type PaletteCommand } from "@/components/indy/CommandPalette";
 import {
   anchorForBlock,
+  anchorFromPick,
   anchorFromPoint,
+  pickTarget,
   anchorFromSelection,
   blockOf,
   describeAnchor,
   rangeForAnchor,
   resolveAnchor,
-  spotFor,
-  spreadPins,
+  isOverText,
+  kindName,
   truncate,
   type Anchor,
   type Spot,
 } from "@/lib/anchors";
-import { SchemeToggle } from "./SchemeToggle";
+import type { Editor, JSONContent } from "@tiptap/core";
+import { Typeable } from "./editor/Typeable";
+import { DocView } from "./viewer/DocView";
+import { ViewerHeader, ViewerMenuItem, ViewerMenuSeparator } from "./viewer/ViewerHeader";
+import { readNavList, type NavList } from "./library/nav-list";
+import type { FieldSpec, FormSettings } from "@/lib/forms/spec";
+import { FormProvider } from "./forms/FormState";
+import { FormBar } from "./forms/FormBar";
+import { ShareDialog } from "./viewer/ShareDialog";
+import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
 
 export interface ThreadView {
   id: string;
-  authorKind: "agent" | "human";
+  authorKind: "agent" | "human" | "visitor";
   authorName: string;
   body: string;
   anchor: Anchor | null;
   status: "open" | "resolved";
   sentAt: string | null;
+  /** A visitor's thread, once the owner has passed it on to the agent. */
+  approvedAt?: string | null;
   versionNumber: number;
   createdAt: string;
   replies: {
     id: string;
-    authorKind: "agent" | "human";
+    authorKind: "agent" | "human" | "visitor";
     authorName: string;
     body: string;
     createdAt: string;
@@ -50,6 +66,21 @@ export interface VersionStub {
 export interface ArtifactViewProps {
   slug: string;
   title: string;
+  project: string | null;
+  series: string | null;
+  branch: string | null;
+  description: string | null;
+  agentName: string | null;
+  pinned: boolean;
+  archived: boolean;
+  createdAt: string;
+  /** The page's questions, when it is a form. */
+  form: { fields: FieldSpec[]; settings: FormSettings; responses: number } | null;
+  /** The signed-in owner's name, used as the comment author. */
+  userName?: string | null;
+  /** The markdown as a document for the editor; null for framed artifacts. */
+  doc: JSONContent | null;
+  assetBase: string;
   kind: string;
   theme: string;
   currentVersion: number;
@@ -60,22 +91,63 @@ export interface ArtifactViewProps {
   buildLog: string | null;
   warnings: { line: number; message: string }[];
   html: string | null;
-  source: string | null;
   embedBase: string;
   framed: boolean;
   versions: VersionStub[];
   initialThreads: ThreadView[];
+  /** Who can open the page besides the owner. */
+  sharing?: "private" | "link" | "email";
+  /** Set when a visitor opens the page through a share link. */
+  visitor?: VisitorInfo | null;
+}
+
+export interface VisitorInfo {
+  token: string;
+  email: string | null;
+  allowComments: boolean;
+  sharedBy: string | null;
+}
+
+interface Box {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
 }
 
 interface Pin extends Spot {
   thread: ThreadView;
   exact: boolean;
+  /** Where the anchor itself sits, in overlay coordinates. */
+  mark: Box;
+  /** The picked element, for element anchors. */
+  box?: Box;
+}
+
+/**
+ * Comments sit on the page the way they do in Figma: a pin on the exact spot,
+ * its point on the words or element it is about, and the card opening beside
+ * it (a sheet from the bottom on a phone).
+ */
+const PIN_SIZE = 26;
+
+/** Where a pin goes for a resolved anchor: the end of a selection, the spot itself otherwise. */
+function pinPoint(rect: DOMRect, type: Anchor["type"]): { x: number; y: number } {
+  return type === "range" ? { x: rect.right, y: rect.top + 2 } : { x: rect.left + rect.width, y: rect.top + (rect.height ? 2 : 0) };
+}
+
+/** Pins on the same spot fan out sideways, so each stays tappable. */
+function fanOut<T extends { top: number; left: number }>(pins: T[]): T[] {
+  const placed: T[] = [];
+  for (const pin of [...pins].sort((a, b) => a.top - b.top || a.left - b.left)) {
+    while (placed.some((p) => Math.abs(p.top - pin.top) < PIN_SIZE - 4 && Math.abs(p.left - pin.left) < PIN_SIZE - 4)) pin.left += PIN_SIZE - 2;
+    placed.push(pin);
+  }
+  return placed;
 }
 
 const NAME_KEY = "art-author-name";
 const POP_W = 312;
-/** How far outside the text column the edit pencil sits, and stays alive. */
-const EDIT_GUTTER = 48;
 const POP_GAP = 16;
 
 function initials(name: string): string {
@@ -92,6 +164,14 @@ function when(iso: string): string {
   const hours = Math.round(mins / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.round(hours / 24)}d`;
+}
+
+
+/** Whether two pin layouts put every pin in the same place. */
+function samePins<T extends { thread: { id: string } }>(a: T[], b: T[]): boolean {
+  if (a.length !== b.length) return false;
+  const flat = (list: T[]) => JSON.stringify(list.map((p) => ({ ...p, thread: p.thread.id })));
+  return flat(a) === flat(b);
 }
 
 export function ArtifactView(props: ArtifactViewProps) {
@@ -116,32 +196,59 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [draftSpot, setDraftSpot] = useState<Spot | null>(null);
   const [bubble, setBubble] = useState<{ top: number; left: number; anchor: Anchor } | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
-  const [author, setAuthor] = useState("operator");
+  const [menu, setMenu] = useState<{ top: number; left: number; options: { label: string; anchor: Anchor }[] } | null>(null);
+  const [domTick, setDomTick] = useState(0);
+  const onDocReady = useCallback(() => setDomTick((t) => t + 1), []);
+  const [pick, setPick] = useState<Box | null>(null);
+  const [selected, setSelected] = useState<Anchor | null>(null);
+  // Signed in, you are who you are; the name box is for when you are not.
+  const [author, setAuthor] = useState(props.userName ?? (props.visitor ? (props.visitor.email ?? "") : "operator"));
+  const visitor = props.visitor ?? null;
+  // Where this page's comments live: the owner's API, or the share link's.
+  const commentsApi = visitor ? `/s/${visitor.token}/api/comments` : `/api/artifacts/${props.slug}/comments`;
+  const canComment = !visitor || visitor.allowComments;
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
   const [batchMessage, setBatchMessage] = useState("");
   const [panel, setPanel] = useState<"none" | "list" | "send">("none");
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sharing, setSharing] = useState(props.sharing ?? "private");
+  useEffect(() => setSharing(props.sharing ?? "private"), [props.sharing]);
   const [frameHeight, setFrameHeight] = useState(600);
-  const [hover, setHover] = useState<{ lines: [number, number]; top: number; left: number } | null>(null);
-  const [edit, setEdit] = useState<{
-    lines: [number, number];
-    text: string;
-    box: { top: number; left: number; width: number; minHeight: number };
-  } | null>(null);
+  // Editing happens on the page itself: the same editor, made typeable.
+  const [editing, setEditing] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [head, setHead] = useState<{ title: string; description: string } | null>(null);
+  const editorRef = useRef<Editor | null>(null);
+  const onEditor = useCallback((editor: Editor | null) => {
+    editorRef.current = editor;
+  }, []);
+  const onDirty = useCallback(() => setDirty(true), []);
+  const setHeadDirty = useCallback((next: { title: string; description: string }) => {
+    setHead(next);
+    setDirty(true);
+  }, []);
+  // What was just saved, shown until the new version arrives from the server.
+  const [savedDoc, setSavedDoc] = useState<{ version: number; doc: JSONContent } | null>(null);
+  const shownDoc = savedDoc && savedDoc.version === props.versionNumber ? savedDoc.doc : props.doc;
 
   const isLatest = props.versionNumber === props.currentVersion;
+  const somethingOpen = useRef(false);
+  somethingOpen.current = tool || draft !== null || activeId !== null || panel !== "none" || bubble !== null || editing || menu !== null || shareOpen;
   const visible = useMemo(
     () => threads.filter((t) => (showResolved ? true : t.status === "open")),
     [threads, showResolved],
   );
   const unsent = useMemo(
-    () => threads.filter((t) => t.status === "open" && t.authorKind === "human" && !t.sentAt).length,
+    () => threads.filter((t) => t.status === "open" && !t.sentAt && (t.authorKind === "human" || (t.authorKind === "visitor" && t.approvedAt))).length,
     [threads],
   );
   const active = useMemo(() => visible.find((t) => t.id === activeId) ?? null, [visible, activeId]);
   const activePin = useMemo(() => pins.find((p) => p.thread.id === activeId) ?? null, [pins, activeId]);
 
   useEffect(() => {
+    if (props.userName) return;
     try {
       const stored = localStorage.getItem(NAME_KEY);
       if (stored) setAuthor(stored);
@@ -168,11 +275,11 @@ export function ArtifactView(props: ArtifactViewProps) {
   }, [notice]);
 
   const refreshThreads = useCallback(async () => {
-    const res = await fetch(`/api/artifacts/${props.slug}/comments?status=all`, { cache: "no-store" });
+    const res = await fetch(`${commentsApi}?status=all`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as { threads: ThreadView[] };
     setThreads(data.threads);
-  }, [props.slug]);
+  }, [commentsApi]);
 
   // A card anchored near the foot of a long page would open with half of it
   // below the fold. Measure it on the frame after it appears and lift it back
@@ -206,15 +313,17 @@ export function ArtifactView(props: ArtifactViewProps) {
     const content = contentRef.current;
     const inner = innerRef.current;
     if (!content || !inner) return;
-    // The overlay is a child of .stage__inner, so that is the origin; measuring
-    // against .stage would shift every pin by the stage padding and centring.
+    // The overlay is a child of .stage__inner, so that is the origin.
     const origin = inner.getBoundingClientRect();
-    const box = content.getBoundingClientRect();
-    const layout = {
-      viewportWidth: window.innerWidth,
-      contentLeft: box.left,
-      contentRight: box.right,
-      popWidth: POP_W,
+    const local = (r: DOMRect): Box => ({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
+
+    const spot = (rect: DOMRect, type: Anchor["type"]): Spot => {
+      const at = pinPoint(rect, type);
+      // The card opens to the right of the pin, or to its left when the
+      // window runs out; the phone stylesheet turns it into a bottom sheet.
+      const right = at.x + PIN_SIZE + 10;
+      const x = right + POP_W <= window.innerWidth - 12 ? right : Math.max(at.x - POP_W - 10, 12);
+      return { top: at.y - origin.top, left: at.x - origin.left, popTop: at.y - origin.top - PIN_SIZE, popLeft: x - origin.left };
     };
 
     const next: Pin[] = [];
@@ -225,18 +334,24 @@ export function ArtifactView(props: ArtifactViewProps) {
       next.push({
         thread,
         exact: resolved.exact,
-        ...spotFor(resolved.rect, origin, thread.anchor.type, layout),
+        mark: local(resolved.rect),
+        box: resolved.box ? local(resolved.box) : undefined,
+        ...spot(resolved.rect, thread.anchor.type),
       });
     });
-    setPins(spreadPins(next));
+    // Measuring runs often; re-rendering the page only when a pin moved.
+    const placed = fanOut(next);
+    setPins((prev) => (samePins(prev, placed) ? prev : placed));
 
     if (draft?.anchor) {
       const resolved = resolveAnchor(content, draft.anchor);
-      setDraftSpot(resolved ? spotFor(resolved.rect, origin, draft.anchor.type, layout) : null);
+      setDraftSpot(resolved ? spot(resolved.rect, draft.anchor.type) : null);
     } else {
       setDraftSpot(null);
     }
-  }, [visible, draft?.anchor]);
+    // domTick: the editor replaced the placeholder page, so measure again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, draft?.anchor, domTick]);
 
   // Light up the text a comment points at. Progressive enhancement: browsers
   // without the Custom Highlight API simply show the pins.
@@ -264,7 +379,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       api.delete("art-anchor");
       api.delete("art-anchor-active");
     };
-  }, [visible, activeId, threads]);
+  }, [visible, activeId, threads, domTick]);
 
   useLayoutEffect(() => {
     let frame = 0;
@@ -276,12 +391,15 @@ export function ArtifactView(props: ArtifactViewProps) {
     const observer = new ResizeObserver(schedule);
     if (contentRef.current) observer.observe(contentRef.current);
     window.addEventListener("resize", schedule);
-    const timer = window.setInterval(schedule, 1200);
+    // Frames, images and charts settle after the first paint and move the
+    // text under the pins; watch for that instead of polling.
+    const mutations = new MutationObserver(schedule);
+    if (contentRef.current) mutations.observe(contentRef.current, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "height", "class"] });
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      mutations.disconnect();
       window.removeEventListener("resize", schedule);
-      window.clearInterval(timer);
     };
   }, [recompute]);
 
@@ -290,9 +408,11 @@ export function ArtifactView(props: ArtifactViewProps) {
   // back while something is half typed, so nothing under the cursor moves.
   const pendingRefresh = useRef(false);
   const busyEditingRef = useRef(false);
-  const busyEditing = draft !== null || edit !== null;
+  const busyEditing = draft !== null || editing;
 
   useEffect(() => {
+    // Live updates are for the owner; a visitor sees the page as it was opened.
+    if (visitor) return;
     const source = new EventSource(`/api/live/${props.slug}`);
     source.addEventListener("changed", (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { version: number };
@@ -303,7 +423,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       void refreshThreads();
     });
     return () => source.close();
-  }, [props.slug, props.versionNumber, refreshThreads, router]);
+  }, [visitor, props.slug, props.versionNumber, refreshThreads, router]);
 
   useEffect(() => {
     busyEditingRef.current = busyEditing;
@@ -371,6 +491,56 @@ export function ArtifactView(props: ArtifactViewProps) {
     return () => window.removeEventListener("art:scheme", onScheme);
   }, []);
 
+  // On a touch screen a selection is made with handles, not a mouse-up, and
+  // the system menu sits right over it; offer the comment from the bottom bar.
+  useEffect(() => {
+    if (window.matchMedia("(hover: hover)").matches) return;
+    let timer = 0;
+    const onChange = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const content = contentRef.current;
+        setSelected(content ? anchorFromSelection(content) : null);
+      }, 180);
+    };
+    document.addEventListener("selectionchange", onChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("selectionchange", onChange);
+    };
+  }, []);
+
+  // ---- moving between pages and versions ------------------------------------
+
+  const [nav, setNav] = useState<NavList | null>(null);
+  useEffect(() => setNav(readNavList()), []);
+  const navIndex = nav ? nav.slugs.indexOf(props.slug) : -1;
+
+  const goNav = useCallback(
+    (step: 1 | -1) => {
+      if (!nav || navIndex < 0) return;
+      const next = nav.slugs[navIndex + step];
+      if (next) router.push(`/a/${next}`);
+    },
+    [nav, navIndex, router],
+  );
+
+  const versionRef = useRef(props.versionNumber);
+  versionRef.current = props.versionNumber;
+  const goVersion = useCallback(
+    (n: number) => {
+      if (n < 1 || n > props.currentVersion || n === props.versionNumber) return;
+      router.push(n === props.currentVersion ? `/a/${props.slug}` : `/a/${props.slug}/v/${n}`);
+    },
+    [props.currentVersion, props.versionNumber, props.slug, router],
+  );
+
+  // Opening the latest version counts as having seen it.
+  useEffect(() => {
+    if (!isLatest || visitor) return;
+    void fetch(`/api/artifacts/${props.slug}/seen`, { method: "POST" }).catch(() => {});
+  }, [isLatest, visitor, props.slug, props.versionNumber]);
+
   // ---- placing comments ----------------------------------------------------
 
   const setFramePicking = useCallback((on: boolean) => {
@@ -390,13 +560,40 @@ export function ArtifactView(props: ArtifactViewProps) {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) {
+      if (editingRef.current) {
+        if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+          event.preventDefault();
+          void finishRef.current();
+        }
+        return;
+      }
+      // A menu or dialog closing on Escape has already handled the key; the
+      // page's shortcuts must not also act on it, or send the reader home.
+      if (event.defaultPrevented) return;
+      if (target?.closest?.('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
+      if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) {
         if (event.key === "Escape") (target as HTMLElement).blur();
         return;
       }
-      if (event.key === "c" && !event.metaKey && !event.ctrlKey) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      // A visitor has one page: no library to go back to, no versions to step.
+      if (visitorRef.current && !["c", "Escape"].includes(event.key)) return;
+      if (event.key === "c" && !canCommentRef.current) return;
+      if (event.key === "Escape" && !somethingOpen.current && visitorRef.current) return;
+      if (event.key === "c") {
         event.preventDefault();
         toggleTool();
+      } else if (event.key === "j" || event.key === "k") {
+        event.preventDefault();
+        goNav(event.key === "j" ? 1 : -1);
+      } else if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        goVersion(versionRef.current + (event.key === "]" ? 1 : -1));
+      } else if (event.key === "e" && canEditRef.current) {
+        event.preventDefault();
+        startRef.current();
+      } else if (event.key === "Escape" && !somethingOpen.current) {
+        router.push("/");
       } else if (event.key === "Escape") {
         setTool(false);
         setFramePicking(false);
@@ -404,12 +601,13 @@ export function ArtifactView(props: ArtifactViewProps) {
         setDraft(null);
         setActiveId(null);
         setPanel("none");
-        setHover(null);
+        setMenu(null);
+        setPick(null);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleTool, setFramePicking]);
+  }, [toggleTool, setFramePicking, goNav, goVersion, router]);
 
   // A click outside the open card closes it. The draft composer stays put, so a
   // half-typed comment is never thrown away by a stray click.
@@ -425,15 +623,100 @@ export function ArtifactView(props: ArtifactViewProps) {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
+  // ---- press and hold -------------------------------------------------------
+
+  // Holding a finger (or the mouse) on anything that is not text offers to
+  // comment on it: the element under the finger, or its whole block. Text is
+  // left alone, where holding selects words the usual way.
+  const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
+
+  function onPressStart(event: React.PointerEvent) {
+    if (editing || !canComment || !event.isPrimary || event.button > 0 || tool || draft) return;
+    if ((event.target as HTMLElement).closest("a, button, input, textarea, select, label, iframe")) return;
+    const { clientX: x, clientY: y } = event;
+    window.clearTimeout(press.current?.timer);
+    press.current = {
+      x,
+      y,
+      fired: false,
+      timer: window.setTimeout(() => {
+        if (!press.current || isOverText(x, y)) return;
+        press.current.fired = true;
+        openPressMenu(x, y);
+      }, 450),
+    };
+  }
+
+  function onPressMove(event: React.PointerEvent) {
+    const p = press.current;
+    if (p && !p.fired && Math.hypot(event.clientX - p.x, event.clientY - p.y) > 8) {
+      window.clearTimeout(p.timer);
+      press.current = null;
+    }
+  }
+
+  function onPressEnd() {
+    if (press.current && !press.current.fired) {
+      window.clearTimeout(press.current.timer);
+      press.current = null;
+    }
+  }
+
+  function openPressMenu(x: number, y: number) {
+    const content = contentRef.current;
+    const inner = innerRef.current;
+    if (!content || !inner) return;
+    const el = pickTarget(content, document.elementFromPoint(x, y));
+    const block = el ? blockOf(el) : null;
+    if (!el || !block) return;
+    const options: { label: string; anchor: Anchor }[] = [];
+    const picked = anchorFromPick(content, el, x, y);
+    if (picked) options.push({ label: `Comment on this ${kindName(el)}`, anchor: picked });
+    if (el !== block) {
+      const r = block.getBoundingClientRect();
+      options.push({
+        label: `Comment on the whole ${kindName(block)}`,
+        anchor: anchorForBlock(block, { x: (x - r.left) / (r.width || 1), y: (y - r.top) / (r.height || 1) }),
+      });
+    }
+    if (!options.length) return;
+    navigator.vibrate?.(12);
+    window.getSelection()?.removeAllRanges();
+    const origin = inner.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    setPick({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
+    setActiveId(null);
+    setBubble(null);
+    setMenu({
+      top: y - origin.top + 12,
+      left: Math.min(Math.max(x - origin.left - 120, 8 - origin.left), window.innerWidth - origin.left - 256),
+      options,
+    });
+  }
+
   function onContentMouseUp(event: React.MouseEvent) {
+    if (editing) return;
+    if (!canComment) return;
+    // The release that ends a press-and-hold is not a click.
+    if (press.current?.fired) {
+      press.current = null;
+      return;
+    }
+    if (menu) {
+      setMenu(null);
+      setPick(null);
+      return;
+    }
     const content = contentRef.current;
     const inner = innerRef.current;
     if (!content || !inner) return;
 
     if (tool) {
-      const anchor = anchorFromPoint(content, event.clientX, event.clientY);
+      const el = pickTarget(content, document.elementFromPoint(event.clientX, event.clientY));
+      const anchor = el ? anchorFromPick(content, el, event.clientX, event.clientY) : anchorFromPoint(content, event.clientX, event.clientY);
       setTool(false);
       setFramePicking(false);
+      setPick(null);
       if (anchor) {
         setActiveId(null);
         setDraft({ anchor, body: "", notify: false });
@@ -444,6 +727,9 @@ export function ArtifactView(props: ArtifactViewProps) {
     const anchor = anchorFromSelection(content);
     if (!anchor) {
       setBubble(null);
+      // A tap on words that already carry a comment opens that thread.
+      const hit = threadAt(event.clientX, event.clientY);
+      if (hit) openThread(hit);
       return;
     }
     const selection = window.getSelection();
@@ -457,7 +743,29 @@ export function ArtifactView(props: ArtifactViewProps) {
     });
   }
 
+  /** The open thread whose words, element or spot is under a point, if any. */
+  function threadAt(x: number, y: number): ThreadView | null {
+    const content = contentRef.current;
+    if (!content) return null;
+    const inside = (r: { top: number; left: number; right: number; bottom: number }, pad = 0) =>
+      x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
+    for (const thread of visible) {
+      if (!thread.anchor) continue;
+      if (thread.anchor.type === "range") {
+        const range = rangeForAnchor(content, thread.anchor);
+        if (range && Array.from(range.getClientRects()).some((r) => inside(r, 2))) return thread;
+        continue;
+      }
+      const resolved = resolveAnchor(content, thread.anchor);
+      if (!resolved) continue;
+      if (resolved.box && thread.anchor.selector?.startsWith(":scope") && inside(resolved.box)) return thread;
+      if (thread.anchor.type === "point" && inside(resolved.rect, 10)) return thread;
+    }
+    return null;
+  }
+
   function commentOnBlock(event: React.MouseEvent) {
+    if (editing || !canComment) return;
     const block = blockOf(event.target as Node);
     if (!block) return;
     setActiveId(null);
@@ -477,106 +785,166 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
   }
 
-  // ---- editing one block ---------------------------------------------------
+  // ---- editing ---------------------------------------------------------------
 
-  const canEdit = isLatest && props.kind === "markdown" && props.source !== null;
+  const canEdit = !visitor && isLatest && props.kind === "markdown" && props.doc !== null;
+  // A phone has no hover, so it gets the bottom bar instead of shortcuts.
+  const [hoverless, setHoverless] = useState(false);
+  useEffect(() => setHoverless(!window.matchMedia("(hover: hover)").matches), []);
 
-  function linesOfBlock(el: HTMLElement): [number, number] | null {
-    const raw = el.dataset.lines;
-    if (!raw) return null;
-    const [from, to] = raw.split("-").map(Number);
-    return Number.isFinite(from) && Number.isFinite(to) ? [from, to] : null;
-  }
-
-  /**
-   * Which block the pointer is over, decided by where the pointer is rather
-   * than what it entered and left.
-   *
-   * The pencil sits in the margin, outside the text column, so a handler that
-   * hid it on mouseleave took it away the moment you set off to click it. This
-   * asks the document what is under the pointer, widened by the gutter the
-   * pencil lives in, which means the button is inside the region that keeps it
-   * on screen.
-   */
+  /** While placing a comment, outline the smallest thing under the pointer. */
   function onStageMove(event: React.MouseEvent) {
-    if (!canEdit || tool || edit) return;
     const content = contentRef.current;
     const inner = innerRef.current;
-    if (!content || !inner) return;
-
-    const target = event.target as HTMLElement | null;
-    if (target?.closest(".pop, .panel, .inline-edit, .pin")) return setHover(null);
-
-    const column = content.getBoundingClientRect();
-    const x = event.clientX;
-    const y = event.clientY;
-    if (y < column.top || y > column.bottom) return setHover(null);
-    if (x < column.left - EDIT_GUTTER || x > column.right + EDIT_GUTTER) return setHover(null);
-
-    // Probe inside the column, so a pointer out in the gutter still resolves to
-    // the block it is beside.
-    const probe = Math.min(Math.max(x, column.left + 4), column.right - 4);
-    const block = blockOf(document.elementFromPoint(probe, y));
-    if (!block) return setHover(null);
-    const lines = linesOfBlock(block);
-    if (!lines) return setHover(null);
-
+    if (!tool || !content || !inner) return;
+    const el = pickTarget(content, event.target as HTMLElement | null);
+    if (!el) return setPick(null);
     const origin = inner.getBoundingClientRect();
-    const box = block.getBoundingClientRect();
-    setHover({ lines, top: box.top - origin.top + 2, left: box.right - origin.left + 10 });
+    const r = el.getBoundingClientRect();
+    setPick({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
   }
 
-  function startEdit(lines: [number, number]) {
-    const inner = innerRef.current;
-    const content = contentRef.current;
-    if (!inner || !content || props.source === null) return;
-    const block = Array.from(content.querySelectorAll<HTMLElement>("[data-lines]")).find(
-      (el) => el.dataset.lines === `${lines[0]}-${lines[1]}`,
-    );
-    const origin = inner.getBoundingClientRect();
-    const box = (block ?? content).getBoundingClientRect();
-    const text = props.source.split("\n").slice(lines[0] - 1, lines[1]).join("\n");
-    setHover(null);
+  function startEditing() {
+    if (!canEdit || editing) return;
+    setTool(false);
+    setFramePicking(false);
+    setDraft(null);
+    setBubble(null);
     setActiveId(null);
-    setEdit({
-      lines,
-      text,
-      box: {
-        top: box.top - origin.top - 8,
-        left: box.left - origin.left - 10,
-        width: box.width + 20,
-        minHeight: box.height + 16,
-      },
-    });
+    setMenu(null);
+    setPick(null);
+    setPanel("none");
+    setHead({ title: props.title, description: props.description ?? "" });
+    setDirty(false);
+    setEditing(true);
   }
 
-  async function saveEdit() {
-    if (!edit) return;
-    setBusy(true);
+  function cancelEditing() {
+    if (dirty && !window.confirm("Throw away your changes to this page?")) return;
+    setEditing(false);
+    setDirty(false);
+  }
+
+  async function finishEditing() {
+    const editor = editorRef.current;
+    if (!editor || saving) return;
+    // The serializer is editing code: loaded here, not with the page.
+    const [{ docToMarkdown }, { withFront }] = await Promise.all([import("@/lib/doc/serialize"), import("@/lib/doc/frontmatter")]);
+    const json = editor.getJSON();
+    const patch: Record<string, string | null> = {};
+    const title = head?.title.trim() ?? "";
+    const description = head?.description.trim() ?? "";
+    if (head && title && title !== props.title) patch.title = title;
+    if (head && description !== (props.description ?? "")) patch.description = description || null;
+    if (Object.keys(patch).length) {
+      json.attrs = { ...json.attrs, front: withFront((json.attrs?.front as string[] | null) ?? null, patch) };
+    }
+    const source = docToMarkdown(json);
+    // Nothing changed if the edit reads back exactly as the page it started from.
+    if (shownDoc && source === docToMarkdown(shownDoc)) {
+      setEditing(false);
+      setDirty(false);
+      return;
+    }
+    setSaving(true);
     try {
-      const res = await fetch(`/api/artifacts/${props.slug}/lines`, {
+      const res = await fetch(`/api/artifacts/${props.slug}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          from: edit.lines[0],
-          to: edit.lines[1],
-          text: edit.text,
-          author_name: author,
-          expected_version: props.versionNumber,
-        }),
+        body: JSON.stringify({ source, expected_version: props.versionNumber, author_kind: "human", author_name: author }),
       });
-      const data = (await res.json()) as { error?: { message?: string } };
-      if (!res.ok) {
-        setNotice({ kind: "bad", text: data.error?.message ?? "could not save that block" });
+      const data = (await res.json()) as { version?: { number?: number }; error?: { message?: string } };
+      if (res.status === 409) {
+        setNotice({
+          kind: "bad",
+          text: "A newer version was saved while you were editing. Your changes are still on the page; copy what you need, then reload.",
+        });
         return;
       }
-      setEdit(null);
-      setNotice({ kind: "good", text: "Saved as a new version." });
+      if (!res.ok) {
+        setNotice({ kind: "bad", text: data.error?.message ?? "Could not save the page." });
+        return;
+      }
+      setSavedDoc({ version: props.versionNumber, doc: json });
+      setEditing(false);
+      setDirty(false);
+      setNotice({ kind: "good", text: `Saved as version ${data.version?.number ?? props.currentVersion + 1}.` });
       router.refresh();
+    } catch {
+      setNotice({ kind: "bad", text: "Indy did not answer, so nothing was saved. Your changes are still on the page." });
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
+
+  // The key handler is bound once; these keep it pointed at the current state.
+  const editingRef = useRef(false);
+  editingRef.current = editing;
+  const visitorRef = useRef(false);
+  visitorRef.current = visitor !== null;
+  const canCommentRef = useRef(true);
+  canCommentRef.current = canComment;
+  const canEditRef = useRef(false);
+  canEditRef.current = canEdit;
+  const startRef = useRef(startEditing);
+  startRef.current = startEditing;
+  const finishRef = useRef(finishEditing);
+  finishRef.current = finishEditing;
+
+  // ?edit=1 opens the page ready to type into.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("edit") !== "1") return;
+    url.searchParams.delete("edit");
+    // Keep the router's state on the entry; a null state makes Back reload.
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    startRef.current();
+  }, []);
+
+  // ?find=words comes from a search hit in the command palette: select the
+  // first place the page says it and bring it into view.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const term = url.searchParams.get("find")?.trim().toLowerCase();
+    if (!term) return;
+    url.searchParams.delete("find");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    // The document replaces its server-rendered fallback just after mount.
+    const timer = window.setTimeout(() => {
+      const root = document.querySelector(".art-content");
+      if (!root) return;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const at = (node.textContent ?? "").toLowerCase().indexOf(term);
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + term.length);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        node.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+        return;
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // What this page can do, offered in the command palette too.
+  const commands = useMemo(() => {
+    if (visitor) return [];
+    const list: PaletteCommand[] = [];
+    if (canEdit) list.push({ id: "edit", label: "Edit this page", keys: ["e"], run: () => startRef.current() });
+    list.push({ id: "share", label: "Share…", run: () => setShareOpen(true) });
+    if (canComment) list.push({ id: "comment", label: "Comment on the page", keys: ["c"], run: () => toggleTool() });
+    if (props.versionNumber > 1) list.push({ id: "older", label: "Previous version", keys: ["["], run: () => goVersion(props.versionNumber - 1) });
+    if (props.versionNumber < props.currentVersion) list.push({ id: "newer", label: "Next version", keys: ["]"], run: () => goVersion(props.versionNumber + 1) });
+    return list;
+  }, [visitor, canEdit, canComment, toggleTool, goVersion, props.versionNumber, props.currentVersion]);
+  useCommands("viewer", commands);
+
+  // Leaving with unsaved changes asks first, by reload, close or Back.
+  useLeaveGuard(editing && dirty && !saving);
 
   // ---- writes --------------------------------------------------------------
 
@@ -589,7 +957,8 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
   }
 
-  async function postComment(parentId?: string, bodyText?: string) {
+  /** True once the comment is saved, so a reply box only clears on success. */
+  async function postComment(parentId?: string, bodyText?: string): Promise<boolean> {
     const payload = {
       body: bodyText ?? draft?.body ?? "",
       author_name: author,
@@ -598,10 +967,10 @@ export function ArtifactView(props: ArtifactViewProps) {
       parent_id: parentId ?? null,
       version_number: props.versionNumber,
     };
-    if (!payload.body.trim()) return;
+    if (!payload.body.trim()) return false;
     setBusy(true);
     try {
-      const res = await fetch(`/api/artifacts/${props.slug}/comments`, {
+      const res = await fetch(commentsApi, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -609,7 +978,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       if (!res.ok) {
         const err = (await res.json()) as { error?: { message?: string } };
         setNotice({ kind: "bad", text: err.error?.message ?? "could not save that comment" });
-        return;
+        return false;
       }
       if (!parentId) {
         setDraft(null);
@@ -618,6 +987,10 @@ export function ArtifactView(props: ArtifactViewProps) {
       }
       await refreshThreads();
       if (payload.notify) setNotice({ kind: "good", text: "Comment sent to the agent." });
+      return true;
+    } catch {
+      setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -626,13 +999,39 @@ export function ArtifactView(props: ArtifactViewProps) {
   async function setStatus(id: string, status: "open" | "resolved") {
     setBusy(true);
     try {
-      await fetch(`/api/comments/${id}`, {
+      const res = await fetch(`/api/comments/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status }),
       });
+      if (!res.ok) {
+        setNotice({ kind: "bad", text: status === "resolved" ? "Could not resolve that thread." : "Could not reopen that thread." });
+        return;
+      }
       if (status === "resolved") setActiveId(null);
       await refreshThreads();
+    } catch {
+      setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Pass a visitor's thread on to the agent; it goes with the next batch. */
+  async function forwardThread(id: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/comments/${id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "forward" }),
+      });
+      if (!res.ok) {
+        setNotice({ kind: "bad", text: "Could not forward that comment." });
+        return;
+      }
+      await refreshThreads();
+      setNotice({ kind: "good", text: "Forwarded. It goes to the agent with the next send." });
     } finally {
       setBusy(false);
     }
@@ -660,6 +1059,8 @@ export function ArtifactView(props: ArtifactViewProps) {
           ? `Sent ${data.count} comment${data.count === 1 ? "" : "s"} to the agent.`
           : "Nothing new to send.",
       });
+    } catch {
+      setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
     } finally {
       setBusy(false);
     }
@@ -668,63 +1069,59 @@ export function ArtifactView(props: ArtifactViewProps) {
   // ---- render --------------------------------------------------------------
 
   return (
-    <>
+    <FormGate
+      slug={props.slug}
+      form={props.form}
+      submitUrl={visitor ? `/s/${visitor.token}/api/responses` : undefined}
+      onSent={() => (visitor ? undefined : router.refresh())}
+    >
       <link rel="stylesheet" href={`/themes/${props.theme}.css`} />
-      <header className="top">
-        <Link className="top__home" href="/">
-          <span className="top__dot" /> Artifacts
-        </Link>
-        <div className="top__title">
-          {props.title} <span className="top__meta">v{props.versionNumber}</span>
-        </div>
-        <div className="top__actions">
-          <select
-            className="select"
-            value={props.versionNumber}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              window.location.href = n === props.currentVersion ? `/a/${props.slug}` : `/a/${props.slug}/v/${n}`;
-            }}
-            aria-label="Version"
-          >
-            {props.versions.map((v) => (
-              <option key={v.number} value={v.number}>
-                v{v.number} · {v.authorKind === "human" ? "edited" : "agent"} · {when(v.createdAt)}
-              </option>
-            ))}
-          </select>
-          {props.versionNumber > 1 ? (
-            <Link className="btn btn--ghost" href={`/a/${props.slug}/v/${props.versionNumber}?diff=${props.versionNumber - 1}`}>
-              Diff
-            </Link>
-          ) : null}
-          <button className={tool ? "btn btn--on" : "btn"} onClick={toggleTool} title="Comment tool (c)">
-            {tool ? "Click a spot…" : "Comment"}
-          </button>
-          <button
-            className={panel === "list" ? "btn btn--on panel-btn" : "btn panel-btn"}
-            onClick={() => setPanel((p) => (p === "list" ? "none" : "list"))}
-            title="All comments"
-          >
-            {visible.length > 0 ? `Threads ${visible.length}` : "Threads"}
-          </button>
-          {unsent > 0 ? (
-            <button
-              className="btn btn--primary panel-btn"
-              onClick={() => setPanel((p) => (p === "send" ? "none" : "send"))}
-              disabled={busy}
-            >
-              Send {unsent}
-            </button>
-          ) : null}
-          {isLatest ? (
-            <Link className="btn" href={`/a/${props.slug}/edit`}>
-              Edit
-            </Link>
-          ) : null}
-          <SchemeToggle />
-        </div>
-      </header>
+      {visitor ? (
+        <VisitorHeader
+          title={props.title}
+          sharedBy={visitor.sharedBy}
+          threads={canComment ? visible.length : null}
+          panel={panel}
+          onThreads={() => setPanel((p) => (p === "list" ? "none" : "list"))}
+          onComment={canComment ? toggleTool : null}
+        />
+      ) : (
+      <ViewerHeader
+        slug={props.slug}
+        title={props.title}
+        project={props.project}
+        series={props.series}
+        branch={props.branch}
+        version={{ number: props.versionNumber, authorName: props.authorName, createdAt: props.createdAt }}
+        latest={props.currentVersion}
+        versions={props.versions}
+        nav={nav && navIndex >= 0 ? { label: nav.label, index: navIndex, count: nav.slugs.length } : null}
+        threads={visible.length}
+        unsent={unsent}
+        panel={panel}
+        canEdit={canEdit}
+        responses={props.form ? props.form.responses : null}
+        onVersion={goVersion}
+        onNav={goNav}
+        onThreads={() => setPanel((p) => (p === "list" ? "none" : "list"))}
+        onSend={() => setPanel((p) => (p === "send" ? "none" : "send"))}
+        onEdit={startEditing}
+        onShare={() => setShareOpen(true)}
+        sharing={sharing}
+        editing={editing ? { dirty, saving, onCancel: cancelEditing, onDone: () => void finishEditing() } : null}
+        menu={
+          <>
+            <ViewerMenuItem onSelect={toggleTool}>Comment on a spot</ViewerMenuItem>
+            <ViewerMenuItem onSelect={() => setShowResolved((v) => !v)}>
+              {showResolved ? "Hide resolved threads" : "Show resolved threads"}
+            </ViewerMenuItem>
+            <ViewerMenuSeparator />
+            <ViewerMenuItem onSelect={() => setShareOpen(true)}>Share…</ViewerMenuItem>
+          </>
+        }
+      />
+      )}
+      {!visitor && shareOpen ? <ShareDialog slug={props.slug} title={props.title} versionNumber={props.versionNumber} onClose={() => setShareOpen(false)} onMode={setSharing} /> : null}
 
       {panel === "list" ? (
         <div className="panel">
@@ -752,6 +1149,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                         <span className="badge badge--unsent">unsent</span>
                       ) : null}
                       {thread.status === "resolved" ? <span className="badge">resolved</span> : null}
+                      {!visitor && thread.authorKind === "visitor" && !thread.approvedAt ? <span className="badge">visitor</span> : null}
                     </span>
                     <span className="rowitem__body">{truncate(thread.body, 90)}</span>
                   </span>
@@ -791,9 +1189,8 @@ export function ArtifactView(props: ArtifactViewProps) {
       ) : null}
 
       <main
-        className={tool ? "stage stage--picking" : "stage"}
+        className={["stage", tool && "stage--picking", editing && "stage--editing"].filter(Boolean).join(" ")}
         onMouseMove={onStageMove}
-        onMouseLeave={() => setHover(null)}
       >
         <div className="stage__inner" ref={innerRef}>
           {!isLatest ? (
@@ -824,9 +1221,16 @@ export function ArtifactView(props: ArtifactViewProps) {
           ) : null}
 
           <div
-            className="art-content"
+            className="doc"
             ref={contentRef}
             onMouseUp={onContentMouseUp}
+            onPointerDown={onPressStart}
+            onPointerMove={onPressMove}
+            onPointerUp={onPressEnd}
+            onPointerCancel={onPressEnd}
+            onContextMenu={(e) => {
+              if (press.current?.fired || menu) e.preventDefault();
+            }}
             onDoubleClick={commentOnBlock}
           >
             {props.framed ? (
@@ -849,11 +1253,34 @@ export function ArtifactView(props: ArtifactViewProps) {
                 />
               </div>
             ) : (
-              <div dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
+              <>
+                <ArticleHead {...props} doc={shownDoc} head={editing ? head : null} onHead={setHeadDirty} />
+                {shownDoc ? (
+                  <DocView
+                    doc={shownDoc}
+                    fallbackHtml={props.html ?? ""}
+                    assetBase={props.assetBase}
+                    editing={editing}
+                    onReady={onDocReady}
+                    onEditor={onEditor}
+                    onDirty={onDirty}
+                  />
+                ) : (
+                  <div className="art-content" dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
+                )}
+              </>
             )}
           </div>
 
           <div className="pins">
+            {/* The element a comment is about is outlined while its thread is open. */}
+            {activePin?.box && activePin.thread.anchor?.selector?.startsWith(":scope") ? (
+              <span
+                className="mark-box mark-box--active"
+                style={{ top: activePin.box.top - 3, left: activePin.box.left - 3, width: activePin.box.width + 6, height: activePin.box.height + 6 }}
+              />
+            ) : null}
+
             {pins.map((pin) => (
               <button
                 key={pin.thread.id}
@@ -868,12 +1295,47 @@ export function ArtifactView(props: ArtifactViewProps) {
                   .join(" ")}
                 style={{ top: pin.top, left: pin.left }}
                 title={`${pin.thread.authorName}: ${truncate(pin.thread.body, 80)}`}
+                aria-label={`Comment by ${pin.thread.authorName}: ${truncate(pin.thread.body, 80)}`}
                 onClick={() => (pin.thread.id === activeId ? setActiveId(null) : openThread(pin.thread))}
               >
                 {initials(pin.thread.authorName)}
                 {pin.thread.replies.length > 0 ? <span className="pin__count">{pin.thread.replies.length}</span> : null}
               </button>
             ))}
+
+            {draft && draftSpot ? <span className="pin pin--draft" style={{ top: draftSpot.top, left: draftSpot.left }} /> : null}
+
+            {menu ? (
+              <div className="pressmenu" role="menu" style={{ top: menu.top, left: menu.left }}>
+                {menu.options.map((o) => (
+                  <button
+                    key={o.label}
+                    role="menuitem"
+                    onClick={() => {
+                      setMenu(null);
+                      setPick(null);
+                      setDraft({ anchor: o.anchor, body: "", notify: false });
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+                <button
+                  role="menuitem"
+                  className="pressmenu__cancel"
+                  onClick={() => {
+                    setMenu(null);
+                    setPick(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : null}
+
+            {pick && (tool || menu) ? (
+              <span className="pick-box" style={{ top: pick.top - 4, left: pick.left - 4, width: pick.width + 8, height: pick.height + 8 }} />
+            ) : null}
 
             {/* A thread whose block is gone has no pin, so its card opens at the
                 top of the page rather than nowhere. */}
@@ -886,6 +1348,8 @@ export function ArtifactView(props: ArtifactViewProps) {
                 <ThreadCard
                   thread={active}
                   busy={busy}
+                  role={visitor ? "visitor" : "owner"}
+                  onForward={() => forwardThread(active.id)}
                   onClose={() => setActiveId(null)}
                   onStatus={(status) => setStatus(active.id, status)}
                   onReply={(text) => postComment(active.id, text)}
@@ -913,27 +1377,31 @@ export function ArtifactView(props: ArtifactViewProps) {
                       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void postComment();
                     }}
                   />
-                  <input
+                  {props.userName ? null : <input
                     className="field"
                     value={author}
                     onChange={(e) => rememberName(e.target.value)}
                     placeholder="Your name"
                     aria-label="Your name"
-                  />
+                  />}
                   <div className="composer__row">
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={draft.notify}
-                        onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
-                      />
-                      Notify agent
-                    </label>
+                    {visitor ? (
+                      <span className="tiny">Only the page's owner sees this.</span>
+                    ) : (
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={draft.notify}
+                          onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
+                        />
+                        Notify agent
+                      </label>
+                    )}
                     <span style={{ display: "flex", gap: 6 }}>
                       <button className="btn btn--ghost" onClick={() => setDraft(null)}>
                         Cancel
                       </button>
-                      <button className="btn btn--primary" onClick={() => postComment()} disabled={busy || !draft.body.trim()}>
+                      <button className="btn btn--primary" onClick={() => void postComment()} disabled={busy || !draft.body.trim() || (visitor !== null && !author.trim())}>
                         Comment
                       </button>
                     </span>
@@ -942,56 +1410,6 @@ export function ArtifactView(props: ArtifactViewProps) {
               </div>
             ) : null}
           </div>
-
-          {hover && !edit ? (
-            <button
-              className="blockedit"
-              style={{ top: hover.top, left: hover.left }}
-              // On press, not on click: the pointer crossing the gutter keeps
-              // re-rendering this button, and a click needs the press and the
-              // release to land on the same element.
-              onMouseDown={(event) => {
-                event.preventDefault();
-                startEdit(hover.lines);
-              }}
-              title={`Edit lines ${hover.lines[0]}-${hover.lines[1]}`}
-              aria-label={`Edit lines ${hover.lines[0]} to ${hover.lines[1]}`}
-            >
-              ✎
-            </button>
-          ) : null}
-
-          {edit ? (
-            <div
-              className="inline-edit"
-              style={{ top: edit.box.top, left: edit.box.left, width: edit.box.width }}
-            >
-              <textarea
-                autoFocus
-                spellCheck
-                value={edit.text}
-                style={{ minHeight: edit.box.minHeight }}
-                onChange={(e) => setEdit({ ...edit, text: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void saveEdit();
-                  if (e.key === "Escape") setEdit(null);
-                }}
-              />
-              <div className="inline-edit__bar">
-                <span className="tiny">
-                  lines {edit.lines[0]}-{edit.lines[1]} · saves a new version
-                </span>
-                <span style={{ display: "flex", gap: 6 }}>
-                  <button className="btn btn--ghost" onClick={() => setEdit(null)}>
-                    Cancel
-                  </button>
-                  <button className="btn btn--primary" onClick={saveEdit} disabled={busy}>
-                    Save
-                  </button>
-                </span>
-              </div>
-            </div>
-          ) : null}
 
           {bubble ? (
             <div className="bubble" style={{ top: bubble.top, left: bubble.left }}>
@@ -1010,27 +1428,126 @@ export function ArtifactView(props: ArtifactViewProps) {
         </div>
       </main>
 
+      {/* Touch screens: commenting without a keyboard shortcut or hover. */}
+      {hoverless && !editing ? (
+        <div className={props.form ? "touchbar touchbar--raised" : "touchbar"}>
+          {selected && !draft ? (
+            <button
+              className="touchbar__select"
+              onClick={() => {
+                setActiveId(null);
+                setDraft({ anchor: selected, body: "", notify: false });
+                setSelected(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+            >
+              Comment on the selected words
+            </button>
+          ) : null}
+          {tool ? <span className="touchbar__hint">Tap the spot or element the comment is about</span> : null}
+          {/* A form's send bar owns the foot of a phone screen; hold to comment there. */}
+          {!draft && !active && !props.form && canComment ? (
+            <button
+              className={tool ? "touchbar__fab touchbar__fab--on" : "touchbar__fab"}
+              onClick={toggleTool}
+              aria-label={tool ? "Stop placing a comment" : "Add a comment"}
+            >
+              {tool ? "✕" : "+"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {notice ? (
         <div className={notice.kind === "bad" ? "toast toast--bad" : "toast toast--good"} role="status">
           {notice.text}
         </div>
       ) : null}
-    </>
+      {props.form && !editing ? (
+        <FormBar responsesHref={visitor ? undefined : `/a/${props.slug}/responses`} responseCount={visitor ? undefined : props.form.responses} />
+      ) : null}
+      {visitor ? <MadeWithIndy raised={props.form !== null} /> : null}
+    </FormGate>
+  );
+}
+
+/** The form's state around the page and its bar, on pages that have questions. */
+function FormGate({
+  slug,
+  form,
+  submitUrl,
+  onSent,
+  children,
+}: {
+  slug: string;
+  form: ArtifactViewProps["form"];
+  submitUrl?: string;
+  onSent: () => void;
+  children: React.ReactNode;
+}) {
+  if (!form) return <>{children}</>;
+  return (
+    <FormProvider slug={slug} fields={form.fields} settings={form.settings} submitUrl={submitUrl} onSent={onSent}>
+      {children}
+    </FormProvider>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = { markdown: "Page", html: "HTML page", react: "React app", svelte: "Svelte app" };
+
+/** Kicker, title and lede above the page, unless the page opens with its own title. */
+function ArticleHead(
+  props: ArtifactViewProps & {
+    /** The title and lede being typed, while editing. */
+    head: { title: string; description: string } | null;
+    onHead: (head: { title: string; description: string }) => void;
+  },
+) {
+  const first = props.doc?.content?.[0];
+  const ownTitle = first?.type === "heading" && first.attrs?.level === 1;
+  const { head, onHead } = props;
+  return (
+    <div className="doc-head">
+      <div className="doc-head__kicker">
+        {KIND_LABEL[props.kind] ?? "Page"} · updated <Ago iso={props.createdAt} long />
+        {props.visitor ? null : ` by ${props.authorName}`}
+      </div>
+      {ownTitle ? null : head ? (
+        <Typeable as="h1" className="doc-head__title" value={head.title} placeholder="Title" onChange={(title) => onHead({ ...head, title })} />
+      ) : (
+        <h1 className="doc-head__title">{props.title}</h1>
+      )}
+      {ownTitle ? null : head ? (
+        <Typeable
+          as="p"
+          className="doc-head__lede"
+          value={head.description}
+          placeholder="Add a line about what this page is for"
+          onChange={(description) => onHead({ ...head, description })}
+        />
+      ) : props.description ? (
+        <p className="doc-head__lede">{props.description}</p>
+      ) : null}
+    </div>
   );
 }
 
 function ThreadCard({
   thread,
   busy,
+  role,
+  onForward,
   onClose,
   onStatus,
   onReply,
 }: {
   thread: ThreadView;
   busy: boolean;
+  role: "owner" | "visitor";
+  onForward: () => void;
   onClose: () => void;
   onStatus: (status: "open" | "resolved") => void;
-  onReply: (text: string) => void;
+  onReply: (text: string) => Promise<boolean>;
 }) {
   return (
     <div className="pop__card">
@@ -1038,15 +1555,17 @@ function ThreadCard({
         <span className="pop__quote" title={describeAnchor(thread.anchor)}>
           {quoteOf(thread.anchor)}
         </span>
-        <button
-          className="iconbtn"
-          onClick={() => onStatus(thread.status === "open" ? "resolved" : "open")}
-          disabled={busy}
-          title={thread.status === "open" ? "Resolve" : "Reopen"}
-          aria-label={thread.status === "open" ? "Resolve" : "Reopen"}
-        >
-          {thread.status === "open" ? "✓" : "↺"}
-        </button>
+        {role === "owner" ? (
+          <button
+            className="iconbtn"
+            onClick={() => onStatus(thread.status === "open" ? "resolved" : "open")}
+            disabled={busy}
+            title={thread.status === "open" ? "Resolve" : "Reopen"}
+            aria-label={thread.status === "open" ? "Resolve" : "Reopen"}
+          >
+            {thread.status === "open" ? "✓" : "↺"}
+          </button>
+        ) : null}
         <button className="iconbtn" onClick={onClose} aria-label="Close">
           ✕
         </button>
@@ -1062,9 +1581,10 @@ function ThreadCard({
               <div className="msg__meta">
                 <span className="msg__who">{message.authorName}</span>
                 <span>{when(message.createdAt)}</span>
-                {index === 0 && thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
+                {index === 0 && role === "owner" && thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
                   <span className="chip">not sent</span>
                 ) : null}
+                {role === "owner" && message.authorKind === "visitor" ? <span className="chip chip--visitor">visitor</span> : null}
               </div>
               <div className="msg__body">{message.body}</div>
             </div>
@@ -1072,6 +1592,20 @@ function ThreadCard({
         ))}
       </div>
 
+      {role === "owner" && thread.authorKind === "visitor" ? (
+        <div className="pop__forward">
+          {thread.approvedAt ? (
+            <span className="tiny">{thread.sentAt ? "Sent to the agent" : "Forwarded · goes with the next send"}</span>
+          ) : (
+            <>
+              <span className="tiny">From a share link. The agent does not see it unless you forward it.</span>
+              <button className="btn btn--ghost" onClick={onForward} disabled={busy}>
+                Forward to agent
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
       <ReplyBox onSend={onReply} busy={busy} />
     </div>
   );
@@ -1080,7 +1614,7 @@ function ThreadCard({
 /** One message in a thread: the comment itself has the same shape as a reply. */
 interface Message {
   id: string;
-  authorKind: "agent" | "human";
+  authorKind: "agent" | "human" | "visitor";
   authorName: string;
   body: string;
   createdAt: string;
@@ -1113,13 +1647,14 @@ function quoteOf(anchor: Anchor | null): string {
   return `\u201c${head}${truncate(quote, 90)}${tail}\u201d`;
 }
 
-function ReplyBox({ onSend, busy }: { onSend: (text: string) => void; busy: boolean }) {
+function ReplyBox({ onSend, busy }: { onSend: (text: string) => Promise<boolean>; busy: boolean }) {
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
 
-  function send() {
+  async function send() {
     if (!text.trim()) return;
-    onSend(text);
+    // The text stays until the reply is saved, so a failure loses nothing.
+    if (!(await onSend(text))) return;
     setText("");
     setFocused(false);
   }
@@ -1136,7 +1671,7 @@ function ReplyBox({ onSend, busy }: { onSend: (text: string) => void; busy: bool
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
-            send();
+            void send();
           }
         }}
       />

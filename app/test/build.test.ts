@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildArtifact } from "@/lib/build/index";
@@ -75,6 +75,23 @@ export default function App() { return <Badge />; }`,
     expect(res.status).toBe("error");
     expect(res.log).toContain("is not available in artifacts");
     expect(res.log).toContain("Allowed packages");
+  }, 60000);
+
+  it("cannot read files outside the artifact, by path or as text", async () => {
+    const secret = join(await outDir(), "secret.txt");
+    await writeFile(secret, "TOP-SECRET-VALUE");
+    for (const source of [
+      `import s from "${secret}" with { type: "text" };\nexport default function App() { return <b>{s}</b>; }`,
+      `import s from "${secret}";\nexport default function App() { return <b>{String(s)}</b>; }`,
+      `import s from "../../../../../../../../..${secret}";\nexport default function App() { return <b>{String(s)}</b>; }`,
+      `import s from "./data.txt" with { type: "text" };\nexport default function App() { return <b>{s}</b>; }`,
+    ]) {
+      const out = await outDir();
+      const res = await buildArtifact({ kind: "react", outDir: out, files: { "App.tsx": source, "data.txt": "fine" } });
+      expect(res.status).toBe("error");
+      const js = await readFile(join(out, "bundle.js"), "utf8").catch(() => "");
+      expect(js).not.toContain("TOP-SECRET-VALUE");
+    }
   }, 60000);
 
   it("reports a syntax error with file and line", async () => {
