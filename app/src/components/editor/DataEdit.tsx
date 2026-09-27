@@ -134,16 +134,61 @@ function Broken({ code, error, onChange }: { code: string; error: string; onChan
   );
 }
 
+/** Keys the grid and bar write; anything else the author set (series, axes, marks) is kept as written. */
+const CHART_KEYS = new Set(["type", "orientation", "horizontal", "title", "x", "y", "stacked", "unit", "height", "data"]);
+
 function chartYaml(spec: ChartSpec, original: Record<string, unknown>): string {
   const out: Record<string, unknown> = { type: spec.type };
+  if (spec.horizontal) out.horizontal = true;
   if (spec.title) out.title = spec.title;
   out.x = spec.x;
   out.y = spec.y.length === 1 ? spec.y[0] : spec.y;
   if (spec.stacked) out.stacked = true;
   if (spec.unit) out.unit = spec.unit;
   if (original.height !== undefined) out.height = spec.height;
+  for (const [key, value] of Object.entries(original)) if (!CHART_KEYS.has(key)) out[key] = value;
   out.data = spec.data;
   return stringify(out, { flowCollectionPadding: true, collectionStyle: "any" }).replace(/\n$/, "");
+}
+
+/** The type menu: bar twice, once each way up. */
+const TYPE_CHOICES = CHART_TYPES.flatMap((t) => (t === "bar" ? ["bar", "barh"] : [t]));
+const TYPE_NAMES: Record<string, string> = { bar: "Bar", barh: "Bar, horizontal" };
+
+/** Series options follow a renamed y key; ones for a removed key go. */
+function renameSeries(raw: Record<string, unknown>, from: string[], to: string[]): Record<string, unknown> {
+  const series = raw.series;
+  if (!series || typeof series !== "object" || Array.isArray(series)) return raw;
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(series)) {
+    const i = from.indexOf(key);
+    if (i !== -1 && to[i] !== undefined) next[to[i]] = value;
+  }
+  const rest = { ...raw };
+  delete rest.series;
+  return Object.keys(next).length ? { ...rest, series: next } : rest;
+}
+
+/** What a new type cannot draw goes: pies have no axes, and sideways or scatter charts no lines mixed in. */
+function fitToType(raw: Record<string, unknown>, picked: string): Record<string, unknown> {
+  const next = { ...raw };
+  if (picked === "pie" || picked === "doughnut") {
+    delete next.series;
+    delete next.axes;
+    delete next.marks;
+    return next;
+  }
+  const series = next.series;
+  if ((picked === "barh" || picked === "scatter") && series && typeof series === "object" && !Array.isArray(series)) {
+    next.series = Object.fromEntries(
+      Object.entries(series as Record<string, Record<string, unknown>>).map(([key, value]) => {
+        const kept = { ...value };
+        delete kept.as;
+        return [key, kept];
+      }),
+    );
+  }
+  return next;
 }
 
 export function ChartEdit({ node, updateAttributes }: ReactNodeViewProps) {
@@ -165,7 +210,7 @@ export function ChartEdit({ node, updateAttributes }: ReactNodeViewProps) {
     );
   }
   const { spec, raw } = parsed;
-  const write = (next: Partial<ChartSpec>) => updateAttributes({ code: chartYaml({ ...spec, ...next }, raw) });
+  const write = (next: Partial<ChartSpec>, original = raw) => updateAttributes({ code: chartYaml({ ...spec, ...next }, original) });
   const columns = [spec.x, ...spec.y];
   const rows = spec.data.map((d) => columns.map((k) => (d[k] ?? "") as Cell));
 
@@ -173,10 +218,20 @@ export function ChartEdit({ node, updateAttributes }: ReactNodeViewProps) {
     <NodeViewWrapper className="data-edit">
       <div className="data-edit__bar" contentEditable={false}>
         <input className="data-edit__title" value={spec.title ?? ""} placeholder="Chart title" onChange={(e) => write({ title: e.target.value || undefined })} />
-        <select value={spec.type} onChange={(e) => write({ type: e.target.value as ChartSpec["type"] })} aria-label="Chart type">
-          {CHART_TYPES.map((t) => (
+        <select
+          value={spec.horizontal ? "barh" : spec.type}
+          onChange={(e) => {
+            const picked = e.target.value;
+            write(
+              picked === "barh" ? { type: "bar", horizontal: true } : { type: picked as ChartSpec["type"], horizontal: false },
+              fitToType(raw, picked),
+            );
+          }}
+          aria-label="Chart type"
+        >
+          {TYPE_CHOICES.map((t) => (
             <option key={t} value={t}>
-              {t[0].toUpperCase() + t.slice(1)}
+              {TYPE_NAMES[t] ?? t[0].toUpperCase() + t.slice(1)}
             </option>
           ))}
         </select>
@@ -193,11 +248,14 @@ export function ChartEdit({ node, updateAttributes }: ReactNodeViewProps) {
           onColumns={(next) => {
             // Renaming a column renames its key in every row.
             const data = spec.data.map((d) => Object.fromEntries(next.map((k, i) => [k, d[columns[i]] ?? 0])));
-            write({ x: next[0], y: next.slice(1), data });
+            write({ x: next[0], y: next.slice(1), data }, renameSeries(raw, columns, next));
           }}
           onRows={(next) => write({ data: next.map((row) => Object.fromEntries(columns.map((k, i) => [k, row[i] ?? ""]))) })}
           onShape={(cols, next) =>
-            write({ x: cols[0], y: cols.slice(1), data: next.map((row) => Object.fromEntries(cols.map((k, i) => [k, row[i] ?? ""]))) })
+            write(
+              { x: cols[0], y: cols.slice(1), data: next.map((row) => Object.fromEntries(cols.map((k, i) => [k, row[i] ?? ""]))) },
+              renameSeries(raw, cols, cols),
+            )
           }
         />
       ) : null}

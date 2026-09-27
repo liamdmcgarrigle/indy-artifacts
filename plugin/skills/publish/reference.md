@@ -223,9 +223,10 @@ firmer rule above it.
 ### ```` ```chart ````
 
 YAML. `type` is `bar`, `line`, `area`, `pie`, `doughnut` or `scatter`. `x` is one key,
-`y` is a key or a list of keys, `data` is a list of objects. Optional: `title`,
-`stacked` (bool), `unit` (a suffix on values), `height` (px, default 280). Colours come
-from the theme.
+`y` is a key or a list of keys, `data` is a list of objects. Two or more `y` keys on a bar
+chart draw grouped bars side by side; add `stacked: true` to stack them instead. Optional:
+`title`, `unit` (added to values: `%` sits against the number, `min` after a space),
+`height` (px, default 280). Colors come from the theme.
 
 ````md
 ```chart
@@ -240,6 +241,63 @@ data:
   - { night: Mon, full: 41, incremental: 6 }
   - { night: Tue, full: 0, incremental: 7 }
   - { night: Wed, full: 0, incremental: 5 }
+```
+````
+
+**Horizontal bars.** `horizontal: true` on a bar chart puts the categories down the left.
+Use it when labels are long or there are more than about six categories. `type: barh` and
+`orientation: horizontal` mean the same.
+
+**Reference lines and shaded ranges.** `marks` is a list drawn over the data:
+
+- `{ y: 0.25, label: Error budget }` is a line at a value. `y` always means the value axis,
+  so on a horizontal chart the line runs top to bottom. Add `axis: right` for a line on the
+  right axis.
+- `{ x: W3, label: Release }` is a line at one x value.
+- `{ from: "09:00", to: "19:00", label: Incident }` shades the x values from one to the other.
+
+Each takes an optional `tone` (`good`, `warn`, `bad`, `info`). An `x`, `from` or `to` must
+be an x value in the data, written the same way (numbers on a scatter chart). Marks work on
+bar, line, area and scatter charts, and the axis stretches to show a line above the data.
+
+````md
+```chart
+type: bar
+horizontal: true
+title: Error rate by service, last 7 days
+x: service
+y: errors
+unit: "%"
+marks:
+  - { y: 0.25, label: 0.25% error budget, tone: bad }
+data:
+  - { service: checkout-api, errors: 0.31 }
+  - { service: search, errors: 0.12 }
+  - { service: notifications, errors: 0.05 }
+```
+````
+
+**Bars and a line on two axes.** `series` sets how one `y` key is drawn: `as` is `bar`,
+`line` or `area`, and `axis` is `left` or `right`. `axes` gives each axis a `title`, a
+`unit`, `min` and `max` (`left`, `right`, and `x` for the title under the categories). A
+top-level `unit` is the left axis's. Put a second axis only on a series in a different unit,
+never to make two series in the same unit look alike.
+
+````md
+```chart
+type: bar
+title: Deploys and change failure rate
+x: week
+y: [deploys, cfr]
+series:
+  cfr: { as: line, axis: right }
+axes:
+  left: { title: Deploys per week }
+  right: { title: Change failure rate, unit: "%" }
+data:
+  - { week: W1, deploys: 14, cfr: 7.1 }
+  - { week: W2, deploys: 18, cfr: 5.6 }
+  - { week: W3, deploys: 11, cfr: 9.1 }
 ```
 ````
 

@@ -12,6 +12,8 @@
  *      node is moved in the DOM, and it must not duplicate anything.
  */
 
+import { chartConfig, chartSummary, type ChartSpec, type ChartTheme } from "./chart-config";
+
 declare global {
   interface Window {
     /** Origin/prefix the sandboxed embed frames are served from. */
@@ -428,28 +430,6 @@ class ArtTable extends ArtElement {
 
 /* ------------------------------------------------------------------- chart */
 
-interface ChartSpec {
-  type: string;
-  title?: string;
-  x: string;
-  y: string[];
-  data: Record<string, unknown>[];
-  stacked?: boolean;
-  unit?: string;
-  height?: number;
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === "number") return value;
-  const n = Number(String(value ?? "").replace(/[,\s]/g, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
-/** A translucent twin of a palette colour, for area and bar fills. */
-function translucent(color: string): string {
-  return /^#[0-9a-f]{6}$/i.test(color.trim()) ? `${color.trim()}40` : color;
-}
-
 class ArtChart extends ArtElement {
   #spec: ChartSpec | null = null;
   #chart: { destroy?: () => void } | null = null;
@@ -457,8 +437,37 @@ class ArtChart extends ArtElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    window.addEventListener("art:scheme", this.#onScheme);
     // Drawing lives here rather than in render() so a chart destroyed on
     // disconnect comes back when the element is re-attached.
+    this.#redraw();
+  }
+
+  disconnectedCallback(): void {
+    window.removeEventListener("art:scheme", this.#onScheme);
+    this.#destroy();
+  }
+
+  /** The colors are read once per drawing, so a new scheme means a new drawing. */
+  #onScheme = (): void => {
+    // The page swaps its variables in the same tick; read them on the next frame.
+    requestAnimationFrame(() => {
+      if (!this.isConnected) return;
+      this.#destroy();
+      this.#redraw();
+    });
+  };
+
+  #destroy(): void {
+    try {
+      this.#chart?.destroy?.();
+    } catch {
+      /* a half-built chart is nothing to complain about */
+    }
+    this.#chart = null;
+  }
+
+  #redraw(): void {
     if (this.#chart || this.#drawing || !this.#spec) return;
     const canvas = this.querySelector("canvas");
     if (!canvas) return;
@@ -466,15 +475,6 @@ class ArtChart extends ArtElement {
     void this.#draw(canvas, this.#spec).finally(() => {
       this.#drawing = false;
     });
-  }
-
-  disconnectedCallback(): void {
-    try {
-      this.#chart?.destroy?.();
-    } catch {
-      /* a half-built chart is nothing to complain about */
-    }
-    this.#chart = null;
   }
 
   protected render(): void {
@@ -488,150 +488,59 @@ class ArtChart extends ArtElement {
     const frame = make("div", "art-chart__canvas");
     const height = Number(spec.height);
     frame.style.height = `${Number.isFinite(height) && height > 0 ? height : 280}px`;
-    frame.appendChild(make("canvas"));
+    frame.setAttribute("role", "img");
+    frame.setAttribute("aria-label", chartSummary(spec));
+    const canvas = make("canvas");
+    canvas.setAttribute("aria-hidden", "true");
+    frame.appendChild(canvas);
     this.appendChild(frame);
+    this.appendChild(this.#table(spec));
+  }
+
+  /** The numbers behind the drawing, for screen readers. */
+  #table(spec: ChartSpec): HTMLTableElement {
+    const table = make("table", "art-sr-only");
+    if (spec.title) table.appendChild(make("caption", undefined, spec.title));
+    const head = make("tr");
+    for (const key of [spec.x, ...spec.y]) head.appendChild(make("th", undefined, key));
+    table.appendChild(make("thead")).appendChild(head);
+    const body = make("tbody");
+    for (const row of spec.data.slice(0, 500)) {
+      const tr = make("tr");
+      tr.appendChild(make("th", undefined, String(row[spec.x] ?? "")));
+      for (const key of spec.y) tr.appendChild(make("td", undefined, String(row[key] ?? "")));
+      body.appendChild(tr);
+    }
+    table.appendChild(body);
+    return table;
   }
 
   async #draw(canvas: HTMLCanvasElement, spec: ChartSpec): Promise<void> {
     try {
       const style = getComputedStyle(this);
-      const token = (name: string, fallback: string) =>
-        (style.getPropertyValue(name) || "").trim() || fallback;
-
-      const palette = CHART_FALLBACK.map((fallback, i) => token(`--art-chart-${i + 1}`, fallback));
-      const text = token("--art-text", "#1B1B1A");
-      const muted = token("--art-text-muted", "#5F5F5B");
-      const border = token("--art-border", "#E3E3E0");
-      const surface = token("--art-surface", "#FFFFFF");
-      const font = token("--art-font-sans", "system-ui, sans-serif");
-      const unit = spec.unit ? ` ${spec.unit}` : "";
-
-      const isRound = spec.type === "pie" || spec.type === "doughnut";
-      const isArea = spec.type === "area";
-      const type = isArea ? "line" : spec.type;
-      const labels = spec.data.map((row) => String(row[spec.x] ?? ""));
-
-      const datasets = isRound
-        ? [
-            {
-              label: spec.y[0] ?? "",
-              data: spec.data.map((row) => toNumber(row[spec.y[0]])),
-              backgroundColor: spec.data.map((_, i) => palette[i % palette.length]),
-              borderColor: surface,
-              borderWidth: 1,
-            },
-          ]
-        : spec.y.map((key, i) => {
-            const color = palette[i % palette.length];
-            const bar = type === "bar";
-            // In a stack only the segment on top gets the rounded cap,
-            // otherwise every joint in the column shows a notch.
-            const stacked = bar && spec.stacked === true;
-            const capped = !stacked || i === spec.y.length - 1;
-            return {
-              label: key,
-              data:
-                spec.type === "scatter"
-                  ? spec.data.map((row) => ({ x: toNumber(row[spec.x]), y: toNumber(row[key]) }))
-                  : spec.data.map((row) => toNumber(row[key])),
-              borderColor: bar ? "transparent" : color,
-              // A solid bar reads as one shape; an outlined wash reads as a box
-              // with something in it.
-              backgroundColor: bar ? color : isArea ? translucent(color) : color,
-              borderWidth: bar ? 0 : 2,
-              borderRadius: bar && capped ? { topLeft: 5, topRight: 5, bottomLeft: 0, bottomRight: 0 } : 0,
-              borderSkipped: false,
-              maxBarThickness: 52,
-              categoryPercentage: 0.74,
-              barPercentage: 0.86,
-              fill: isArea,
-              tension: isArea || type === "line" ? 0.32 : 0,
-              pointRadius: type === "line" || isArea ? 0 : 3,
-              pointHoverRadius: 4,
-              hoverBackgroundColor: bar ? color : undefined,
-              hoverBorderColor: color,
-            };
-          });
-
-      // Grid lines are scaffolding, not content: keep the horizontal ones as
-      // hairlines, drop the vertical ones and the axis frame entirely.
-      const tickFont = { family: font, size: 11, weight: 500 as const };
-      const scales = {
-        x: {
-          stacked: spec.stacked === true,
-          ticks: { color: muted, font: tickFont, padding: 6, autoSkipPadding: 12 },
-          grid: { display: false },
-          border: { display: false },
-        },
-        y: {
-          stacked: spec.stacked === true,
-          beginAtZero: true,
-          ticks: {
-            color: muted,
-            font: tickFont,
-            padding: 8,
-            maxTicksLimit: 6,
-            callback: (value: unknown) => `${value}${unit}`,
-          },
-          grid: { color: border, lineWidth: 1, drawTicks: false },
-          border: { display: false, dash: [3, 4] },
+      const token = (name: string, fallback: string) => (style.getPropertyValue(name) || "").trim() || fallback;
+      const theme: ChartTheme = {
+        palette: CHART_FALLBACK.map((fallback, i) => token(`--art-chart-${i + 1}`, fallback)),
+        text: token("--art-text", "#1B1B1A"),
+        muted: token("--art-text-muted", "#5F5F5B"),
+        border: token("--art-border", "#E3E3E0"),
+        surface: token("--art-surface", "#FFFFFF"),
+        font: token("--art-font-sans", "system-ui, sans-serif"),
+        tones: {
+          good: token("--art-good", "#15803D"),
+          warn: token("--art-warn", "#B45309"),
+          bad: token("--art-bad", "#B91C1C"),
+          info: token("--art-info", "#2563EB"),
         },
       };
-
-      const { default: Chart } = await import("chart.js/auto");
-
-      this.#chart = new Chart(canvas, {
-        type: type as never,
-        data: { labels, datasets: datasets as never },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false,
-          layout: { padding: { top: 4, right: 4 } },
-          interaction: { mode: "index" as const, intersect: false },
-          plugins: {
-            legend: {
-              display: isRound || spec.y.length > 1,
-              position: "top" as const,
-              align: "start" as const,
-              labels: {
-                color: muted,
-                font: { family: font, size: 11.5 },
-                boxWidth: 7,
-                boxHeight: 7,
-                padding: 14,
-                usePointStyle: true,
-                pointStyle: "circle" as const,
-              },
-            },
-            tooltip: {
-              backgroundColor: surface,
-              titleColor: text,
-              bodyColor: muted,
-              borderColor: border,
-              borderWidth: 1,
-              padding: 10,
-              cornerRadius: 8,
-              titleFont: { family: font, size: 12, weight: 600 as const },
-              bodyFont: { family: font, size: 12 },
-              bodySpacing: 5,
-              boxWidth: 7,
-              boxHeight: 7,
-              usePointStyle: true,
-              callbacks: {
-                label: (item: { dataset?: { label?: string }; label?: string; formattedValue: string }) => {
-                  const name = isRound ? item.label : item.dataset?.label;
-                  return `${name ? `${name}: ` : ""}${item.formattedValue}${unit}`;
-                },
-              },
-            },
-          },
-          scales: isRound ? undefined : scales,
-        } as never,
-      }) as unknown as { destroy?: () => void };
-    } catch {
+      const { default: Chart, layouts } = await import("chart.js/auto");
+      const config = chartConfig(spec, theme, layouts);
+      if (!canvas.isConnected) return;
+      this.#chart = new Chart(canvas, config as never) as unknown as { destroy?: () => void };
+    } catch (err) {
       // A chart that cannot be drawn (bad spec, no canvas, no chart.js) leaves
       // the empty frame in place rather than taking the page down with it.
+      console.warn("art-chart: could not draw", err);
     }
   }
 }
