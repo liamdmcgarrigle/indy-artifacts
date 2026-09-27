@@ -1990,3 +1990,55 @@ span.art-typeable {
   font-size: 0.72em;
   color: var(--art-text-faint, var(--muted-foreground));
 }
+
+/* Send panel: whether anyone will hear it now. A status strip, not a list:
+   the dot only lights up, and pulses, when someone is listening. */
+.listener {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 8px 10px;
+  border: 1px solid var(--art-border);
+  border-radius: 8px;
+  background: var(--art-surface-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.listener__label {
+  color: var(--art-text);
+  font-weight: 600;
+}
+.listener__detail {
+  color: var(--art-text-muted);
+}
+.listener__dot {
+  flex: none;
+  position: relative;
+  top: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--art-text-faint);
+}
+.listener--waiting,
+.listener--terminal {
+  border-color: color-mix(in srgb, var(--art-good) 35%, var(--art-border));
+  background: var(--art-good-wash, var(--art-surface-2));
+}
+.listener--waiting .listener__dot,
+.listener--terminal .listener__dot {
+  background: var(--art-good);
+  box-shadow: none;
+  animation: listener-pulse 1.8s ease-out infinite;
+}
+.listener--terminal-offline .listener__dot {
+  background: var(--art-warn);
+  box-shadow: none;
+}
+@keyframes listener-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--art-good) 55%, transparent); }
+  100% { box-shadow: 0 0 0 7px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .listener__dot { animation: none !important; }
+}

@@ -3,6 +3,7 @@ import { getContext } from "@/lib/service/context";
 import { listEvents } from "@/lib/service/events";
 import type { EventRecord } from "@/lib/service/types";
 import { fail, json } from "@/lib/api/respond";
+import { feedPolled } from "@/lib/service/listeners";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -36,6 +37,7 @@ export async function GET(request: Request) {
   try {
     requireMember(getContext(), request);
     const ctx = getContext();
+    feedPolled();
     const url = new URL(request.url);
     const after = Number(url.searchParams.get("after") ?? 0);
     const wait = Math.min(Math.max(Number(url.searchParams.get("wait") ?? 0), 0), 50);

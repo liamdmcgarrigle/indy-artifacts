@@ -36,6 +36,7 @@ import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
 import { IDENTITY_HEADER, IdentityDialog, renewIdentity, storedIdentity, storeIdentity, type VisitorIdentity } from "./share/IdentityDialog";
 import { createTickStore } from "@/lib/doc/tasks-view";
 import type { TickView } from "@/lib/tasks";
+import type { Listener } from "@/lib/service/listeners";
 
 export interface ThreadView {
   id: string;
@@ -168,6 +169,13 @@ function focusInPlace(el: HTMLElement | null): void {
 }
 
 const NAME_KEY = "art-author-name";
+
+const LISTENER_TEXT: Record<Listener, [label: string, detail: string]> = {
+  waiting: ["Agent is waiting", "It gets this right away."],
+  terminal: ["Agent's terminal", "Orca types this into its session now."],
+  "terminal-offline": ["Orca is not picking up", "The agent sees this next time it checks the page."],
+  none: ["No agent listening", "It sees this next time it checks the page."],
+};
 const POP_W = 312;
 const POP_GAP = 16;
 
@@ -239,6 +247,8 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
   const [batchMessage, setBatchMessage] = useState("");
   const [panel, setPanel] = useState<"none" | "list" | "send">("none");
+  // Who would get a send right now; asked while the Send panel is open.
+  const [listener, setListener] = useState<Listener | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [sharing, setSharing] = useState(props.sharing ?? "private");
   useEffect(() => setSharing(props.sharing ?? "private"), [props.sharing]);
@@ -1221,6 +1231,26 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
   }
 
+  useEffect(() => {
+    if (panel !== "send") return;
+    let live = true;
+    const ask = async () => {
+      try {
+        const res = await fetch(`/api/artifacts/${props.slug}/send`, { cache: "no-store" });
+        const data = (await res.json()) as { listener?: Listener };
+        if (live && res.ok && data.listener) setListener(data.listener);
+      } catch {
+        /* the panel still sends; it just cannot say who is listening */
+      }
+    };
+    void ask();
+    const timer = window.setInterval(ask, 5000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [panel, props.slug]);
+
   async function sendBatch() {
     setBusy(true);
     try {
@@ -1238,7 +1268,11 @@ export function ArtifactView(props: ArtifactViewProps) {
       setBatchMessage("");
       await Promise.all([refreshThreads(), refreshTicks()]);
       const sent = sentWhat(data.count ?? 0, data.ticks ?? 0);
-      setNotice({ kind: "good", text: sent ? `Sent ${sent} to the agent.` : "Nothing new to send." });
+      const heard = listener === "waiting" || listener === "terminal";
+      setNotice({
+        kind: "good",
+        text: !sent ? "Nothing new to send." : heard ? `Sent ${sent} to the agent.` : `Saved ${sent} for the agent. It sees them the next time it checks this page.`,
+      });
     } catch {
       setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
     } finally {
@@ -1345,6 +1379,15 @@ export function ArtifactView(props: ArtifactViewProps) {
         <div className="panel panel--narrow">
           <div className="composer">
             <div className="tiny">{capitalise(sentWhat(unsent, unsentTicks) || "nothing")} will go to the agent as one message.</div>
+            {listener ? (
+              <div className={`listener listener--${listener}`} role="status">
+                <span className="listener__dot" aria-hidden />
+                <span>
+                  <strong className="listener__label">{LISTENER_TEXT[listener][0]}</strong>{" "}
+                  <span className="listener__detail">{LISTENER_TEXT[listener][1]}</span>
+                </span>
+              </div>
+            ) : null}
             <input
               className="field"
               autoFocus

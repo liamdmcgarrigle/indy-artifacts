@@ -25,6 +25,7 @@ import { AGENT_SHARE_MAX_DAYS, agentShare, listAgentLinks, revokeAgentLink, type
 import { artifactUrl, type ServiceContext } from "../service/context";
 import { ServiceError, ValidationError } from "../service/errors";
 import { KINDS, LIMITS, type Kind, type PublishInput, type UpdateInput } from "../service/types";
+import { beginWait } from "../service/listeners";
 
 export const REFERENCE_URI = "indy://reference";
 
@@ -495,12 +496,18 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
           const timeoutMs = (args.timeout_s ? Number(args.timeout_s) : 30) * 1000;
           let after = args.after !== undefined ? Number(args.after) : latestEventId(ctx, slug);
           const deadline = Date.now() + timeoutMs;
-          for (;;) {
-            const { events, lastId } = listEvents(ctx, { slug, after });
-            if (events.length) return ok(`${events.length} event(s) on "${slug}".`, { events, last_id: lastId });
-            if (Date.now() >= deadline) return ok(`No feedback on "${slug}" within the timeout.`, { events: [], last_id: lastId });
-            after = lastId;
-            await sleep(1000);
+          // The page's Send panel tells the operator an agent is listening.
+          const done = beginWait(slug);
+          try {
+            for (;;) {
+              const { events, lastId } = listEvents(ctx, { slug, after });
+              if (events.length) return ok(`${events.length} event(s) on "${slug}".`, { events, last_id: lastId });
+              if (Date.now() >= deadline) return ok(`No feedback on "${slug}" within the timeout.`, { events: [], last_id: lastId });
+              after = lastId;
+              await sleep(1000);
+            }
+          } finally {
+            done();
           }
         } catch (err) {
           return fail(err);

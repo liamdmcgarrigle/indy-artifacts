@@ -87,6 +87,22 @@ works when Indy runs on the same machine as you and the folder is one it was tol
 (`INDY_ASSET_ROOTS`). If the publish says the path is not allowed, leave the file out and say
 so; do not paste file contents into the page instead.
 
+## Stay listening
+
+A page that asks something of the operator (a checklist, a form, a plan or draft to review)
+is a conversation. Keep listening to it, so the "Send to agent" button on the page reaches you:
+
+- Always pass `agent: { name, terminal: "$ORCA_TERMINAL_HANDLE", session:
+  "$CLAUDE_CODE_SESSION_ID" }` when you publish, with whichever of those your environment has.
+  Inside Orca, the terminal handle is enough: what the operator sends is typed into your
+  session, and you do not need to wait.
+- Outside Orca, nothing arrives on its own. When you have handed the operator something to
+  do on the page and have nothing else to work on, call `artifact_wait` on it instead of
+  ending your turn, and call it again after each answer while they are still working
+  through it. The page shows them an agent is waiting.
+- While you work through your own checklist, read the page with `artifact_get` before each
+  step, so a tick, an edit or a comment from the operator changes what you do next.
+
 ## When they comment
 
 Comments do not interrupt you. They reach you in one of three ways:
