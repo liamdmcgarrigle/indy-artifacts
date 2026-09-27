@@ -338,7 +338,7 @@ describe("art-embed", () => {
     const frame = host.querySelector("iframe")!;
 
     expect(frame.getAttribute("src")).toBe("/e0?scheme=dark");
-    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
     expect(frame.getAttribute("loading")).toBe("lazy");
     expect(frame.title).toBe("mermaid");
     expect(frame.style.width).toBe("100%");

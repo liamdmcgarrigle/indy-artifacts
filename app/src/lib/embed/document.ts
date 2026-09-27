@@ -1,11 +1,13 @@
 /**
  * Builds the HTML documents served into sandboxed iframes.
  *
- * Every frame is loaded with sandbox="allow-scripts" and WITHOUT
+ * Every frame is loaded with sandbox="allow-scripts allow-forms" and WITHOUT
  * allow-same-origin, so it runs on an opaque origin: no cookies, no storage, no
  * access to the page around it, and no credentialed requests. The CSP below is
  * sent as a header and repeated as a meta tag so a same-document navigation
  * cannot shed it. connect-src 'none' means artifact code cannot call out.
+ * allow-forms only lets a form's submit event reach its script; form-action
+ * 'none' still stops a form from being sent anywhere.
  */
 
 export const EMBED_CSP = [
@@ -19,7 +21,7 @@ export const EMBED_CSP = [
   "form-action 'none'",
   "base-uri 'none'",
   "frame-ancestors 'self'",
-  "sandbox allow-scripts",
+  "sandbox allow-scripts allow-forms",
 ].join("; ");
 
 export function embedHeaders(): HeadersInit {

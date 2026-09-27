@@ -583,7 +583,7 @@ class ArtEmbed extends ArtElement {
 
     const frame = make("iframe");
     frame.src = `${base}/${id}?scheme=${encodeURIComponent(scheme)}`;
-    frame.setAttribute("sandbox", "allow-scripts");
+    frame.setAttribute("sandbox", "allow-scripts allow-forms");
     frame.setAttribute("loading", "lazy");
     frame.title = kind;
     frame.style.width = "100%";
