@@ -96,6 +96,17 @@ export function niceBins(lo: number, hi: number, wanted: number): { lo: number; 
   return { lo: start, width, n };
 }
 
+/** The Chart.js chart type each spec type draws as, where they differ. */
+const CHARTJS_TYPE: Record<string, string> = {
+  area: "line",
+  histogram: "bar",
+  waterfall: "bar",
+  funnel: "bar",
+  heatmap: "matrix",
+  box: "boxplot",
+  sankey: "sankey",
+};
+
 /** Largest radius a bubble gets, in pixels. Area, not radius, follows the value. */
 const BUBBLE_MAX = 22;
 
@@ -133,8 +144,176 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
   let datasets: Record<string, unknown>[];
   /** Per dataset and point: the words for a value label and a tooltip. */
   let valueText: (di: number, i: number) => string | null;
-  let tooltipLabel: (item: Any) => string;
+  let tooltipLabel: ((item: Any) => string) | undefined;
   let tooltipTitle: ((items: Any[]) => string) | undefined;
+
+  if (spec.type === "sankey") {
+    // Flows between named stages. Each stage keeps one color; a flow fades from its source's to its target's.
+    const style = styleOf("left");
+    const to = spec.y[0];
+    const value = spec.value ?? "value";
+    const flows = spec.data.map((row) => ({ from: String(row[spec.x]), to: String(row[to]), flow: toNumber(row[value]) }));
+    const nodes: string[] = [];
+    for (const f of flows) for (const n of [f.from, f.to]) if (!nodes.includes(n)) nodes.push(n);
+    const nodeColor = (name: string) => palette[nodes.indexOf(name) % (palette.length - 1 || 1)];
+    datasets = [
+      {
+        label: value,
+        data: flows,
+        colorFrom: (c: Any) => nodeColor(c.dataset.data[c.dataIndex]?.from),
+        colorTo: (c: Any) => nodeColor(c.dataset.data[c.dataIndex]?.to),
+        colorMode: "gradient",
+        alpha: 0.5,
+        borderWidth: 0,
+        nodeWidth: 12,
+        nodePadding: 14,
+        size: "max",
+        color: text,
+        font: { family: font, size: 11.5, weight: 500 },
+      },
+    ];
+    valueText = () => null;
+    tooltipTitle = () => "";
+    tooltipLabel = (item) => `${item.raw.from} → ${item.raw.to}: ${formatNumber(item.raw.flow, style)}`;
+    return finish([]);
+  }
+
+  if (spec.type === "heatmap") {
+    // A cell per x and y value, darker for bigger numbers.
+    const style = styleOf("left");
+    const rowKey = spec.y[0];
+    const value = spec.value ?? "value";
+    const xs: string[] = [];
+    const ys: string[] = [];
+    for (const row of spec.data) {
+      if (!xs.includes(String(row[spec.x]))) xs.push(String(row[spec.x]));
+      if (!ys.includes(String(row[rowKey]))) ys.push(String(row[rowKey]));
+    }
+    const cells = spec.data.map((row) => ({ x: String(row[spec.x]), y: String(row[rowKey]), v: toValue(row[value]) }));
+    const known = cells.map((c) => c.v).filter((v): v is number => v !== null);
+    const lo = Math.min(...known);
+    const span = Math.max(...known) - lo || 1;
+    const share = (v: number | null) => (v === null ? 0 : (v - lo) / span);
+    const color = palette[0];
+    datasets = [
+      {
+        label: value,
+        data: cells,
+        backgroundColor: (c: Any) => {
+          const v = c.dataset.data[c.dataIndex]?.v ?? null;
+          return v === null ? "transparent" : translucent(color, 0.08 + 0.92 * share(v));
+        },
+        borderColor: surface,
+        borderWidth: 1,
+        borderRadius: 3,
+        width: (c: Any) => Math.max(1, (c.chart.chartArea?.width ?? 0) / xs.length - 2),
+        height: (c: Any) => Math.max(1, (c.chart.chartArea?.height ?? 0) / ys.length - 2),
+        artShare: cells.map((c) => share(c.v)),
+      },
+    ];
+    valueText = (_di, i) => (cells[i].v === null ? null : formatNumber(cells[i].v!, style));
+    tooltipTitle = (items) => `${items[0]?.raw?.y} · ${items[0]?.raw?.x}`;
+    tooltipLabel = (item) => `${value}: ${item.raw.v === null ? "no value" : formatNumber(item.raw.v, style)}`;
+    const axis = (labels: string[], position: string) => ({
+      type: "category",
+      labels,
+      offset: true,
+      position,
+      ticks: { color: muted, font: { family: font, size: 11, weight: 500 }, padding: 4, autoSkip: false },
+      grid: { display: false },
+      border: { display: false },
+    });
+    const extra = spec.labels ? [valueLabelsPlugin({ theme, horizontal: false, stacked: false, round: false, text: valueText })] : [];
+    // Rows read top to bottom in the order the data gives them; the matrix plugin would flip them.
+    return finish(extra, { x: axis(xs, "top"), y: { ...axis(ys, "left"), reverse: false } });
+  }
+
+  if (spec.type === "funnel") {
+    // Stages as centered bars, narrowing as people drop out.
+    const key = spec.y[0];
+    const style = styleOf("left");
+    const values = spec.data.map((row) => toNumber(row[key]));
+    const first = values[0] || 1;
+    datasets = [
+      {
+        label: key,
+        data: values.map((v) => [-v / 2, v / 2]),
+        backgroundColor: values.map((_, i) => translucent(palette[0], 1 - (0.55 * i) / Math.max(1, values.length - 1))),
+        borderWidth: 0,
+        borderRadius: 4,
+        borderSkipped: false,
+        categoryPercentage: 0.9,
+        barPercentage: 0.94,
+        xAxisID: "x",
+        artOutside: true,
+      },
+    ];
+    const pct = (a: number, b: number) => formatNumber(b ? a / b : 0, { format: "percent", decimals: 0 });
+    valueText = (_di, i) => `${formatNumber(values[i], style)} · ${pct(values[i], first)}`;
+    tooltipLabel = (item) => {
+      const i = item.dataIndex;
+      const bits = [formatNumber(values[i], style), `${pct(values[i], first)} of the first stage`];
+      if (i > 0) bits.push(`${pct(values[i], values[i - 1])} of the one before`);
+      return bits.join(", ");
+    };
+    const extra = spec.labels ? [valueLabelsPlugin({ theme, horizontal: true, stacked: true, round: false, text: valueText })] : [];
+    return finish(extra, {
+      y: { ticks: { color: muted, font: { family: font, size: 11.5, weight: 500 }, autoSkip: false }, grid: { display: false }, border: { display: false } },
+      x: { display: false, min: -first / 2, max: first / 2 },
+    });
+  }
+
+  if (spec.type === "box") {
+    // Quartiles and whiskers per x value, from the raw values or the five numbers given.
+    labels = [];
+    for (const row of spec.data) if (!labels.includes(String(row[spec.x]))) labels.push(String(row[spec.x]));
+    const style = styleOf("left");
+    const keys = spec.stats ? ["box"] : spec.y;
+    datasets = keys.map((key, i) => {
+      const color = palette[i % palette.length];
+      const data = labels.map((label) => {
+        const rows = spec.data.filter((row) => String(row[spec.x]) === label);
+        if (spec.stats) {
+          const r = rows[0] ?? {};
+          return { min: toNumber(r.min), q1: toNumber(r.q1), median: toNumber(r.median), q3: toNumber(r.q3), max: toNumber(r.max) };
+        }
+        return rows.map((row) => toValue(row[key])).filter((v): v is number => v !== null);
+      });
+      return {
+        label: spec.stats ? spec.title ?? "values" : key,
+        data,
+        backgroundColor: translucent(color, 0.3),
+        borderColor: color,
+        borderWidth: 1.5,
+        medianColor: color,
+        outlierBackgroundColor: color,
+        outlierBorderColor: color,
+        outlierRadius: 2.5,
+        itemRadius: 0,
+        coef: 1.5,
+        maxBarThickness: 52,
+        categoryPercentage: 0.74,
+        barPercentage: 0.86,
+      };
+    });
+    valueText = () => null;
+    tooltipLabel = undefined;
+    const valueAxis = spec.horizontal ? "x" : "y";
+    const categoryAxis = spec.horizontal ? "y" : "x";
+    const axis = spec.axes?.left;
+    const value: Record<string, unknown> = {
+      beginAtZero: false,
+      ticks: { color: muted, font: { family: font, size: 11, weight: 500 }, padding: 8, maxTicksLimit: 6, callback: (v: unknown) => formatNumber(Number(v), style) },
+      grid: { color: border, lineWidth: 1, drawTicks: false },
+      border: { display: false },
+    };
+    if (axis?.min !== undefined) value.min = axis.min;
+    if (axis?.max !== undefined) value.max = axis.max;
+    if (axis?.title) value.title = { display: true, text: axis.title, color: muted, font: { family: font, size: 11.5, weight: 600 } };
+    const category: Record<string, unknown> = { ticks: { color: muted, font: { family: font, size: 11, weight: 500 } }, grid: { display: false }, border: { display: false } };
+    if (spec.axes?.x?.title) category.title = { display: true, text: spec.axes.x.title, color: muted, font: { family: font, size: 11.5, weight: 600 } };
+    return finish([], { [valueAxis]: value, [categoryAxis]: category });
+  }
 
   if (isRound) {
     // One ring: slices in order, the smallest folded into Other past six.
@@ -503,18 +682,22 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
 
   function finish(extra: Any[], scaleConfig?: Record<string, unknown>) {
     const valueLines = (spec.marks ?? []).some((m) => m.kind !== "band");
-    const legendShown = spec.legend !== "none" && spec.type !== "waterfall" && (isRound || datasets.filter((d) => !d.artTrend).length > 1);
+    const single = spec.type === "waterfall" || spec.type === "heatmap" || spec.type === "funnel" || spec.type === "sankey";
+    const legendShown = spec.legend !== "none" && !single && (isRound || datasets.filter((d) => !d.artTrend).length > 1);
     return {
-      type: isBubble ? "bubble" : spec.type === "area" ? "line" : spec.type === "histogram" || spec.type === "waterfall" ? "bar" : spec.type,
-      data: { labels: isScatter ? undefined : labels, datasets },
+      type: CHARTJS_TYPE[spec.type] ?? (isBubble ? "bubble" : spec.type),
+      data: { labels: isScatter || spec.type === "heatmap" || spec.type === "sankey" ? undefined : labels, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
-        indexAxis: horizontal ? "y" : "x",
+        indexAxis: horizontal || spec.type === "funnel" || (spec.type === "box" && spec.horizontal) ? "y" : "x",
         layout: { padding: { top: valueLines ? 8 : 4, right: 4 } },
-        // Along categories a tooltip lists every series at that spot; on a scatter it is one point.
-        interaction: isScatter ? { mode: "nearest", intersect: true } : { mode: "index", intersect: false },
+        // Along categories a tooltip lists every series at that spot; on a scatter, a cell or a flow it is the one under the pointer.
+        interaction:
+          isScatter || spec.type === "heatmap" || spec.type === "sankey" || spec.type === "box"
+            ? { mode: "nearest", intersect: true }
+            : { mode: "index", intersect: false },
         ...(spec.type === "doughnut" ? { cutout: "62%" } : {}),
         plugins: {
           legend: {
@@ -551,7 +734,7 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
             boxHeight: 7,
             usePointStyle: true,
             filter: (item: { datasetIndex: number }) => !datasets[item.datasetIndex]?.artTrend,
-            callbacks: { label: tooltipLabel, ...(tooltipTitle ? { title: tooltipTitle } : {}) },
+            callbacks: { ...(tooltipLabel ? { label: tooltipLabel } : {}), ...(tooltipTitle ? { title: tooltipTitle } : {}) },
           },
         },
         scales: isRound ? undefined : scaleConfig,

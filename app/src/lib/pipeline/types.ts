@@ -70,4 +70,4 @@ export interface PipelineContext {
   source?: string;
 }
 
-export const CHART_TYPES = ["bar", "line", "area", "pie", "doughnut", "scatter", "radar", "histogram", "waterfall"] as const;
+export const CHART_TYPES = ["bar", "line", "area", "pie", "doughnut", "scatter", "radar", "histogram", "waterfall", "heatmap", "box", "funnel", "sankey"] as const;

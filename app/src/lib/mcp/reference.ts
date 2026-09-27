@@ -224,7 +224,7 @@ firmer rule above it.
 ### \`\`\`\` \`\`\`chart \`\`\`\`
 
 YAML. \`type\` is \`bar\`, \`line\`, \`area\`, \`pie\`, \`doughnut\`, \`scatter\`, \`bubble\`, \`radar\`,
-\`histogram\` or \`waterfall\`. \`x\` is one key,
+\`histogram\`, \`waterfall\`, \`sankey\`, \`funnel\`, \`heatmap\` or \`box\`. \`x\` is one key,
 \`y\` is a key or a list of keys, \`data\` is a list of objects. Two or more \`y\` keys on a bar
 chart draw grouped bars side by side; add \`stacked: true\` to stack them instead. Optional:
 \`title\`, \`unit\` (added to values: \`%\` sits against the number, \`min\` after a space),
@@ -378,6 +378,38 @@ data:
 
 **Range bars.** \`range: true\` on a bar chart with two \`y\` keys draws each bar from the first to
 the second: price bands, time windows, or a simple schedule with \`horizontal: true\`.
+
+**Sankey.** \`type: sankey\` draws flows between stages: each row is one flow, with \`from\`,
+\`to\` and \`value\` keys (rename them with \`from: <key>\`, \`to: <key>\`, \`value: <key>\`). Flows
+must run one way; a loop is refused. Use it when the question is where things went: traffic
+to signups, a budget to its uses, requests through services.
+
+\`\`\`\`md
+\`\`\`chart
+type: sankey
+title: Where last month's visitors went
+format: compact
+data:
+  - { from: Search, to: Landing page, value: 42000 }
+  - { from: Social, to: Landing page, value: 18000 }
+  - { from: Landing page, to: Signup, value: 14500 }
+  - { from: Landing page, to: Left, value: 45500 }
+  - { from: Signup, to: Paid, value: 2600 }
+  - { from: Signup, to: Left, value: 11900 }
+\`\`\`
+\`\`\`\`
+
+**Funnel.** \`type: funnel\` with \`x\` as the stage and one \`y\` key as how many reached it,
+in order. Each stage shows its count and share of the first; the tooltip adds the share of
+the stage before.
+
+**Heatmap.** \`type: heatmap\`: \`x\` is the columns, \`y\` the rows (one key), and \`value\` the
+number that shades each cell. One row per cell. \`labels: true\` writes the numbers in the
+cells. Good for hour by weekday, service by day, or any two categories against one measure.
+
+**Box plot.** \`type: box\` shows the spread of values per \`x\`: give raw values (one row per
+value, \`x\` and a \`y\` key), or one row per \`x\` with \`min\`, \`q1\`, \`median\`, \`q3\` and \`max\`
+already worked out. Takes \`horizontal: true\` and \`axes\` titles.
 
 **Counter sparklines.** A counter line in \`:::kpis\` takes \`trend="3,5,4,8"\`, oldest first, and
 draws it as a small line in the counter's tone: \`- Signups: 412 {tone=good trend="310,344,380,412"}\`.

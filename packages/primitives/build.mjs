@@ -1,15 +1,20 @@
 /**
  * Build the primitives bundle.
  *
- *   src/index.ts    -> dist/primitives.js   (esm, es2022, unminified)
+ *   src/index.ts    -> dist/primitives.js   (esm, es2022, minified)
+ *                   -> dist/chunks/*.js     (loaded on first use)
  *   src/*.css       -> dist/primitives.css  (concatenated in order)
  *
- * chart.js is bundled in, because this file is served raw to the browser and to
- * sandbox frames with no import map, where a bare "chart.js/auto" specifier
- * would not resolve and charts would silently fail to draw.
+ * chart.js and its chart-type plugins are bundled, because these files are
+ * served raw to the browser and to sandbox frames with no import map, where a
+ * bare "chart.js/auto" specifier would not resolve and charts would silently
+ * fail to draw. They are split into chunks that primitives.js imports by
+ * relative path when a page first draws a chart, so a page without one never
+ * downloads Chart.js, and a page without a sankey never downloads the sankey.
+ * Chunk names carry a content hash, so a browser's copy is never stale.
  */
 import { build } from "esbuild";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,11 +23,15 @@ const dist = resolve(here, "dist");
 
 const CSS_SOURCES = ["src/primitives.css"];
 
+await rm(resolve(dist, "chunks"), { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 
 const result = await build({
-  entryPoints: [resolve(here, "src/index.ts")],
-  outfile: resolve(dist, "primitives.js"),
+  entryPoints: { primitives: resolve(here, "src/index.ts") },
+  outdir: dist,
+  entryNames: "[name]",
+  chunkNames: "chunks/[name]-[hash]",
+  splitting: true,
   bundle: true,
   format: "esm",
   target: "es2022",
@@ -40,5 +49,8 @@ for (const rel of CSS_SOURCES) {
 }
 await writeFile(resolve(dist, "primitives.css"), `${parts.join("\n")}\n`);
 
-const js = result.metafile.outputs[Object.keys(result.metafile.outputs)[0]];
-console.log(`primitives: dist/primitives.js (${js.bytes} bytes), dist/primitives.css`);
+const outputs = Object.entries(result.metafile.outputs);
+const entry = outputs.find(([path]) => path.endsWith("primitives.js"))?.[1];
+const chunks = outputs.filter(([path]) => path.includes("/chunks/"));
+const chunkBytes = chunks.reduce((sum, [, out]) => sum + out.bytes, 0);
+console.log(`primitives: dist/primitives.js (${entry?.bytes} bytes), ${chunks.length} chunks (${chunkBytes} bytes), dist/primitives.css`);

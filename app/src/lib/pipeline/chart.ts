@@ -14,6 +14,9 @@ const TYPE_ALIASES: Record<string, { type: ChartSpec["type"]; horizontal?: boole
   column: { type: "bar" },
   donut: { type: "doughnut" },
   bubble: { type: "scatter", bubble: true },
+  boxplot: { type: "box" },
+  "box-plot": { type: "box" },
+  matrix: { type: "heatmap" },
 };
 
 const SIDE_ALIASES: Record<string, "left" | "right"> = { left: "left", y: "left", y1: "left", right: "right", y2: "right" };
@@ -25,7 +28,7 @@ const SERIES_TONES = new Set(["good", "warn", "bad", "info", "muted"]);
 const KEYS = [
   "type", "title", "x", "y", "data", "stacked", "unit", "height", "orientation", "horizontal", "series", "axes",
   "marks", "format", "currency", "decimals", "labels", "legend", "sort", "curve", "group", "label", "size", "line",
-  "trend", "center", "bins", "range",
+  "trend", "center", "bins", "range", "value", "from", "to",
 ];
 
 /** Keys agents reach for that mean something Indy spells differently. */
@@ -162,6 +165,126 @@ function someLabels(labels: string[]): string {
   return labels.length > 8 ? `${shown} and ${labels.length - 8} more` : shown;
 }
 
+function horizontalOf(o: Record<string, unknown>, alias?: { horizontal?: boolean }): boolean {
+  const orientation = oneOf(o.orientation, ["horizontal", "vertical"] as const, "chart orientation");
+  return alias?.horizontal === true || o.horizontal === true || orientation === "horizontal";
+}
+
+/** What each laid-out type reads, besides the keys every chart shares. */
+const LAID_OUT_KEYS: Record<string, string[]> = {
+  heatmap: ["x", "y", "value", "labels"],
+  box: ["x", "y", "horizontal", "orientation", "axes", "legend"],
+  funnel: ["x", "y", "labels"],
+  sankey: ["from", "to", "value"],
+};
+const SHARED_KEYS = ["type", "title", "data", "height", "unit", "format", "currency", "decimals"];
+
+function numberIn(data: Record<string, unknown>[], key: string, what: string): void {
+  const bad = data.find((row) => row[key] !== undefined && row[key] !== null && row[key] !== "" && !Number.isFinite(Number(row[key])));
+  if (bad) throw new BlockError(`${what} needs numbers in ${key}, got "${String(bad[key])}"`);
+}
+
+/**
+ * Heatmaps, box plots, funnels and sankeys lay themselves out: they read their
+ * own keys and take none of the axis, series or mark options.
+ */
+function parseLaidOut(
+  type: "heatmap" | "box" | "funnel" | "sankey",
+  o: Record<string, unknown>,
+  data: Record<string, unknown>[],
+  keys: string[],
+  horizontal: boolean,
+): ChartSpec {
+  const allowed = [...SHARED_KEYS, ...LAID_OUT_KEYS[type]];
+  const refused = Object.keys(o).filter((k) => KEYS.includes(k) && !allowed.includes(k));
+  if (refused.length) throw new BlockError(`${refused.join(", ")} ${refused.length === 1 ? "does" : "do"} not apply to ${type} charts, which read ${LAID_OUT_KEYS[type].join(", ")}`);
+  const need = (key: string, what: string) => {
+    if (!keys.includes(key)) throw new BlockError(`${what} "${key}" is not a key in the data. The rows have ${keys.join(", ")}`);
+    return key;
+  };
+  const style = numberStyle(o, "chart");
+  const title = optionalText(o.title);
+  const rowsDefault = (rows: number) => Math.min(900, Math.max(160, rows * 30 + 80));
+  const heightOf = (fallback: number) => {
+    const h = Number(o.height ?? fallback);
+    return Number.isFinite(h) ? Math.min(Math.max(h, 80), 900) : fallback;
+  };
+  const base = { title, data, stacked: false, ...style };
+
+  if (type === "sankey") {
+    const from = need(String(o.from ?? "from"), "sankey from");
+    const to = need(String(o.to ?? "to"), "sankey to");
+    const value = need(String(o.value ?? (keys.includes("value") ? "value" : keys.includes("flow") ? "flow" : "value")), "sankey value");
+    numberIn(data, value, "a sankey");
+    for (const [i, row] of data.entries()) {
+      if (String(row[from] ?? "") === "" || String(row[to] ?? "") === "") throw new BlockError(`sankey flow ${i + 1} needs both ${from} and ${to}`);
+      if (String(row[from]) === String(row[to])) throw new BlockError(`sankey flow ${i + 1} goes from "${String(row[from])}" to itself`);
+    }
+    // Flows run one way; a loop has no left-to-right layout.
+    const next = new Map<string, string[]>();
+    for (const row of data) next.set(String(row[from]), [...(next.get(String(row[from])) ?? []), String(row[to])]);
+    const state = new Map<string, "open" | "done">();
+    const visit = (node: string, path: string[]): void => {
+      if (state.get(node) === "done") return;
+      if (state.get(node) === "open") throw new BlockError(`sankey flows loop back: ${[...path.slice(path.indexOf(node)), node].join(" → ")}. Flows must run one way`);
+      state.set(node, "open");
+      for (const n of next.get(node) ?? []) visit(n, [...path, node]);
+      state.set(node, "done");
+    };
+    for (const node of next.keys()) visit(node, []);
+    return { ...base, type, x: from, y: [to], value, height: heightOf(360) };
+  }
+
+  const x = need(String(o.x ?? keys[0]), "chart x");
+
+  if (type === "heatmap") {
+    const rest = keys.filter((k) => k !== x);
+    const y = need(String(o.y ?? rest[0] ?? ""), "chart y");
+    if (Array.isArray(o.y)) throw new BlockError("a heatmap takes one y key: the rows. The number in each cell comes from value");
+    const value = need(String(o.value ?? rest.find((k) => k !== y) ?? ""), "chart value");
+    numberIn(data, value, "a heatmap");
+    const rows = new Set(data.map((row) => String(row[y] ?? ""))).size;
+    const spec: ChartSpec = { ...base, type, x, y: [y], value, height: heightOf(rowsDefault(rows)) };
+    if (o.labels === true) spec.labels = true;
+    return spec;
+  }
+
+  if (type === "funnel") {
+    const y = Array.isArray(o.y) ? o.y.map(String) : [String(o.y ?? keys.find((k) => k !== x) ?? "")];
+    if (y.length !== 1) throw new BlockError("a funnel takes one y key: how many reached each stage");
+    need(y[0], "chart y");
+    numberIn(data, y[0], "a funnel");
+    const spec: ChartSpec = { ...base, type, x, y, height: heightOf(rowsDefault(data.length)) };
+    if (o.labels !== false) spec.labels = true;
+    return spec;
+  }
+
+  // Box plot: raw values per x value, or the five numbers already worked out.
+  const five = ["min", "q1", "median", "q3", "max"];
+  const stats = o.y === undefined && five.every((k) => keys.includes(k));
+  const y = stats ? five : Array.isArray(o.y) ? o.y.map(String) : o.y !== undefined ? [String(o.y)] : keys.filter((k) => k !== x);
+  if (!y.length) throw new BlockError("a box plot needs a y key with the values, or rows with min, q1, median, q3 and max");
+  for (const k of y) {
+    need(k, "chart y");
+    numberIn(data, k, "a box plot");
+  }
+  const spec: ChartSpec = { ...base, type, x, y, height: heightOf(horizontal ? rowsDefault(new Set(data.map((r) => String(r[x]))).size) + 20 : 300) };
+  if (stats) spec.stats = true;
+  if (horizontal) spec.horizontal = true;
+  if (o.axes !== undefined) {
+    const axes: ChartSpec["axes"] = {};
+    for (const [name, raw] of Object.entries(mapping(o.axes, "chart axes"))) {
+      const side = name.toLowerCase() === "x" ? "x" : SIDE_ALIASES[name.toLowerCase()] === "left" ? "left" : undefined;
+      if (!side) throw new BlockError(`a box plot's axes are x and left, got "${name}"`);
+      axes[side] = parseAxis(raw, `chart axes.${name}`, () => {});
+    }
+    spec.axes = axes;
+  }
+  const legend = oneOf(o.legend, ["top", "bottom", "none"] as const, "chart legend");
+  if (legend) spec.legend = legend;
+  return spec;
+}
+
 /**
  * Read a chart block. Anything that stops it drawing throws; anything it can
  * draw around (a key it does not read) goes to `warn`.
@@ -181,7 +304,7 @@ export function parseChartBlock(body: string, warn: (message: string) => void = 
   const alias = TYPE_ALIASES[written];
   const type = alias?.type ?? written;
   if (!(CHART_TYPES as readonly string[]).includes(type))
-    throw new BlockError(`chart type must be one of ${[...CHART_TYPES, "bubble"].join(", ")}, got "${written || "nothing"}"${written.includes("sankey") || ["heatmap", "boxplot", "box", "funnel", "matrix"].includes(written) ? ". That type is coming; draw it another way for now" : ""}`);
+    throw new BlockError(`chart type must be one of ${[...CHART_TYPES, "bubble"].join(", ")}, got "${written || "nothing"}"`);
 
   if (!Array.isArray(o.data) || o.data.length === 0) throw new BlockError("chart needs a non-empty data list");
   // A histogram can take its values as a plain list.
@@ -194,6 +317,8 @@ export function parseChartBlock(body: string, warn: (message: string) => void = 
 
   // Every key any row has: a series may start late or stop early.
   const keys = [...new Set(data.flatMap((row) => Object.keys(row)))];
+  if (type === "heatmap" || type === "box" || type === "funnel" || type === "sankey")
+    return parseLaidOut(type, o, data, keys, horizontalOf(o, alias));
   const x = String(o.x ?? keys[0] ?? "");
   if (!x) throw new BlockError("chart needs an x key");
 

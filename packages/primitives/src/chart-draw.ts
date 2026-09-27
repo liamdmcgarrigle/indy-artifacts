@@ -238,11 +238,29 @@ export function valueLabelsPlugin(opts: {
             ctx.fillText(label, el.x + Math.cos(mid) * r, el.y + Math.sin(mid) * r);
             return;
           }
+          if (kind === "matrix") {
+            // Inside the cell, light on dark cells and dark on light ones.
+            if (el.width < w + 6 || el.height < 14) return;
+            const shade = dataset.artShare?.[i] ?? 0;
+            ctx.fillStyle = shade > 0.55 ? theme.surface : theme.text;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(label, el.x + el.width / 2, el.y + el.height / 2);
+            return;
+          }
           if (kind === "bar") {
             const size = horizontal ? Math.abs(el.x - el.base) : Math.abs(el.base - el.y);
             if (stacked) {
               // Inside the segment, when the segment is big enough to hold it.
-              if (size < (horizontal ? w + 8 : 16)) return;
+              if (size < (horizontal ? w + 8 : 16)) {
+                // A funnel's narrow stages say their number beside the bar instead.
+                if (!dataset.artOutside || !horizontal) return;
+                ctx.fillStyle = theme.text;
+                ctx.textAlign = "left";
+                ctx.textBaseline = "middle";
+                ctx.fillText(label, Math.max(el.x, el.base) + 6, el.y);
+                return;
+              }
               ctx.fillStyle = theme.surface;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";

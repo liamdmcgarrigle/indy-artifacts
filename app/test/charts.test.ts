@@ -502,3 +502,57 @@ describe("counter sparklines", () => {
     expect(r.html).toContain('<art-kpi label="Churn" value="2%">');
   });
 });
+
+describe("heatmap, box plot, funnel and sankey", () => {
+  it("lays a heatmap out as cells, darker for bigger numbers", () => {
+    const spec = chart("type: heatmap", "x: hour", "y: day", "value: jobs", "labels: true", "data: [{ hour: 9, day: Mon, jobs: 10 }, { hour: 10, day: Mon, jobs: 30 }, { hour: 9, day: Tue, jobs: 20 }]");
+    expect(spec).toMatchObject({ type: "heatmap", x: "hour", y: ["day"], value: "jobs", labels: true, height: 160 });
+    const cfg = chartConfig(spec, theme);
+    expect(cfg.type).toBe("matrix");
+    expect(cfg.data.datasets[0].data[1]).toEqual({ x: "10", y: "Mon", v: 30 });
+    expect(cfg.data.datasets[0].artShare).toEqual([0, 1, 0.5]);
+    expect(cfg.options.scales.x.labels).toEqual(["9", "10"]);
+    expect(cfg.options.scales.y.labels).toEqual(["Mon", "Tue"]);
+    expect(cfg.options.plugins.tooltip.callbacks.title([{ raw: { x: "10", y: "Mon" } }])).toBe("Mon · 10");
+    expect(fails("type: heatmap", "x: hour", "y: day", "value: jobs", "data: [{ hour: 9, day: Mon, jobs: lots }]")).toContain("needs numbers in jobs");
+    expect(fails("type: heatmap", "x: hour", "y: day", "marks: [{ y: 1 }]", "data: [{ hour: 9, day: Mon, jobs: 1 }]")).toContain("marks does not apply to heatmap charts");
+  });
+
+  it("draws a box plot from raw values or from the five numbers", () => {
+    const raw = chartConfig(chart("type: boxplot", "x: region", "y: ms", "data: [{ region: us, ms: 10 }, { region: us, ms: 14 }, { region: eu, ms: 22 }]"), theme);
+    expect(raw.type).toBe("boxplot");
+    expect(raw.data.labels).toEqual(["us", "eu"]);
+    expect(raw.data.datasets[0].data).toEqual([[10, 14], [22]]);
+    expect(raw.options.plugins.tooltip.callbacks.label).toBeUndefined();
+
+    const five = chart("type: box", "horizontal: true", "x: service", "data: [{ service: api, min: 20, q1: 40, median: 55, q3: 80, max: 190 }]");
+    expect(five).toMatchObject({ stats: true, horizontal: true, y: ["min", "q1", "median", "q3", "max"] });
+    const cfg = chartConfig(five, theme);
+    expect(cfg.data.datasets[0].data).toEqual([{ min: 20, q1: 40, median: 55, q3: 80, max: 190 }]);
+    expect(cfg.options.indexAxis).toBe("y");
+  });
+
+  it("centers funnel stages and gives each its share of the first", () => {
+    const spec = chart("type: funnel", "x: stage", "y: people", "data: [{ stage: Visit, people: 1000 }, { stage: Signup, people: 400 }, { stage: Paid, people: 100 }]");
+    expect(spec.labels).toBe(true);
+    const cfg = chartConfig(spec, theme);
+    expect(cfg.data.datasets[0].data).toEqual([[-500, 500], [-200, 200], [-50, 50]]);
+    expect(cfg.options.indexAxis).toBe("y");
+    expect(cfg.options.plugins.tooltip.callbacks.label({ dataIndex: 2 })).toBe("100, 10% of the first stage, 25% of the one before");
+    expect(fails("type: funnel", "x: stage", "y: [a, b]", "data: [{ stage: A, a: 1, b: 2 }]")).toContain("one y key");
+  });
+
+  it("draws sankey flows and refuses ones that loop", () => {
+    const spec = chart("type: sankey", "data: [{ from: Visit, to: Signup, value: 120 }, { from: Signup, to: Paid, value: 30 }, { from: Visit, to: Left, value: 880 }]");
+    expect(spec).toMatchObject({ type: "sankey", x: "from", y: ["to"], value: "value", height: 360 });
+    const cfg = chartConfig(spec, theme);
+    expect(cfg.type).toBe("sankey");
+    expect(cfg.data.datasets[0].data[0]).toEqual({ from: "Visit", to: "Signup", flow: 120 });
+    expect(cfg.options.plugins.tooltip.callbacks.label({ raw: { from: "Visit", to: "Left", flow: 880 } })).toBe("Visit → Left: 880");
+    expect(cfg.options.plugins.legend.display).toBe(false);
+    expect(chart("type: sankey", "from: source", "to: target", "value: users", "data: [{ source: A, target: B, users: 3 }]")).toMatchObject({ x: "source", y: ["target"], value: "users" });
+    expect(fails("type: sankey", "data: [{ from: A, to: B, value: 1 }, { from: B, to: C, value: 1 }, { from: C, to: A, value: 1 }]")).toContain("loop back: A → B → C → A");
+    expect(fails("type: sankey", "data: [{ from: A, to: A, value: 1 }]")).toContain("to itself");
+    expect(fails("type: sankey", "stacked: true", "data: [{ from: A, to: B, value: 1 }]")).toContain("stacked does not apply to sankey");
+  });
+});

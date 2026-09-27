@@ -4,7 +4,7 @@
  * (app/src/lib/pipeline/chart.ts) is the only thing that writes one.
  */
 
-export type ChartType = "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "radar" | "histogram" | "waterfall";
+export type ChartType = "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "radar" | "histogram" | "waterfall" | "heatmap" | "box" | "funnel" | "sankey";
 
 /** How numbers read: 1,234 / 1.2k / 12% (from 0.12) / $1,234. */
 export type ChartFormat = "number" | "compact" | "percent" | "currency";
@@ -83,4 +83,8 @@ export interface ChartSpec extends NumberStyle {
   bins?: number;
   /** Bar: each bar runs from its first y key to its second. */
   range?: boolean;
+  /** Heatmap: the key whose number colors each cell. Sankey: the key holding each flow's size. */
+  value?: string;
+  /** Box plot: each row already holds min, q1, median, q3 and max, rather than raw values. */
+  stats?: boolean;
 }

@@ -462,6 +462,23 @@ class ArtTable extends ArtElement {
 
 /* ------------------------------------------------------------------- chart */
 
+/**
+ * The chart types Chart.js does not draw itself come from plugins, each a
+ * chunk of its own that loads the first time a page draws that type.
+ */
+async function registerChartType(Chart: { register: (...items: unknown[]) => void }, type: string): Promise<void> {
+  if (type === "heatmap") {
+    const m = await import("chartjs-chart-matrix");
+    Chart.register(m.MatrixController, m.MatrixElement);
+  } else if (type === "box") {
+    const b = await import("@sgratzl/chartjs-chart-boxplot");
+    Chart.register(b.BoxPlotController, b.BoxAndWiskers);
+  } else if (type === "sankey") {
+    const k = await import("chartjs-chart-sankey");
+    Chart.register(k.SankeyController, k.Flow);
+  }
+}
+
 class ArtChart extends ArtElement {
   #spec: ChartSpec | null = null;
   #chart: { destroy?: () => void } | null = null;
@@ -567,6 +584,7 @@ class ArtChart extends ArtElement {
         },
       };
       const { default: Chart, layouts } = await import("chart.js/auto");
+      await registerChartType(Chart, spec.type);
       const config = chartConfig(spec, theme, layouts);
       if (!canvas.isConnected) return;
       this.#chart = new Chart(canvas, config as never) as unknown as { destroy?: () => void };
