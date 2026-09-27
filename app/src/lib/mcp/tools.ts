@@ -98,7 +98,7 @@ function summarise(result: {
   if (result.buildStatus === "error") lines.push(`Build FAILED; the page shows the error. Fix and update:\n${result.buildLog}`);
   else if (result.buildStatus === "ok" && result.buildLog) lines.push(`Build warnings:\n${result.buildLog}`);
   if (result.warnings.length)
-    lines.push(`Block warnings:\n${result.warnings.map((w) => `  line ${w.line}: ${w.message}`).join("\n")}`);
+    lines.push(`The page published, but these parts show wrong. Fix them with artifact_update:\n${result.warnings.map((w) => `  line ${w.line}: ${w.message}`).join("\n")}`);
   const dropped = result.droppedTicks ?? [];
   if (dropped.length)
     lines.push(

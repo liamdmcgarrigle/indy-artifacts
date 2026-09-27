@@ -1,6 +1,6 @@
-import { visit } from "unist-util-visit";
+import { SKIP, visit } from "unist-util-visit";
 import { toString as mdToString } from "mdast-util-to-string";
-import { badgeClass, BlockError, isBadge, parseChartBlock, parseKpiLine, parseTableBlock } from "./parse";
+import { badgeClass, BlockError, isBadge, parseChartBlock, parseKpiLine, parseTableBlock, STRAY_OPTIONS } from "./parse";
 import type { PipelineContext } from "./types";
 import { parseStoryBlock, storyWarnings, StoryBlockError } from "../storybook/spec";
 
@@ -28,11 +28,18 @@ function errorElement(node: AnyNode, message: string) {
   setElement(node, "art-error", {}, [{ type: "text", value: message }]);
 }
 
-function kpiChildren(node: AnyNode) {
+/** What an agent is told when `{key=value}` would show on the page as typed. */
+function strayOptions(found: string, where: string): string {
+  return `"${found}" shows as text ${where}. Options only work straight after a directive, with no space: :::card{title="..."}, ::field{...}, :badge[text]{tone=good}, or on a counter line`;
+}
+
+function kpiChildren(node: AnyNode, ctx: PipelineContext) {
   const items: AnyNode[] = [];
   visit(node, "listItem", (item: AnyNode) => {
     const parsed = parseKpiLine(mdToString(item));
     if (!parsed) return;
+    const stray = `${parsed.label} ${parsed.value}`.match(STRAY_OPTIONS);
+    if (stray) warn(ctx, item, `${strayOptions(stray[0], "in this counter")}. A counter takes tone and note only: - Label: value (delta) {tone=good note="..."}`);
     items.push({
       type: "element",
       tagName: "art-kpi",
@@ -74,7 +81,7 @@ function handleDirective(node: AnyNode, ctx: PipelineContext) {
       setElement(node, "art-callout", { tone: attrs.tone || "info", title: attrs.title });
       return;
     case "kpis":
-      setElement(node, "art-kpis", {}, kpiChildren(node));
+      setElement(node, "art-kpis", {}, kpiChildren(node, ctx));
       return;
     case "columns":
       setElement(node, "art-columns", {
@@ -223,6 +230,11 @@ export function artifactsDirectives(ctx: PipelineContext) {
       ) {
         checkParent(node, parent, ctx);
         handleDirective(node, ctx);
+        // A counter list is read whole, and warns about its own lines.
+        if (node.name === "kpis") return SKIP;
+      } else if (node.type === "text") {
+        const stray = String(node.value ?? "").match(STRAY_OPTIONS);
+        if (stray) warn(ctx, node, strayOptions(stray[0], "on the page"));
       } else if (node.type === "code") {
         handleCode(node, ctx, null);
       }

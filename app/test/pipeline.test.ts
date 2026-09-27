@@ -368,6 +368,25 @@ describe("dossier blocks", () => {
     expect(r.html).toContain('<art-kpi label="Rooms" value="14" note="reopened">');
   });
 
+  it("reads a counter's options when they come in separate groups", () => {
+    const r = renderMarkdown(':::kpis\n- Output tokens: 3.1x fewer {tone=good} {note="7,579 vs 23,123"}\n- Cost: -52% {note="$0.82 vs $1.72"} (-0.90) {tone=good}\n:::');
+    expect(r.html).toContain('<art-kpi label="Output tokens" value="3.1x fewer" tone="good" note="7,579 vs 23,123">');
+    expect(r.html).toContain('<art-kpi label="Cost" value="-52%" tone="good" delta="-0.90" note="$0.82 vs $1.72">');
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("warns when options would show on the page as text", () => {
+    const r = renderMarkdown(["intro", "", "Shipped :badge[v2] {tone=good} today.", "", ":::kpis", "- Size: 4 {size=big}", ":::"].join("\n"));
+    expect(r.warnings.map((w) => w.line)).toEqual([3, 6]);
+    expect(r.warnings[0].message).toContain('"{tone=good}" shows as text on the page');
+    expect(r.warnings[1].message).toContain('"{size=big}" shows as text in this counter');
+  });
+
+  it("leaves braces in code and ordinary prose alone", () => {
+    const r = renderMarkdown(["Set `{a=1}` in config.", "", "A set {1, 2} and a {placeholder}.", "", "```js", "const o = {a=1}", "```"].join("\n"));
+    expect(r.warnings).toEqual([]);
+  });
+
   it("keeps a markdown table's column alignment for the stylesheet", () => {
     const r = renderMarkdown("| Item | Cost |\n|:--|--:|\n| Roof | 1,200 |\n| **Total** | **1,200** |\n");
     expect(r.html).toContain('<td align="right">1,200</td>');

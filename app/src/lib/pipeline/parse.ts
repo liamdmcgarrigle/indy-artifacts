@@ -156,8 +156,11 @@ export function badgeClass(tone: string | undefined | null): string {
   return `art-badge art-badge--${knownTone(tone) ?? "neutral"}`;
 }
 
-/** The `{tone=bad note="..."}` group on a counter line. */
-const KPI_OPTIONS = /\{\s*((?:tone|note)\s*=[^{}]*)\}/i;
+/** A `{tone=bad note="..."}` group on a counter line. Agents often write two, one per option. */
+const KPI_OPTIONS = /\{\s*((?:tone|note)\s*=[^{}]*)\}/gi;
+
+/** Text that looks like a directive's `{key=value}` options: on a page it shows as typed. */
+export const STRAY_OPTIONS = /\{\s*[a-z][\w-]*\s*=[^{}\n]*\}/i;
 
 export function parseKpiLine(text: string): KpiItem | null {
   const raw = text.trim();
@@ -167,16 +170,16 @@ export function parseKpiLine(text: string): KpiItem | null {
   let delta: string | undefined;
   let note: string | undefined;
 
-  const options = rest.match(KPI_OPTIONS);
-  if (options) {
+  for (const options of raw.matchAll(KPI_OPTIONS)) {
     for (const m of options[1].matchAll(/([a-z]+)\s*=\s*(?:"([^"]*)"|([^\s"]+))/gi)) {
       const key = m[1].toLowerCase();
       const value = (m[2] ?? m[3] ?? "").trim();
       if (key === "tone") tone = knownTone(value);
       else if (key === "note" && value) note = value;
     }
-    rest = rest.replace(options[0], "").trim();
+    rest = rest.replace(options[0], " ");
   }
+  rest = rest.replace(/\s+/g, " ").trim();
   const deltaMatch = rest.match(/\(([^()]*)\)\s*$/);
   if (deltaMatch) {
     delta = deltaMatch[1].trim();
