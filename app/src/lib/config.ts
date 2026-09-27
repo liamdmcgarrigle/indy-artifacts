@@ -31,6 +31,8 @@ export interface Config {
   themesDir: string;
   /** Extra node_modules directories a compiled artifact may import from. */
   buildModules: string[];
+  /** Indy's shadcn components (components/ui, lib/utils), which artifacts import as "@/...". */
+  artifactKit: string | null;
   /** Scratch space for compiling artifacts. */
   tmpDir: string | null;
 }
@@ -79,6 +81,7 @@ export function readConfig(): Config {
       .split(":")
       .map((p) => p.trim())
       .filter(Boolean),
+    artifactKit: env("INDY_ARTIFACT_KIT") ?? resolve(process.cwd(), "src"),
     tmpDir: env("INDY_TMP", "ARTIFACTS_TMP") ?? null,
   };
 }

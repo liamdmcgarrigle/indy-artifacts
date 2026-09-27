@@ -11,7 +11,12 @@
 # The extras stage exists because Next's output tracing keeps only the files the
 # server itself imports. An artifact's bundle needs whole packages: react-dom's
 # traced copy has no client.js, and chart.js, d3 and lucide-react are not traced
-# at all. esbuild resolves them at publish time from INDY_BUILD_MODULES.
+# at all. esbuild resolves them at publish time from INDY_BUILD_MODULES. Tailwind
+# is there too, with its native scanner, for artifacts that import tailwindcss.
+#
+# /artifact-kit holds the shadcn components artifacts import as "@/components/ui".
+# It sits away from /app so that nothing under it can find the app's own copy
+# of React: an artifact must bundle exactly one.
 
 FROM node:24-bookworm-slim AS deps
 WORKDIR /src
@@ -66,7 +71,8 @@ ENV NODE_ENV=production \
     INDY_DATA=/data \
     INDY_TMP=/data/tmp \
     INDY_THEMES=/app/themes \
-    INDY_BUILD_MODULES=/artifact-modules:/app/node_modules \
+    INDY_BUILD_MODULES=/artifact-modules/node_modules:/app/node_modules \
+    INDY_ARTIFACT_KIT=/artifact-kit \
     INDY_APP_ENTRY=/app/app/server.js \
     INDY_COLLAB_ENTRY=/app/collab/server.mjs
 
@@ -76,7 +82,9 @@ COPY --from=build /src/app/.next/standalone ./
 COPY --from=build /src/app/.next/static ./app/.next/static
 COPY --from=build /src/app/public ./app/public
 COPY --from=build /src/themes ./themes
-COPY --from=extras /extras/node_modules /artifact-modules
+COPY --from=extras /extras/node_modules /artifact-modules/node_modules
+COPY --from=build /src/app/src/components/ui /artifact-kit/components/ui
+COPY --from=build /src/app/src/lib/utils.ts /artifact-kit/lib/utils.ts
 COPY --from=collab /collab ./collab
 COPY start.mjs proxy.mjs ./
 
