@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { requireArtifact, requireVersion } from "@/lib/service/artifacts";
 import { renderVersion } from "@/lib/service/render";
 import { checkCapability } from "@/lib/auth/accounts";
+import { storyLocation, StoryUnavailable } from "@/lib/storybook/serve";
+import { StoryBlockError } from "@/lib/storybook/spec";
 import {
   bundleDocument,
   embedHeaders,
@@ -62,6 +64,15 @@ export async function GET(request: Request, { params }: Params) {
         status: 404,
         headers: embedHeaders(),
       });
+    }
+    if (embed.kind === "story") {
+      try {
+        const location = storyLocation(ctx, artifact, v, embed.content, scheme);
+        return new Response(null, { status: 302, headers: { location, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+      } catch (err) {
+        if (!(err instanceof StoryUnavailable || err instanceof StoryBlockError)) throw err;
+        return new Response(errorDocument(err.message, options), { headers: embedHeaders() });
+      }
     }
     const document =
       embed.kind === "mermaid"

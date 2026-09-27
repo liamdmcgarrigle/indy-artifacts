@@ -52,12 +52,14 @@ export function ShareDialog({
   slug,
   title,
   versionNumber,
+  storybooks = [],
   onClose,
   onMode,
 }: {
   slug: string;
   title: string;
   versionNumber: number;
+  storybooks?: string[];
   onClose: () => void;
   /** Told whenever who-can-open changes, so the header can show it. */
   onMode?: (mode: Mode) => void;
@@ -180,6 +182,12 @@ export function ShareDialog({
           </button>
         </div>
         {state?.mode === "private" ? <p className="share__note">This link only works for you. Pick who else can open it above.</p> : null}
+        {storybooks.length ? (
+          <p className="share__note">
+            This page shows stories from the {storybooks.join(" and ")} Storybook{storybooks.length > 1 ? "s" : ""}. Anyone who can open it can also load the other stories in
+            {storybooks.length > 1 ? " those builds" : " that build"}.
+          </p>
+        ) : null}
 
         {shared ? (
           <div className="share__options">

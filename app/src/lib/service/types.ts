@@ -114,6 +114,8 @@ export interface Version {
   warnings: { line: number; message: string }[];
   contentHash: string;
   createdAt: string;
+  /** Storybook name (lowercase) to the build it was at when this version was written. */
+  storybooks: Record<string, string>;
 }
 
 export interface Comment {

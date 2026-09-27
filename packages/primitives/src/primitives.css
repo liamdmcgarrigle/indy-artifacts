@@ -831,6 +831,121 @@ art-embed iframe {
   border: 0;
 }
 
+/* A story at a fixed size sits centred on the page's own surface, scaled to
+   fit the column, and to leave some of the screen free on a phone. */
+art-embed.art-embed--story {
+  position: relative;
+  background: var(--art-surface-2);
+  padding: 12px 0;
+}
+
+/* A tall story, clipped: the bottom fades into the page, over a button that
+   shows the rest. Opened, the button sits under the story instead. */
+art-embed.art-embed--clipped::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 96px;
+  background: linear-gradient(to bottom, transparent, var(--art-surface-2));
+  pointer-events: none;
+}
+
+art-embed.art-embed--open::after {
+  display: none;
+}
+
+.art-embed__more {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  padding: 7px 16px;
+  border: 1px solid var(--art-border-strong);
+  border-radius: 999px;
+  background: var(--art-surface);
+  color: var(--art-text);
+  font-family: var(--art-font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--art-shadow-md);
+}
+
+.art-embed__more:hover {
+  background: var(--art-surface-3);
+}
+
+.art-embed__more:focus-visible {
+  outline: 2px solid var(--art-focus);
+  outline-offset: 2px;
+}
+
+art-embed.art-embed--open {
+  padding-bottom: 56px;
+}
+
+.art-embed__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--art-text-muted);
+  font-family: var(--art-font-sans);
+  font-size: 13px;
+  pointer-events: none;
+  animation: art-embed-pulse 1.4s ease-in-out infinite;
+}
+
+art-embed.is-loaded .art-embed__loading {
+  display: none;
+}
+
+@keyframes art-embed-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .art-embed__loading {
+    animation: none;
+  }
+}
+
+.art-embed__box {
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+/* A story at a device size is shown as the device would be: on its own,
+   centred, with rounded corners, a hairline edge and a soft shadow, rather
+   than inside a box that spans the column. */
+art-embed.art-embed--device {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  padding: 6px 10px 10px;
+}
+
+art-embed.art-embed--device .art-embed__box {
+  border-radius: 22px;
+  background: var(--art-surface);
+  box-shadow:
+    0 0 0 1px var(--art-border),
+    var(--art-shadow-lg);
+}
+
+[data-scheme="dark"] art-embed.art-embed--device .art-embed__box {
+  box-shadow:
+    0 0 0 1px var(--art-border-strong),
+    var(--art-shadow-lg);
+}
+
 /* Error ------------------------------------------------------------------- */
 
 art-error {
@@ -853,6 +968,13 @@ art-error {
 @media (max-width: 640px) {
   art-columns {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* compact: kept side by side on a phone, two across at most, for things
+     meant to be compared at a glance, like screens. */
+  art-columns[compact] {
+    grid-template-columns: repeat(var(--art-cols-narrow, 2), minmax(0, 1fr));
+    gap: 8px;
   }
 
   art-kpis {

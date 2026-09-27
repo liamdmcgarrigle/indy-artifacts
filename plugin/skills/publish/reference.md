@@ -101,7 +101,8 @@ with a delta in parentheses.
 
 ### `:::columns{n}` with `:::col`
 
-`n` is 2 to 4, default 2.
+`n` is 2 to 4, default 2. On a phone columns stack; `compact` keeps them side by side,
+two across at most: `:::columns{n=2 compact}`.
 
 ```md
 :::columns{n="2"}
@@ -210,10 +211,43 @@ fence is the only way to get your own markup onto the page.
 ```
 ````
 
+### ```` ```story ````
+
+One story from the project's uploaded Storybook, drawn by the project's own compiled
+components. Use it to show real UI instead of rebuilding it. The Storybook must have been
+uploaded first (`artifact_storybook_upload`); `artifact_stories` lists the ids.
+
+````md
+```story
+id: screens-friends--requests
+width: 402
+height: 874
+```
+````
+
+| key | meaning |
+|---|---|
+| `id` | the story id, as in Storybook's address (`button--primary`). A pasted Storybook link works too |
+| `args` | props for the story, e.g. `{ label: Save, size: l, disabled: true }` |
+| `globals` | Storybook globals, e.g. `{ locale: fr }` |
+| `light`, `dark` | globals for when the page is light or dark, over the Storybook's own settings |
+| `width`, `height` | a fixed frame size in pixels, for screens drawn at a device size. The story is scaled down to fit the column and to leave part of the screen free, so the reader can see around it and scroll past it. Without either, the frame fits the story, and a very tall one is shown in part with a button to show all of it. Give a screen both |
+| `storybook` | which Storybook, when it is not the page's `project` |
+| `title` | what screen readers announce for the frame |
+
+Storybook only takes args and globals in its address when the values are letters, digits,
+spaces, `_` and `-`, numbers, colours, `true`/`false` and `null`. Anything else is left out
+and the publish warns you. For a state that needs other values, write a story for it in the
+repo, rebuild and upload again. The page never needs a copy of the component.
+
+A version keeps the build that was current when it was published. Upload a new build and
+update the page to show the new components; an edit by the operator keeps the old build.
+
 ## Sandboxing, and what it costs you
 
 `html` and `mermaid` blocks, and the `react`, `svelte` and `html` kinds, render inside an
-iframe with no same-origin access and no network. A CDN script, a web font or a `fetch`
+iframe with no same-origin access and no network. (`story` blocks are sandboxed the same
+way; they may load files from their own build, and images from hosts the Storybook allows.) A CDN script, a web font or a `fetch`
 call will not load; the frame gets the theme CSS and nothing else. Anything a page needs
 has to be in the source you send or vendored in the server.
 
@@ -333,5 +367,10 @@ checkboxes (these three take `options="A|B|C"`), checkbox, switch, rating (`max`
 scale (`min`, `max`, `low`, `high`) and slider (`min`, `max`, `step`). Every question
 needs a unique `name`; `label`, `help`, `placeholder` and `required` are optional.
 A `:::choice` takes `multiple` to allow several picks and `columns` to set the grid.
+On a phone the options stack, one per row; add `compact` to keep them side by side
+(two across at most), which suits options that are screens or images to compare:
+`:::choice{name=empty label="Which empty state?" columns=2 compact}`. Without `columns`,
+every option gets a column on a wide screen, up to four. That suits short options, but
+four phone screens in one row come out too small to judge, so set `columns=2` for those.
 
 Read answers with `artifact_responses`.

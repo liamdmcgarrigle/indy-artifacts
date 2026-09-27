@@ -18,5 +18,5 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Pages only: API routes answer 401 themselves, and shared links, frames,
   // sign-in, setup and static files must load without a session.
-  matcher: ["/((?!api|mcp|embed|s/|login|setup|\\.well-known|oauth|_next|fonts|primitives|vendor|themes|favicon|icon|highlight\\.css).*)"],
+  matcher: ["/((?!api|mcp|embed|sb/|s/|login|setup|\\.well-known|oauth|_next|fonts|primitives|vendor|themes|favicon|icon|highlight\\.css).*)"],
 };

@@ -17,6 +17,7 @@ import { resetLiveDocument } from "./collab";
 export const LIVE_EDIT_MESSAGE = "live edit";
 import { recordEvent } from "./events";
 import { searchableText } from "./plaintext";
+import { checkStories } from "./storybooks";
 import {
   KINDS,
   LIMITS,
@@ -103,7 +104,17 @@ function toVersion(row: Row): Version {
     warnings: JSON.parse(String(row.warnings_json ?? "[]")),
     contentHash: String(row.content_hash),
     createdAt: String(row.created_at),
+    storybooks: parseJsonObject(row.storybooks_json),
   };
+}
+
+function parseJsonObject(value: unknown): Record<string, string> {
+  try {
+    const parsed = JSON.parse(String(value ?? "{}"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 export function findArtifact(ctx: ServiceContext, slug: string): Artifact | null {
@@ -358,8 +369,15 @@ async function writeVersion(
   }
 
   let warnings: { line: number; message: string }[] = [];
+  let storybooks: Record<string, string> = {};
   if (artifact.kind === "markdown" && content.source !== null) {
-    warnings = renderMarkdown(content.source, meta.title).warnings;
+    const rendered = renderMarkdown(content.source, meta.title);
+    const stories = checkStories(ctx, rendered.embeds, meta.project, {
+      previous: previous?.storybooks,
+      keepPrevious: authorKind === "human",
+    });
+    warnings = [...rendered.warnings, ...stories.warnings].sort((a, b) => a.line - b.line);
+    storybooks = stories.pins;
   }
 
   const stamp = now();
@@ -367,9 +385,9 @@ async function writeVersion(
     ctx.db
       .prepare(
         `INSERT INTO versions (artifact_id, number, author_kind, author_name, message, frontmatter_json,
-           source, files_json, assets_json, build_status, build_log, warnings_json, content_hash, created_at)
+           source, files_json, assets_json, build_status, build_log, warnings_json, content_hash, created_at, storybooks_json)
          VALUES (:artifact_id, :number, :author_kind, :author_name, :message, :frontmatter_json,
-           :source, :files_json, :assets_json, :build_status, :build_log, :warnings_json, :content_hash, :created_at)`,
+           :source, :files_json, :assets_json, :build_status, :build_log, :warnings_json, :content_hash, :created_at, :storybooks_json)`,
       )
       .run(
         bind({
@@ -387,6 +405,7 @@ async function writeVersion(
           warnings_json: JSON.stringify(warnings),
           content_hash: contentHash,
           created_at: stamp,
+          storybooks_json: JSON.stringify(storybooks),
         }),
       );
 

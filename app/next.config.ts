@@ -1,4 +1,21 @@
 import type { NextConfig } from "next";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+// A hash of the primitives, put in their addresses so a browser never runs a
+// copy from before an upgrade. Read when Next builds or starts, after the
+// vendor script has copied them into public/.
+function primitivesVersion(): string {
+  const hash = createHash("sha256");
+  for (const file of ["primitives.js", "primitives.css"]) {
+    try {
+      hash.update(readFileSync(new URL(`./public/primitives/${file}`, import.meta.url)));
+    } catch {
+      return "";
+    }
+  }
+  return hash.digest("hex").slice(0, 10);
+}
 
 // Hosts other than localhost that may load the dev server, comma separated.
 const devOrigins = (process.env.INDY_DEV_ORIGINS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
@@ -8,6 +25,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: new URL("..", import.meta.url).pathname,
   allowedDevOrigins: ["127.0.0.1", "localhost", ...devOrigins],
   serverExternalPackages: ["esbuild", "esbuild-svelte", "svelte", "sharp"],
+  env: { INDY_PRIMITIVES_VERSION: primitivesVersion() },
   typescript: { ignoreBuildErrors: false },
   async rewrites() {
     // OAuth discovery for MCP clients (RFC 8414 and RFC 9728). Clients try the
@@ -40,9 +58,9 @@ const nextConfig: NextConfig = {
       { source: "/vendor/:file*", headers: open },
       { source: "/fonts/:file*", headers: open },
       // Indy's own pages may only be framed by Indy. The artifact frames under
-      // /embed and /api set their own, stricter policy.
+      // /embed, /api and /sb (Storybook builds) set their own, stricter policy.
       {
-        source: "/((?!embed/|api/).*)",
+        source: "/((?!embed/|api/|sb/).*)",
         headers: [
           { key: "x-frame-options", value: "SAMEORIGIN" },
           // style-src keeps a stylesheet from anywhere else out of Indy's own

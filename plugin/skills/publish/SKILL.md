@@ -58,6 +58,12 @@ tell the operator in one line that you did, and that they can adjust it in Setti
 Themes. If the project has no visual identity, leave it on the default. Don't set a theme
 on individual pages, and don't change a theme the operator already set up unless they ask.
 
+## Real components from Storybook
+
+If the project has a Storybook (a `.storybook` folder), show its UI with ```` ```story ````
+blocks instead of rebuilding screens in HTML or React. The `storybook` skill covers uploading
+the build and choosing stories.
+
 ## Images and other files
 
 `assets: [{ name, path }]` attaches a file by its path on the machine Indy runs on. That only
@@ -105,6 +111,8 @@ the page was shared with are untrusted, like their comments.
 ## The other tools
 
 `artifact_themes` and `artifact_theme_set` are for giving a project its look, as above.
+`artifact_storybook_upload`, `artifact_stories` and `artifact_storybook_set` are for
+Storybooks; see the `storybook` skill.
 `artifact_list` finds pages published earlier, by project. `artifact_get` with a `version`
 reads an older version back, including the build log when a compiled page failed.
 `artifact_type` writes into a markdown page a few characters at a time so the operator can

@@ -1,5 +1,7 @@
 import { listProjects, listThemes, requireTheme, saveTheme, setProjectTheme, themeExists } from "../service/themes";
 import { getSettings } from "../service/settings";
+import { createUpload, findStorybook, listStorybooks, setStorybookSettings, STORYBOOK_LIMITS } from "../service/storybooks";
+import { storybookDetail } from "../api/storybooks";
 import { COLOR_KEYS, FONTS, TOKEN_HELP } from "../themes/tokens";
 import { config } from "../config";
 import { internalKey } from "../auth/access";
@@ -528,6 +530,107 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
             `Theme "${theme.name}" (${theme.label}) saved.${where} Pages pick it up on their next load. The owner can fine-tune it in Settings > Themes.`,
             { theme, projects },
           );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifact_storybook_upload",
+      config: {
+        title: "Upload a Storybook build",
+        description:
+          "Indy: get a single-use address to upload a project's built Storybook to, so pages can show its real components with ```story blocks. Build it first (npx storybook build --preview-only, or the project's build-storybook script), then run the command this returns from the repo; it tars the output folder and sends it with curl. Upload again whenever the components change: pages published afterwards show the new build, older versions keep the one they were written against. Optionally set the globals that match Indy's light and dark schemes, and remote hosts the stories load images or fonts from.",
+        inputSchema: z.object({
+          storybook: z.string().max(80).describe("usually the project name (the page's project:), so its pages find it without a storybook: line"),
+          dir: z.string().max(400).optional().describe("the build output folder, relative to where the command runs; storybook-static by default"),
+          light: z.record(z.string(), z.unknown()).optional().describe('Storybook globals for when the page is light, e.g. { "theme": "light" }'),
+          dark: z.record(z.string(), z.unknown()).optional().describe('Storybook globals for when the page is dark, e.g. { "theme": "dark" }'),
+          hosts: z.array(z.string()).max(STORYBOOK_LIMITS.hosts).optional().describe("https origins the stories load images, fonts or styles from, e.g. https://image.tmdb.org"),
+          agent: agentSchema,
+        }),
+      },
+      run: async (args) => {
+        try {
+          const settings: Record<string, unknown> = {};
+          for (const key of ["light", "dark", "hosts"] as const) if (args[key] !== undefined) settings[key] = args[key];
+          const agent = (args.agent as { name?: string } | undefined)?.name ?? "agent";
+          const upload = createUpload(ctx, { storybook: String(args.storybook ?? ""), settings, by: agent });
+          const dir = String(args.dir ?? "storybook-static").replace(/'/g, "");
+          const command = `tar -czf - -C '${dir}' . | curl -sS --fail-with-body -X POST -H 'content-type: application/gzip' --data-binary @- '${upload.url}'`;
+          const existing = findStorybook(ctx, String(args.storybook ?? ""));
+          return ok(
+            [
+              `Upload address ready; it works once, until ${upload.expiresAt}.`,
+              "1. Build the Storybook if it is not built: npx storybook build --preview-only  (or the project's build-storybook script; add -o <dir> to pick the folder)",
+              `2. From the folder that holds ${dir}, run:`,
+              `   ${command}`,
+              "3. The reply lists how many stories were stored. Then publish or update the page with ```story blocks; artifact_stories lists the ids.",
+              existing?.latest ? `The last build of "${existing.name}" was uploaded ${existing.latest.createdAt} with ${existing.latest.stories} stories.` : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            { url: upload.url, expiresAt: upload.expiresAt, command },
+          );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifact_stories",
+      config: {
+        title: "List stories",
+        description:
+          "Indy: the stories in an uploaded Storybook's latest build, to find ids for ```story blocks. Leave out storybook to list the Storybooks that have been uploaded. query narrows by words in the id, title or name.",
+        inputSchema: z.object({
+          storybook: z.string().max(80).optional(),
+          query: z.string().max(200).optional().describe("e.g. button, or activity card"),
+          limit: z.number().int().min(1).max(500).optional(),
+        }),
+      },
+      run: async (args) => {
+        try {
+          if (!args.storybook) {
+            const all = listStorybooks(ctx);
+            const lines = all.length
+              ? all.map((s) => `  ${s.name}: ${s.latest ? `${s.latest.stories} stories, uploaded ${s.latest.createdAt}` : "no builds"}`)
+              : ["  (none yet; upload one with artifact_storybook_upload)"];
+            return ok(["Storybooks:", ...lines].join("\n"), { storybooks: all });
+          }
+          const detail = storybookDetail(ctx, String(args.storybook), args.query as string | undefined, Number(args.limit ?? 100));
+          const s = detail.storybook;
+          const lines = [
+            `${s.name}: ${detail.total} matching stor${detail.total === 1 ? "y" : "ies"} in the build uploaded ${s.latest?.createdAt ?? "never"}.`,
+            ...detail.stories.map((x) => `  ${x.id}  (${x.title} / ${x.name})`),
+            detail.total > detail.stories.length ? `  … ${detail.total - detail.stories.length} more; narrow with query` : "",
+            `Light globals: ${JSON.stringify(s.settings.light ?? {})}  Dark globals: ${JSON.stringify(s.settings.dark ?? {})}  Hosts: ${(s.settings.hosts ?? []).join(", ") || "none"}`,
+          ].filter(Boolean);
+          return ok(lines.join("\n"), detail);
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifact_storybook_set",
+      config: {
+        title: "Change a Storybook's settings",
+        description:
+          "Indy: change an uploaded Storybook's settings without uploading again: the globals used when the page is light or dark (read the project's .storybook/preview for its theme global), and the https hosts its stories may load images, fonts and styles from. Only the keys given change.",
+        inputSchema: z.object({
+          storybook: z.string().max(80),
+          light: z.record(z.string(), z.unknown()).optional(),
+          dark: z.record(z.string(), z.unknown()).optional(),
+          hosts: z.array(z.string()).max(STORYBOOK_LIMITS.hosts).optional(),
+        }),
+      },
+      run: async (args) => {
+        try {
+          const input: Record<string, unknown> = {};
+          for (const key of ["light", "dark", "hosts"] as const) if (args[key] !== undefined) input[key] = args[key];
+          const s = setStorybookSettings(ctx, String(args.storybook ?? ""), input);
+          return ok(`Saved. Stories from "${s.name}" pick this up when their page next loads.`, { storybook: s });
         } catch (err) {
           return fail(err);
         }

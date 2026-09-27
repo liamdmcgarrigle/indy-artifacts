@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./indy.css";
+import { primitivesUrl } from "@/lib/primitives";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="darkreader-lock" />
         {/* Served from this origin because sandbox frames have no network. */}
         <link rel="stylesheet" href="/fonts/fonts.css" />
-        <link rel="stylesheet" href="/primitives/primitives.css" />
+        <link rel="stylesheet" href={primitivesUrl("primitives.css")} />
         <link rel="stylesheet" href="/highlight.css" />
       </head>
       <body>

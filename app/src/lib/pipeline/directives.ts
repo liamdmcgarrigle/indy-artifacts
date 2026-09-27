@@ -2,6 +2,7 @@ import { visit } from "unist-util-visit";
 import { toString as mdToString } from "mdast-util-to-string";
 import { BlockError, parseChartBlock, parseKpiLine, parseTableBlock } from "./parse";
 import type { PipelineContext } from "./types";
+import { parseStoryBlock, storyWarnings, StoryBlockError } from "../storybook/spec";
 
 // mdast and hast nodes are manipulated structurally here: the published types
 // are narrower than the hName/hProperties escape hatch this pipeline relies on.
@@ -47,6 +48,11 @@ function kpiChildren(node: AnyNode) {
   return items;
 }
 
+/** A directive's switch: present (`{compact}`) or set to anything but "false". */
+function flag(value: string | undefined): boolean {
+  return value !== undefined && value !== "false";
+}
+
 /** Directives that only mean anything inside a particular parent. */
 const REQUIRED_PARENT: Record<string, string> = { col: "columns", tab: "tabs", option: "choice" };
 
@@ -70,7 +76,10 @@ function handleDirective(node: AnyNode, ctx: PipelineContext) {
       setElement(node, "art-kpis", {}, kpiChildren(node));
       return;
     case "columns":
-      setElement(node, "art-columns", { n: String(Math.min(Math.max(Number(attrs.n || 2) || 2, 2), 4)) });
+      setElement(node, "art-columns", {
+        n: String(Math.min(Math.max(Number(attrs.n || 2) || 2, 2), 4)),
+        compact: flag(attrs.compact) ? "true" : undefined,
+      });
       return;
     case "col":
       setElement(node, "art-col", {});
@@ -107,12 +116,29 @@ function handleDirective(node: AnyNode, ctx: PipelineContext) {
 
 function handleCode(node: AnyNode, ctx: PipelineContext, blockHint: string | null) {
   const lang = (node.lang || "").toLowerCase();
-  if (lang !== "chart" && lang !== "table" && lang !== "mermaid" && lang !== "html") return;
+  if (lang !== "chart" && lang !== "table" && lang !== "mermaid" && lang !== "html" && lang !== "story") return;
 
   if (lang === "mermaid" || lang === "html") {
     const id = `e${ctx.embedCounter++}`;
-    ctx.embeds.push({ id, kind: lang, content: node.value ?? "", block: blockHint });
+    ctx.embeds.push({ id, kind: lang, content: node.value ?? "", block: blockHint, line: node.position?.start?.line });
     setElement(node, "art-embed", { dataEmbed: id, dataKind: lang }, []);
+    return;
+  }
+
+  if (lang === "story") {
+    // Numbered even when it does not parse, so the frame numbers stay the
+    // same as the editor's, which cannot tell.
+    const id = `e${ctx.embedCounter++}`;
+    try {
+      const spec = parseStoryBlock(node.value ?? "");
+      ctx.embeds.push({ id, kind: "story", content: node.value ?? "", block: blockHint, line: node.position?.start?.line });
+      for (const message of storyWarnings(spec)) warn(ctx, node, message);
+      setElement(node, "art-embed", storyAttributes(id, spec), []);
+    } catch (err) {
+      const message = err instanceof StoryBlockError ? err.message : `story block failed: ${(err as Error).message}`;
+      warn(ctx, node, message);
+      errorElement(node, message);
+    }
     return;
   }
 
@@ -129,6 +155,17 @@ function handleCode(node: AnyNode, ctx: PipelineContext, blockHint: string | nul
     warn(ctx, node, message);
     errorElement(node, message);
   }
+}
+
+/** The <art-embed> attributes for a story; shared with the editor's schema. */
+export function storyAttributes(id: string, spec: { width?: number; height?: number; title?: string; id: string }) {
+  return {
+    dataEmbed: id,
+    dataKind: "story",
+    dataWidth: spec.width ? String(spec.width) : undefined,
+    dataHeight: spec.height ? String(spec.height) : undefined,
+    dataTitle: spec.title ?? spec.id,
+  };
 }
 
 /**

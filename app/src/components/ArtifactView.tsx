@@ -31,6 +31,7 @@ import type { FieldSpec, FormSettings } from "@/lib/forms/spec";
 import { FormProvider } from "./forms/FormState";
 import { FormBar } from "./forms/FormBar";
 import { ShareDialog } from "./viewer/ShareDialog";
+import { primitivesUrl } from "@/lib/primitives";
 import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
 
 export interface ThreadView {
@@ -99,6 +100,8 @@ export interface ArtifactViewProps {
   initialThreads: ThreadView[];
   /** Who can open the page besides the owner. */
   sharing?: "private" | "link" | "email";
+  /** Storybooks this version shows stories from. */
+  storybooks?: string[];
   /** Set when a visitor opens the page through a share link. */
   visitor?: VisitorInfo | null;
 }
@@ -194,6 +197,9 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [showResolved, setShowResolved] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [tool, setTool] = useState(false);
+  // Read by the message handler: a frame's pick counts only while picking is on.
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
   const [draft, setDraft] = useState<{ anchor: Anchor | null; body: string; notify: boolean } | null>(null);
   const [draftSpot, setDraftSpot] = useState<Spot | null>(null);
   const [bubble, setBubble] = useState<{ top: number; left: number; anchor: Anchor } | null>(null);
@@ -265,7 +271,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     const script = document.createElement("script");
     script.id = "art-primitives";
     script.type = "module";
-    script.src = "/primitives/primitives.js";
+    script.src = primitivesUrl("primitives.js");
     document.head.appendChild(script);
   }, []);
 
@@ -456,7 +462,9 @@ export function ArtifactView(props: ArtifactViewProps) {
         return;
       }
 
-      if (data.type !== "art:picked" || !contentRef.current) return;
+      // Only a pick the operator asked for: code in a frame (a Storybook's
+      // dependencies, say) must not open a comment with words it chose.
+      if (data.type !== "art:picked" || !contentRef.current || !toolRef.current) return;
 
       const frames = Array.from(contentRef.current.querySelectorAll("iframe"));
       const frame = frames.find((f) => f.contentWindow === event.source);
@@ -1126,7 +1134,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         }
       />
       )}
-      {!visitor && shareOpen ? <ShareDialog slug={props.slug} title={props.title} versionNumber={props.versionNumber} onClose={() => setShareOpen(false)} onMode={setSharing} /> : null}
+      {!visitor && shareOpen ? <ShareDialog slug={props.slug} title={props.title} versionNumber={props.versionNumber} storybooks={props.storybooks ?? []} onClose={() => setShareOpen(false)} onMode={setSharing} /> : null}
 
       {panel === "list" ? (
         <div className="panel">

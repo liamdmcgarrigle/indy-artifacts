@@ -78,7 +78,7 @@ const SHAPE_TOKENS = [
 const TOKENS = [...SCHEME_TOKENS, ...SHAPE_TOKENS];
 
 /** Tokens the primitives set themselves rather than taking from a theme. */
-const LOCAL_TOKENS = ["--art-cols"];
+const LOCAL_TOKENS = ["--art-cols", "--art-cols-narrow"];
 
 /** The body of the first rule whose selector matches, brace-balanced. */
 function ruleBody(css: string, selector: RegExp): string | null {

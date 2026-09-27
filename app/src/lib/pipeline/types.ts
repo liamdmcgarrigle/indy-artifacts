@@ -17,13 +17,15 @@ export interface Warning {
   message: string;
 }
 
-export type EmbedKind = "html" | "mermaid";
+export type EmbedKind = "html" | "mermaid" | "story";
 
 export interface Embed {
   id: string;
   kind: EmbedKind;
   content: string;
   block: string | null;
+  /** The fence's first source line. */
+  line?: number;
 }
 
 export interface RenderResult {

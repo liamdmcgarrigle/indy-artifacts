@@ -169,6 +169,7 @@ function ChoiceEditor({ node, updateAttributes, editor, getPos }: ReactNodeViewP
   const required = attrs.required !== undefined && attrs.required !== "false";
   const multiple = attrs.multiple !== undefined && attrs.multiple !== "false";
   const columns = Math.min(Math.max(Number(attrs.columns) || node.childCount, 1), 4);
+  const compact = attrs.compact !== undefined && attrs.compact !== "false";
   const addOption = () => {
     const pos = typeof getPos === "function" ? getPos() : undefined;
     if (typeof pos !== "number") return;
@@ -185,7 +186,10 @@ function ChoiceEditor({ node, updateAttributes, editor, getPos }: ReactNodeViewP
           <Typeable as="span" value={String(attrs.label ?? "")} placeholder="Ask a question" onChange={(v) => set({ label: v || null })} />
         </span>
       </div>
-      <NodeViewContent className="art-choice__options" style={{ "--cols": columns } as React.CSSProperties} />
+      <NodeViewContent
+        className={cn("art-choice__options", compact && "art-choice__options--compact")}
+        style={{ "--cols": columns, "--cols-narrow": Math.min(columns, 2) } as React.CSSProperties}
+      />
       <div className="q-tools" contentEditable={false}>
         <button type="button" className="q-tool" onClick={addOption}>
           <Plus className="size-3.5" /> Option
@@ -193,6 +197,15 @@ function ChoiceEditor({ node, updateAttributes, editor, getPos }: ReactNodeViewP
         <RequiredToggle on={required} onChange={(on) => set({ required: on ? "" : null })} />
         <button type="button" className={cn("q-tool", multiple && "q-tool--on")} aria-pressed={multiple} onClick={() => set({ multiple: multiple ? null : "" })}>
           Several allowed
+        </button>
+        <button
+          type="button"
+          className={cn("q-tool", compact && "q-tool--on")}
+          aria-pressed={compact}
+          title="Keep the options side by side on a phone, two across"
+          onClick={() => set({ compact: compact ? null : "" })}
+        >
+          Side by side on phones
         </button>
       </div>
     </NodeViewWrapper>
@@ -205,6 +218,7 @@ function ChoiceAnswer({ node }: ReactNodeViewProps) {
   const field = form?.byName.get(String(attrs.name)) ?? fieldSpec(attrs, "choice");
   const error = field ? form?.errors[field.name] : undefined;
   const columns = Math.min(Math.max(Number(attrs.columns) || node.childCount, 1), 4);
+  const compact = attrs.compact !== undefined && attrs.compact !== "false";
   return (
     <NodeViewWrapper
       className={cn("art-q art-choice-q", error && "art-q--invalid")}
@@ -219,7 +233,10 @@ function ChoiceAnswer({ node }: ReactNodeViewProps) {
           {field.help ? <p className="art-q__help">{field.help}</p> : null}
         </div>
       ) : null}
-      <NodeViewContent className="art-choice__options" style={{ "--cols": columns } as React.CSSProperties} />
+      <NodeViewContent
+        className={cn("art-choice__options", compact && "art-choice__options--compact")}
+        style={{ "--cols": columns, "--cols-narrow": Math.min(columns, 2) } as React.CSSProperties}
+      />
       {error ? (
         <p className="art-q__error" role="alert" contentEditable={false}>
           {error}

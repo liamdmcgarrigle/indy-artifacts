@@ -7,6 +7,7 @@ import { dataUsage } from "@/lib/service/storage";
 import { listSharedPages } from "@/lib/service/sharing";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { themesState } from "@/lib/api/themes";
+import { storybooksState } from "@/lib/api/storybooks";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
@@ -24,6 +25,7 @@ export default async function SettingsPage() {
       usage={await dataUsage(ctx)}
       email={{ on: emailEnabled(c), from: c.emailFrom }}
       themes={themesState()}
+      storybooks={storybooksState(ctx)}
     />
   );
 }

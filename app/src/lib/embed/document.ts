@@ -9,6 +9,7 @@
  * allow-forms only lets a form's submit event reach its script; form-action
  * 'none' still stops a form from being sent anywhere.
  */
+import { primitivesUrl } from "../primitives";
 
 export const EMBED_CSP = [
   "default-src 'none'",
@@ -57,7 +58,7 @@ function head(options: EmbedOptions, extra = ""): string {
 <meta name="darkreader-lock">
 <title>${escapeHtml(options.title)}</title>
 <link rel="stylesheet" href="${escapeHtml(options.themeHref)}">
-<link rel="stylesheet" href="/primitives/primitives.css">
+<link rel="stylesheet" href="${primitivesUrl("primitives.css")}">
 <style>
   html, body { margin: 0; padding: 0; background: transparent; }
   body { color: var(--art-text); font-family: var(--art-font-sans); font-size: var(--art-font-size); }
@@ -231,7 +232,7 @@ export function bundleDocument(
   return shell(
     options,
     `<div id="root"></div>`,
-    `<script type="module" src="/primitives/primitives.js"></script>
+    `<script type="module" src="${primitivesUrl("primitives.js")}"></script>
 <script type="module" src="${escapeHtml(options.bundleUrl)}"></script>`,
     css,
   );

@@ -281,4 +281,48 @@ export const MIGRATIONS: string[] = [
 
   UPDATE artifacts SET theme = '' WHERE theme IN ('default', 'picaflick', 'backup-studio');
   `,
+  // 7: Storybooks. An agent uploads a project's static Storybook build; pages
+  // show its stories in frames. Files are stored once by content hash, so a
+  // new build shares everything that did not change. A version remembers the
+  // build each Storybook was at when it was written.
+  `
+  CREATE TABLE storybooks (
+    name TEXT PRIMARY KEY COLLATE NOCASE,
+    settings_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE TABLE storybook_builds (
+    id TEXT PRIMARY KEY,
+    storybook TEXT NOT NULL COLLATE NOCASE REFERENCES storybooks(name) ON DELETE CASCADE ON UPDATE CASCADE,
+    files INTEGER NOT NULL,
+    bytes INTEGER NOT NULL,
+    stories_json TEXT NOT NULL,
+    notes_json TEXT NOT NULL DEFAULT '[]',
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX idx_storybook_builds ON storybook_builds (storybook, created_at DESC);
+
+  CREATE TABLE storybook_files (
+    build_id TEXT NOT NULL REFERENCES storybook_builds(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    PRIMARY KEY (build_id, path)
+  ) STRICT;
+  CREATE INDEX idx_storybook_files_hash ON storybook_files (hash);
+
+  CREATE TABLE storybook_uploads (
+    hash TEXT PRIMARY KEY,
+    storybook TEXT NOT NULL,
+    settings_json TEXT,
+    created_by TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  ) STRICT;
+
+  ALTER TABLE versions ADD COLUMN storybooks_json TEXT NOT NULL DEFAULT '{}';
+  `,
 ];

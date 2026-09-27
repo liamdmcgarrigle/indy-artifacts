@@ -9,6 +9,15 @@ import { countResponses, formOf } from "./service/responses";
 import type { ArtifactViewProps, ThreadView } from "@/components/ArtifactView";
 import type { Audience } from "./service/comments";
 import { activeLink } from "./service/sharing";
+import { getBuild } from "./service/storybooks";
+import type { ServiceContext } from "./service/context";
+
+/** The Storybooks a version draws stories from, by their own names. */
+function storybooksShown(ctx: ServiceContext, pins: Record<string, string>): string[] {
+  return Object.values(pins)
+    .map((id) => getBuild(ctx, id)?.storybook)
+    .filter((name): name is string => Boolean(name));
+}
 
 /**
  * The asset address differs on every load (it carries a signed, expiring
@@ -109,5 +118,6 @@ export function loadView(slug: string, versionNumber?: number, opts: { audience?
     })),
     initialThreads: threads,
     sharing: activeLink(ctx, slug)?.mode ?? "private",
+    storybooks: storybooksShown(ctx, version.storybooks),
   };
 }
