@@ -39,6 +39,9 @@ or `svelte` only when the page needs real interaction, and `html` when you alrea
 complete document. Read `reference.md`, next to this file, before writing anything beyond
 plain markdown.
 
+For a history or a research write-up, `:::timeline` sets dated events down a rail, and a
+`:badge` in a heading over `:::columns{aside}` gives each option a verdict and a panel of facts.
+
 The result carries `url`, `version` and `warnings`. A warning is a block that did not parse
 (a malformed chart, a ragged table). The publish still succeeded and the page shows an error
 box there; fix it with an update if it matters.

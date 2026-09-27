@@ -1,6 +1,6 @@
 import { visit } from "unist-util-visit";
 import { toString as mdToString } from "mdast-util-to-string";
-import { BlockError, parseChartBlock, parseKpiLine, parseTableBlock } from "./parse";
+import { badgeClass, BlockError, isBadge, parseChartBlock, parseKpiLine, parseTableBlock } from "./parse";
 import type { PipelineContext } from "./types";
 import { parseStoryBlock, storyWarnings, StoryBlockError } from "../storybook/spec";
 
@@ -41,6 +41,7 @@ function kpiChildren(node: AnyNode) {
         value: parsed.value,
         tone: parsed.tone,
         delta: parsed.delta,
+        note: parsed.note,
       },
       children: [],
     });
@@ -54,7 +55,7 @@ function flag(value: string | undefined): boolean {
 }
 
 /** Directives that only mean anything inside a particular parent. */
-const REQUIRED_PARENT: Record<string, string> = { col: "columns", tab: "tabs", option: "choice" };
+const REQUIRED_PARENT: Record<string, string> = { col: "columns", tab: "tabs", option: "choice", event: "timeline" };
 
 function checkParent(node: AnyNode, parent: AnyNode, ctx: PipelineContext) {
   const required = REQUIRED_PARENT[node.name];
@@ -79,7 +80,20 @@ function handleDirective(node: AnyNode, ctx: PipelineContext) {
       setElement(node, "art-columns", {
         n: String(Math.min(Math.max(Number(attrs.n || 2) || 2, 2), 4)),
         compact: flag(attrs.compact) ? "true" : undefined,
+        aside: flag(attrs.aside) ? "true" : undefined,
       });
+      return;
+    case "timeline":
+      for (const child of node.children ?? []) {
+        if (child.type !== "containerDirective" || child.name !== "event") {
+          warn(ctx, child, '":::timeline" holds ":::event" blocks; put this inside one');
+          break;
+        }
+      }
+      setElement(node, "art-timeline", { legend: attrs.legend });
+      return;
+    case "event":
+      setElement(node, "art-event", { date: attrs.date, title: attrs.title, kind: attrs.kind, source: attrs.source });
       return;
     case "col":
       setElement(node, "art-col", {});
@@ -190,11 +204,17 @@ function literal(node: AnyNode, ctx: PipelineContext) {
   delete node.data;
 }
 
+function badge(node: AnyNode) {
+  const text = mdToString(node).trim();
+  setElement(node, "span", { className: badgeClass(node.attributes?.tone).split(" ") }, [{ type: "text", value: text }]);
+}
+
 export function artifactsDirectives(ctx: PipelineContext) {
   return (tree: AnyNode) => {
     visit(tree, (node: AnyNode, _index: number | undefined, parent: AnyNode) => {
       if (node.type === "textDirective") {
-        literal(node, ctx);
+        if (isBadge(node)) badge(node);
+        else literal(node, ctx);
         return;
       }
       if (

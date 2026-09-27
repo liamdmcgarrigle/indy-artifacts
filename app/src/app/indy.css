@@ -1749,3 +1749,10 @@ span.art-typeable {
 [role="menuitemcheckbox"][data-highlighted] {
   background: color-mix(in oklab, var(--foreground) 8%, var(--popover));
 }
+
+/* A counter tile's note line, under its label. */
+.kpi-edit__note {
+  margin-top: 2px;
+  font-size: 0.72em;
+  color: var(--art-text-faint, var(--muted-foreground));
+}

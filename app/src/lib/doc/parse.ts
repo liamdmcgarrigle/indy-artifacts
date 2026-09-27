@@ -7,7 +7,7 @@ import { visit } from "unist-util-visit";
 import { toString as mdToString } from "mdast-util-to-string";
 import type { JSONContent } from "@tiptap/core";
 import { normalizeContainers } from "@/lib/pipeline/normalize";
-import { parseKpiLine } from "@/lib/pipeline/parse";
+import { isBadge, parseKpiLine } from "@/lib/pipeline/parse";
 import { docSchema, type KpiItem } from "./schema";
 import { fingerprint } from "./fingerprint";
 
@@ -32,6 +32,8 @@ const CONTAINERS: Record<string, { node: string; parent?: string; children?: str
   tab: { node: "tab", parent: "tabs" },
   choice: { node: "choice", children: "option" },
   option: { node: "option", parent: "choice" },
+  timeline: { node: "timeline", children: "event" },
+  event: { node: "event", parent: "timeline" },
 };
 
 const EMBED_LANGS = new Set(["html", "mermaid", "story"]);
@@ -76,7 +78,11 @@ function inline(nodes: Md[], ctx: Ctx, marks: NonNullable<JSONContent["marks"]> 
         out.push({ type: "hardBreak", marks: marksOf(marks) });
         break;
       case "textDirective": {
-        // The pipeline shows an inline directive as the text that was typed.
+        if (isBadge(node)) {
+          out.push({ type: "badge", attrs: { label: mdToString(node).trim(), attributes: { ...(node.attributes ?? {}) } }, marks: marksOf(marks) });
+          break;
+        }
+        // The pipeline shows any other inline directive as the text that was typed.
         const text = ctx.source.slice(node.position.start.offset, node.position.end.offset);
         if (text) out.push({ type: "text", text, marks: marksOf(marks) });
         break;
@@ -208,7 +214,7 @@ function kpis(node: Md): JSONContent {
   const items: KpiItem[] = [];
   visit(node, "listItem", (item: Md) => {
     const parsed = parseKpiLine(mdToString(item));
-    if (parsed) items.push({ label: parsed.label, value: parsed.value, tone: parsed.tone ?? null, delta: parsed.delta ?? null });
+    if (parsed) items.push({ label: parsed.label, value: parsed.value, tone: parsed.tone ?? null, delta: parsed.delta ?? null, note: parsed.note ?? null });
   });
   return { type: "kpis", attrs: { items } };
 }

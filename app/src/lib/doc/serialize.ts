@@ -19,6 +19,10 @@ const sameMark = (a: Mark, b: Mark) => a.type === b.type && JSON.stringify(a.att
 
 function leaf(node: JSONContent): Md {
   if (node.type === "hardBreak") return { type: "break" };
+  if (node.type === "badge") {
+    const attributes = { ...((node.attrs?.attributes as Record<string, string>) ?? {}) };
+    return { type: "textDirective", name: "badge", attributes, children: [{ type: "text", value: String(node.attrs?.label ?? "") }] };
+  }
   if (node.type === "image") return { type: "image", url: node.attrs?.src ?? "", alt: node.attrs?.alt ?? "", title: node.attrs?.title ?? null };
   const code = (node.marks ?? []).some((m) => m.type === "code");
   return code ? { type: "inlineCode", value: node.text ?? "" } : { type: "text", value: node.text ?? "" };
@@ -58,7 +62,10 @@ function phrasing(nodes: JSONContent[], done: Mark[] = []): Md[] {
 function kpiLine(k: KpiItem): string {
   let line = k.value ? `${k.label}: ${k.value}` : k.label;
   if (k.delta) line += ` (${k.delta})`;
-  if (k.tone) line += ` {tone=${k.tone}}`;
+  const options: string[] = [];
+  if (k.tone) options.push(`tone=${k.tone}`);
+  if (k.note) options.push(`note="${k.note.replace(/"/g, "'")}"`);
+  if (options.length) line += ` {${options.join(" ")}}`;
   return line;
 }
 
@@ -152,6 +159,8 @@ function block(node: JSONContent): Md {
     case "col":
     case "tabs":
     case "tab":
+    case "timeline":
+    case "event":
       return { type: "containerDirective", name: node.type, attributes: { ...(a.attributes ?? {}) }, children: blocks(node.content) };
     case "rawBlock":
       return { type: "html", value: a.src ?? "" };

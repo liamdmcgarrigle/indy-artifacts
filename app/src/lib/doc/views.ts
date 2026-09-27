@@ -36,6 +36,8 @@ const BODY: Record<string, string | null> = {
   columns: null,
   col: null,
   tab: null,
+  timeline: ".art-timeline__list",
+  event: ".art-event__body",
 };
 
 const TAGS: Record<string, string> = {
@@ -46,6 +48,8 @@ const TAGS: Record<string, string> = {
   col: "art-col",
   tabs: "art-tabs",
   tab: "art-tab",
+  timeline: "art-timeline",
+  event: "art-event",
 };
 
 const KEYS: Record<string, string[]> = {
@@ -54,6 +58,13 @@ const KEYS: Record<string, string[]> = {
   details: ["summary", "open"],
   columns: ["n"],
   tab: ["label"],
+  timeline: ["legend"],
+  event: ["date", "title", "kind", "source"],
+};
+
+/** Switches, written bare (`{aside}`), so present even when empty. */
+const FLAGS: Record<string, string[]> = {
+  columns: ["compact", "aside"],
 };
 
 /** The words on a block that are attributes, and where the primitive shows them. */
@@ -91,6 +102,26 @@ const TEXT_ATTRS: Record<string, { key: string; selector: string; placeholder: s
     },
   ],
   details: [{ key: "summary", selector: ".art-details__summary", placeholder: "Summary" }],
+  event: [
+    { key: "date", selector: ".art-event__date", placeholder: "Date" },
+    {
+      key: "title",
+      selector: ".art-event__title",
+      placeholder: "What happened",
+      make: (el) => {
+        let head = el.querySelector<HTMLElement>(".art-event__head");
+        if (!head) {
+          head = document.createElement("div");
+          head.className = "art-event__head";
+          el.querySelector(".art-event__main")?.prepend(head);
+        }
+        const title = document.createElement("span");
+        title.className = "art-event__title";
+        head.prepend(title);
+        return title;
+      },
+    },
+  ],
 };
 
 function element(node: PMNode): Rendered {
@@ -98,6 +129,9 @@ function element(node: PMNode): Rendered {
   const attrs = (node.attrs.attributes ?? {}) as Record<string, string>;
   for (const key of KEYS[node.type.name] ?? []) {
     if (attrs[key] !== undefined && attrs[key] !== "") el.setAttribute(key, String(attrs[key]));
+  }
+  for (const key of FLAGS[node.type.name] ?? []) {
+    if (attrs[key] !== undefined && attrs[key] !== "false") el.setAttribute(key, "true");
   }
   el.connectedCallback?.();
   return el;

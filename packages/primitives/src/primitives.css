@@ -1022,3 +1022,350 @@ art-error {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ------------------------------------------------------------- timeline */
+
+/* A dated list read down a rail. Three columns: the date, right-aligned in
+   figures that line up; the rail, one line joining every marker; the entry.
+   Each event draws the stretch of line from its own marker down to the next
+   one, so the rail starts at the first marker and stops at the last. The
+   marker sits on the title's first line: 0.725em is half its line box. */
+art-timeline,
+art-event {
+  display: block;
+}
+
+art-timeline {
+  margin: 1.6em 0;
+}
+
+.art-timeline__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 0 1.3em;
+  font-family: var(--art-font-sans);
+  font-size: 0.8em;
+  line-height: 1.4;
+  color: var(--art-text-muted);
+}
+
+.art-timeline__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+art-event {
+  display: grid;
+  grid-template-columns: 118px 22px minmax(0, 1fr);
+  grid-template-areas: "date rail main";
+  column-gap: 12px;
+  align-items: baseline;
+}
+
+.art-event__date {
+  grid-area: date;
+  font-family: var(--art-font-mono);
+  font-size: 0.8em;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  letter-spacing: -0.01em;
+  color: var(--art-text-muted);
+  text-align: right;
+  text-wrap: balance;
+}
+
+.art-event__rail {
+  grid-area: rail;
+  position: relative;
+  align-self: stretch;
+}
+
+/* The stretch of rail from this marker to the next one. */
+.art-event__rail::before {
+  content: "";
+  position: absolute;
+  left: calc(50% - 1px);
+  top: calc(0.725em + 6px);
+  bottom: calc(6px - 0.725em);
+  width: 2px;
+  background: var(--art-border);
+}
+
+art-event:last-child .art-event__rail::before {
+  display: none;
+}
+
+.art-event__marker,
+.art-timeline__dot {
+  display: block;
+  box-sizing: border-box;
+  border: 2px solid var(--art-text-faint);
+  border-radius: 50%;
+  background: transparent;
+}
+
+.art-event__marker {
+  position: absolute;
+  top: calc(0.725em - 6px);
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+}
+
+.art-timeline__dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+}
+
+/* Kinds. Filled for what happened for certain, hollow for what is pending or
+   inferred: key is a milestone in the text colour, the rest are the tones. */
+:is(.art-event--key .art-event__marker, .art-timeline__key--key .art-timeline__dot) {
+  border-color: var(--art-text);
+  background: var(--art-text);
+}
+
+:is(.art-event--good .art-event__marker, .art-timeline__key--good .art-timeline__dot) {
+  border-color: var(--art-good);
+  background: var(--art-good);
+}
+
+:is(.art-event--bad .art-event__marker, .art-timeline__key--bad .art-timeline__dot) {
+  border-color: var(--art-bad);
+  background: var(--art-bad);
+}
+
+:is(.art-event--info .art-event__marker, .art-timeline__key--info .art-timeline__dot) {
+  border-color: var(--art-info);
+  background: var(--art-info);
+}
+
+:is(.art-event--warn .art-event__marker, .art-timeline__key--warn .art-timeline__dot) {
+  border-color: var(--art-warn);
+}
+
+.art-event__main {
+  grid-area: main;
+  min-width: 0;
+  max-width: 62ch;
+  padding-bottom: 1.6em;
+}
+
+art-event:last-child .art-event__main {
+  padding-bottom: 0;
+}
+
+.art-event__head {
+  line-height: 1.45;
+}
+
+.art-event__title {
+  font-family: var(--art-font-display);
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  color: var(--art-text);
+}
+
+.art-event__source {
+  margin-left: 0.7em;
+  font-family: var(--art-font-mono);
+  font-size: 0.68em;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--art-text-faint);
+}
+
+.art-event__head > .art-event__source:first-child {
+  margin-left: 0;
+}
+
+.art-event__body {
+  margin-top: 3px;
+  font-size: 0.94em;
+  line-height: 1.6;
+  color: var(--art-text);
+}
+
+.art-event__body > :first-child {
+  margin-top: 0;
+}
+
+.art-event__body > :last-child {
+  margin-bottom: 0;
+}
+
+.art-event__body > p {
+  margin-bottom: 0.6em;
+}
+
+/* An inferred stretch: nothing on record, so the words are the author's
+   reading and look it. */
+.art-event--gap .art-event__body {
+  font-style: italic;
+  color: var(--art-text-muted);
+}
+
+/* On a phone the date goes above the entry and the rail runs down both. */
+@media (max-width: 560px) {
+  art-event {
+    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-areas:
+      "rail date"
+      "rail main";
+    column-gap: 10px;
+    align-items: start;
+  }
+
+  .art-event__date {
+    text-align: left;
+  }
+
+  /* The marker now sits on the date's line, which is 0.8em text. */
+  .art-event__marker {
+    top: calc(0.58em - 6px);
+  }
+
+  .art-event__rail::before {
+    top: calc(0.58em + 6px);
+    bottom: calc(6px - 0.58em);
+  }
+}
+
+/* --------------------------------------------------------------- badge */
+
+/* `:badge[Recommended]{tone=good}`: a stamped label, outlined in its tone.
+   In a heading it reads as a verdict on that section. */
+.art-badge {
+  display: inline-block;
+  padding: 0.18em 0.6em 0.14em;
+  font-family: var(--art-font-mono);
+  font-size: 0.7em;
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+  color: var(--art-text-muted);
+  border: 1px solid currentColor;
+  border-radius: var(--art-radius-sm);
+}
+
+:is(h1, h2, h3) .art-badge {
+  margin-left: 0.5em;
+  font-size: 0.5em;
+  letter-spacing: 0.1em;
+  vertical-align: 0.3em;
+}
+
+h3 .art-badge {
+  font-size: 0.58em;
+  vertical-align: 0.2em;
+}
+
+.art-badge--good {
+  color: var(--art-good);
+}
+
+.art-badge--warn {
+  color: var(--art-warn);
+}
+
+.art-badge--bad {
+  color: var(--art-bad);
+}
+
+.art-badge--info {
+  color: var(--art-info);
+}
+
+/* ------------------------------------------------------ columns, aside */
+
+/* `:::columns{aside}`: the second column is a narrow side panel of facts
+   beside the main text. On a phone it drops under, behind a dashed rule. */
+art-columns[aside] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 250px);
+  gap: 28px;
+}
+
+art-columns[aside] > art-col:last-child {
+  padding-left: 20px;
+  border-left: 1px solid var(--art-border);
+  font-size: 0.88em;
+  line-height: 1.55;
+  color: var(--art-text-muted);
+}
+
+art-columns[aside] > art-col:last-child h4 {
+  margin: 1.2em 0 0.3em;
+  font-family: var(--art-font-mono);
+  font-size: 0.78em;
+  letter-spacing: 0.08em;
+}
+
+art-columns[aside] > art-col:last-child > h4:first-child {
+  margin-top: 0;
+}
+
+art-columns[aside] > art-col:last-child p {
+  margin-bottom: 0.7em;
+}
+
+@media (max-width: 640px) {
+  art-columns[aside] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  art-columns[aside] > art-col:last-child {
+    padding: 14px 0 0;
+    border-left: 0;
+    border-top: 1px dashed var(--art-border-strong);
+  }
+}
+
+/* ----------------------------------------------------- kpi note, tables */
+
+.art-kpi__note {
+  margin-top: 3px;
+  font-family: var(--art-font-sans);
+  font-size: 0.7em;
+  line-height: 1.35;
+  color: var(--art-text-faint);
+}
+
+/* A column aligned right in the markdown (`---:`) holds figures: they line up
+   in the mono face. The editor writes the same alignment as a style. */
+.art-content :is(th, td)[align="right"] {
+  text-align: right;
+}
+
+.art-content :is(th, td)[align="center"] {
+  text-align: center;
+}
+
+.art-content td:is([align="right"], [style*="text-align: right"]) {
+  font-family: var(--art-font-mono);
+  font-size: 0.94em;
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  white-space: nowrap;
+}
+
+/* A last row that opens with a bold cell (`| **Total** | ... |`) is a total:
+   a firmer rule above it, heavier figures. */
+.art-content tbody tr:has(+ tr:last-child > td:first-child strong) > td {
+  border-bottom-color: var(--art-border-strong);
+}
+
+.art-content tbody tr:last-child:has(> td:first-child strong) > td {
+  font-weight: 650;
+  color: var(--art-text);
+  background: var(--art-surface-2);
+}

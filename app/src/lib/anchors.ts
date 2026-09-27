@@ -260,6 +260,7 @@ const PICKABLE = [
   "art-card",
   "art-col",
   "art-details",
+  "art-event",
   "[data-block]",
 ].join(",");
 

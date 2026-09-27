@@ -32,7 +32,7 @@ export function plainText(markdown: string): string {
 /** A directive's title and label read as words; tone, width and the like do not. */
 function readableAttrs(attrs: string): string {
   const words: string[] = [];
-  for (const m of attrs.matchAll(/\b(title|label|caption|alt)=(?:"([^"]*)"|(\S+?))(?=[\s}])/g)) words.push(m[2] ?? m[3]);
+  for (const m of attrs.matchAll(/\b(title|label|caption|alt|date|source)=(?:"([^"]*)"|(\S+?))(?=[\s}])/g)) words.push(m[2] ?? m[3]);
   return words.join(" ");
 }
 

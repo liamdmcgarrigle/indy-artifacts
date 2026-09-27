@@ -89,14 +89,15 @@ The 90-day policy is holding 104 days of snapshots. Nothing is at risk yet.
 ### \`:::kpis\`
 
 The body is a bullet list of \`Label: value\`. A bullet may carry a \`{tone=...}\` and end
-with a delta in parentheses.
+with a delta in parentheses. Add \`note="..."\` inside the braces for a small line under the
+label, such as where the figure came from.
 
 \`\`\`md
 :::kpis
 - Archives: 412
 - Restored: 3 {tone=good} (+1)
 - Failed: 0 {tone=good}
-- Duration: 41m (-6m)
+- Duration: 41m (-6m) {note="slowest night this month"}
 :::
 \`\`\`
 
@@ -104,6 +105,10 @@ with a delta in parentheses.
 
 \`n\` is 2 to 4, default 2. On a phone columns stack; \`compact\` keeps them side by side,
 two across at most: \`:::columns{n=2 compact}\`.
+
+\`aside\` makes the second column a narrow side panel, set off by a rule and in smaller,
+quieter text: the facts beside an option, a list of who to call. Label its parts with
+\`####\` headings. On a phone it moves under the main column.
 
 \`\`\`md
 :::columns{n="2"}
@@ -135,6 +140,83 @@ See \`assets/run.txt\` for the full output.
 :::details{summary="Full command"}
 \`restic -r /srv/backups check --read-data-subset=3%\`
 :::
+\`\`\`
+
+### \`:::timeline{legend}\` with \`:::event{date, title, kind, source}\`
+
+Events in date order down a rail, with the date on the left. Each \`:::event\` takes a
+\`date\` (any text, ranges too), a \`title\`, an optional \`source\` shown small beside the
+title (a ticket, a document, a commit), and a body of any markdown, usually a sentence or
+two. \`kind\` sets the marker:
+
+| kind | marker | for |
+|---|---|---|
+| (none) | hollow, grey | an ordinary entry |
+| \`key\` | filled, text colour | a milestone |
+| \`good\` | filled, green | something done or won |
+| \`bad\` | filled, red | a failure, a loss |
+| \`info\` | filled, blue | a notice, a handover |
+| \`warn\` | hollow, amber | pending, disputed, at risk |
+| \`gap\` | hollow, grey, body in italics | a stretch with no record, filled in by inference |
+
+\`legend\` lists the kinds you used, as \`kind:Label\` pairs split by commas, and shows them
+above the timeline. On a phone the date moves above each entry.
+
+\`\`\`md
+:::timeline{legend="key:Release, good:Fixed, bad:Incident, gap:Inferred"}
+:::event{date="Jan 2023" title="Version 1.0" kind=key source="tag v1.0.0"}
+First public release, with the sync engine and the web client.
+:::
+:::event{date="Feb – Apr 2023" title="No releases" kind=gap}
+The changelog is empty for these months; the team was likely rewriting storage.
+:::
+:::event{date="May 9, 2023" title="Data loss on import" kind=bad source="incident 14"}
+Large CSV imports dropped rows past 65,535.
+:::
+:::event{date="May 12, 2023" title="Import fixed" kind=good source="PR 881"}
+Patched in 1.2.1 and backfilled from the upload logs.
+:::
+:::
+\`\`\`
+
+### \`:badge[text]{tone}\`
+
+A small outlined label inside a line of text. \`tone\` is \`good\`, \`warn\`, \`bad\` or \`info\`;
+without one it is grey. In a heading it reads as a verdict on that section; pair it with
+\`:::columns{aside}\` to lay out options side by side with the facts that matter.
+
+\`\`\`md
+### Upgrade in place :badge[Recommended]{tone=good}
+
+:::columns{aside}
+:::col
+Keeps the current database and moves the service to the new runtime over a weekend.
+Two hours of downtime, all of it planned.
+:::
+:::col
+#### Who does it
+The platform team, with one engineer from billing.
+
+#### Watch out
+The reporting jobs still pin the old driver.
+:::
+:::
+\`\`\`
+
+This is the only inline directive. Any other \`:name\` in prose is shown as typed.
+
+### Tables with figures
+
+In an ordinary markdown table, a column aligned right (\`---:\`) is read as figures: they
+line up in the mono face. A last row that starts with a bold cell is a total, drawn with a
+firmer rule above it.
+
+\`\`\`md
+| Item          |   Cost |
+|:--------------|-------:|
+| Roof          | 42,000 |
+| Wiring        | 18,500 |
+| **Total**     | **60,500** |
 \`\`\`
 
 ## Fenced blocks
