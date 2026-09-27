@@ -405,6 +405,44 @@ images as it stores them.
 A block that fails to parse does not fail the publish: it renders an error box on the
 page and comes back in \`warnings\` with a line number.
 
+## Checklists
+
+A task list is a checklist people tick on the page:
+
+\`\`\`markdown
+## Before the migration
+
+- [ ] Postgres version pinned in compose.yaml
+- [ ] Backups restored on staging
+- [x] Downtime window agreed
+\`\`\`
+
+The operator can tick and untick any item, and so can visitors on a share link that
+lets people take part (they give their name first). Each tick shows who made it and
+when, and everyone with the page open sees it.
+
+Ticks are kept apart from your source. What you write (\`[ ]\` or \`[x]\`) is the starting
+state; a person's tick is laid over it. Read the checklist as it stands with
+\`artifact_get\`, which lists each item with who ticked or unticked it. \`artifact_wait\`
+wakes on each tick (events \`task.ticked\` and \`task.unticked\`), and \`artifact_diff\`
+lists the ticks made since the older version.
+
+A tick is stored against the item's words, so it survives an update that keeps them.
+Change the words or drop the item and the tick no longer shows; the update result
+lists the ticked items it lost, and putting the words back brings the tick back. Two
+items with the same words are told apart by their order. If you flip an item in the
+source yourself (\`[ ]\` to \`[x]\` or back), your version wins over a person's tick that
+says otherwise.
+
+You can tick items too, with \`artifact_tick\`. Name each item by its words, a part of
+them only one item has, or its line from \`artifact_get\`; \`done: false\` unticks. The
+page shows your name and the time on the item, live, like anyone else's tick. Your own
+ticks do not wake \`artifact_wait\` and do not come back to you with the operator's
+feedback.
+
+Visitors' ticks are marked \`[needs operator ok]\`: check with the operator before you
+treat one as done.
+
 ## Typing live
 
 \`artifact_type\` writes into a markdown artifact through the shared document, a few

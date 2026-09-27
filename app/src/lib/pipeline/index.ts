@@ -14,6 +14,7 @@ import { artifactsDirectives } from "./directives";
 import { assignBlocks } from "./blocks";
 import { normalizeContainers } from "./normalize";
 import { schema } from "./sanitize";
+import { collectTasks } from "../tasks";
 import { type Frontmatter, type PipelineContext, type RenderOptions, type RenderResult } from "./types";
 
 // mdast and hast nodes are manipulated structurally here: the published types
@@ -51,6 +52,16 @@ function stripRawHtml() {
       node.type = "text";
       node.value = "";
     });
+  };
+}
+
+/** Mark each task item with the key people's ticks are kept under; the viewer makes them tickable. */
+function stampTasks(ctx: PipelineContext) {
+  return (tree: AnyNode) => {
+    for (const { node, item } of collectTasks(tree, ctx.source ?? "")) {
+      node.data = node.data || {};
+      node.data.hProperties = { ...(node.data.hProperties || {}), dataTaskKey: item.key };
+    }
   };
 }
 
@@ -97,6 +108,7 @@ export function renderMarkdown(source: string, fallbackTitle = "Untitled", optio
     .use(remarkGfm)
     .use(remarkDirective)
     .use(stripRawHtml)
+    .use(stampTasks, ctx)
     .use(artifactsDirectives, ctx)
     .use(remarkRehype, { allowDangerousHtml: false })
     .use(assignBlocks, ctx)

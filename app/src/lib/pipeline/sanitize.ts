@@ -40,6 +40,7 @@ export const schema = {
     "art-chart": [...GLOBAL, "dataChart"],
     "art-embed": [...GLOBAL, "dataEmbed", "dataKind", "dataWidth", "dataHeight", "dataTitle"],
     img: [...(defaultSchema.attributes?.img ?? []), "width", "height", "loading"],
+    li: [...(defaultSchema.attributes?.li ?? []), "dataTaskKey"],
   },
   protocols: {
     ...defaultSchema.protocols,

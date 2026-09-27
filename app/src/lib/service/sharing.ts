@@ -1,5 +1,5 @@
-import { issueCode, normaliseEmail, owner, redeemCode, validEmail } from "../auth/accounts";
-import { randomToken, sha256 } from "../auth/crypto";
+import { issueCode, normaliseEmail, owner, redeemCode, secret, validEmail } from "../auth/accounts";
+import { hmac, randomToken, safeEqual, sha256 } from "../auth/crypto";
 import { config, emailEnabled } from "../config";
 import { codeEmail, sendEmail } from "../email";
 import { bind, withTx } from "../db/index";
@@ -197,14 +197,118 @@ export function visitCookieName(link: ShareLink): string {
   return `indy_visit_${link.id}`;
 }
 
+/** Someone on a share link. `email` is set only when they confirmed it with a code. */
+export interface Visitor {
+  email: string | null;
+}
+
 /** Who a visit cookie belongs to on this link, if it is still good. */
-export function visitorOf(ctx: ServiceContext, link: ShareLink, cookie: string | undefined): { email: string | null } | null {
+export function visitorOf(ctx: ServiceContext, link: ShareLink, cookie: string | undefined): Visitor | null {
   if (!cookie) return null;
   const row = ctx.db
     .prepare("SELECT * FROM visitor_sessions WHERE id_hash = ? AND link_id = ?")
     .get(sha256(cookie), link.id) as Row | undefined;
   if (!row || String(row.expires_at) < now()) return null;
   return { email: (row.email as string | null) ?? null };
+}
+
+// ---------------------------------------------------------------- identity
+
+/**
+ * The name and email a visitor's ticks and comments go under. It is given
+ * once, then carried by the browser as a signed token and used on every share
+ * link of this Indy, so it cannot be changed from the page.
+ */
+export interface Identity {
+  id: string;
+  name: string;
+  email: string;
+  /** The email was confirmed with a code on an email link, not just typed. */
+  verified: boolean;
+}
+
+/**
+ * A name someone typed, made safe to show anywhere: control and direction
+ * characters out, spaces collapsed, at most 60 characters. It is shown as
+ * text, never markup, and agents are told it is unverified.
+ */
+export function cleanName(raw: unknown): string {
+  const name = String(raw ?? "")
+    .normalize("NFKC")
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!name) throw new ValidationError("add your name");
+  if (Array.from(name).length > 60) throw new ValidationError("that name is too long; 60 characters at most");
+  return name;
+}
+
+function cleanEmail(raw: unknown): string {
+  const email = normaliseEmail(String(raw ?? "").replace(/[\p{Cc}\p{Cf}]/gu, ""));
+  if (!validEmail(email)) throw new ValidationError("that does not look like an email address");
+  return email;
+}
+
+const b64 = (value: string) => Buffer.from(value, "utf8").toString("base64url");
+
+/** Sign an identity: its fields, then an HMAC over them with the install's secret. */
+export function identityToken(ctx: ServiceContext, identity: Identity): string {
+  const body = b64(JSON.stringify({ i: identity.id, n: identity.name, e: identity.email, v: identity.verified ? 1 : 0 }));
+  return `${body}.${hmac(secret(ctx), `visitor-identity|${body}`)}`;
+}
+
+/** The identity a token carries, or null when it was not signed here or has been altered. */
+export function readIdentityToken(ctx: ServiceContext, token: unknown): Identity | null {
+  if (typeof token !== "string" || token.length > 2000) return null;
+  const dot = token.indexOf(".");
+  if (dot < 1) return null;
+  const body = token.slice(0, dot);
+  if (!safeEqual(hmac(secret(ctx), `visitor-identity|${body}`), token.slice(dot + 1))) return null;
+  try {
+    const raw = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { i?: unknown; n?: unknown; e?: unknown; v?: unknown };
+    if (typeof raw.i !== "string" || typeof raw.n !== "string" || typeof raw.e !== "string") return null;
+    return { id: raw.i, name: raw.n, email: raw.e, verified: raw.v === 1 };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Say who a visitor is. A token already signed here wins over anything typed,
+ * so a name and email cannot be changed once given. On an email link the
+ * confirmed address is used and only the name is asked for; a token made
+ * elsewhere keeps its name and takes that address.
+ */
+export function identify(
+  ctx: ServiceContext,
+  link: ShareLink,
+  visitor: Visitor | null,
+  input: { token?: unknown; name?: unknown; email?: unknown },
+): { identity: Identity; token: string } {
+  const existing = readIdentityToken(ctx, input.token);
+  const confirmed = link.mode === "email" ? (visitor?.email ?? null) : null;
+  if (link.mode === "email" && !confirmed) throw new ValidationError("confirm your email first");
+  if (existing) {
+    if (!confirmed || (existing.email === confirmed && existing.verified)) return { identity: existing, token: identityToken(ctx, existing) };
+    const moved = { ...existing, email: confirmed, verified: true };
+    return { identity: moved, token: identityToken(ctx, moved) };
+  }
+  const identity: Identity = {
+    id: randomToken(9),
+    name: cleanName(input.name),
+    email: confirmed ?? cleanEmail(input.email),
+    verified: confirmed !== null,
+  };
+  return { identity, token: identityToken(ctx, identity) };
+}
+
+/** The identity behind an interaction, when its token is good for this link. */
+export function identityFor(ctx: ServiceContext, link: ShareLink, visitor: Visitor | null, token: unknown): Identity | null {
+  const identity = readIdentityToken(ctx, token);
+  if (!identity) return null;
+  // An email link knows who confirmed; a token for someone else is not good there.
+  if (link.mode === "email" && (!identity.verified || identity.email !== visitor?.email)) return null;
+  return identity;
 }
 
 /** Email a visitor a code for this link. Returns the id the code is checked against. */

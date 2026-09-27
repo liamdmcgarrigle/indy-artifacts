@@ -322,7 +322,9 @@ const Ordered = OrderedList.extend({
 });
 const Item = ListItem.extend({ addAttributes: () => ({ ...Spread }) });
 const Tasks = TaskList.extend({ addAttributes: () => ({ ...Spread }) });
-const TaskEntry = TaskItem.extend({ addAttributes() { return { ...this.parent?.(), ...Spread }; } }).configure({ nested: true });
+/** taskKey is where people's ticks are stored; it is worked out from the words, never written. */
+const TaskKey = { taskKey: { default: null, rendered: false, keepOnSplit: false } };
+export const TaskEntry = TaskItem.extend({ addAttributes() { return { ...this.parent?.(), ...Spread, ...TaskKey }; } }).configure({ nested: true });
 
 const Align = {
   align: {

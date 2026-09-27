@@ -4,7 +4,16 @@ export type AuthorKind = "agent" | "human";
 export type CommentAuthorKind = AuthorKind | "visitor";
 export type BuildStatus = "none" | "ok" | "error";
 export type CommentStatus = "open" | "resolved";
-export type EventKind = "comment.created" | "feedback.sent" | "version.created" | "response.created" | "share.created" | "share.revoked";
+export type EventKind =
+  | "comment.created"
+  | "comment.endorsed"
+  | "feedback.sent"
+  | "version.created"
+  | "response.created"
+  | "share.created"
+  | "share.revoked"
+  | "task.ticked"
+  | "task.unticked";
 
 export const KINDS: Kind[] = ["markdown", "react", "svelte", "html"];
 
@@ -132,6 +141,8 @@ export interface Comment {
   /** Visitors only: the share link it came through, and when the owner forwarded it. */
   linkId: string | null;
   approvedAt: string | null;
+  /** Visitors only: when the owner asked agents to act on it. Until then an agent asks the owner first. */
+  endorsedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -159,4 +170,6 @@ export interface PublishResult {
   warnings: { line: number; message: string }[];
   buildStatus: BuildStatus;
   buildLog?: string;
+  /** Items people had ticked that this version rewords or removes; their ticks no longer show. */
+  droppedTicks?: { item: string; by: string; byKind: string; at: string }[];
 }

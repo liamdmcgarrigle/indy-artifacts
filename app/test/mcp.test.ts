@@ -88,6 +88,7 @@ describe("mcp endpoint", () => {
       "artifact_storybook_upload",
       "artifact_theme_set",
       "artifact_themes",
+      "artifact_tick",
       "artifact_type",
       "artifact_update",
       "artifact_wait",

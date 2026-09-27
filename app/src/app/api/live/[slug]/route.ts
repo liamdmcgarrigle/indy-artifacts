@@ -15,7 +15,10 @@ function stamp(slug: string): string {
   const row = ctx.db
     .prepare("SELECT COUNT(*) AS n, COALESCE(MAX(updated_at), '') AS at FROM comments WHERE artifact_id = ?")
     .get(artifact.id) as { n: number; at: string };
-  return `${artifact.currentVersion}:${row.n}:${row.at}`;
+  const ticks = ctx.db
+    .prepare("SELECT COALESCE(MAX(id), 0) AS id FROM tick_log WHERE artifact_id = ?")
+    .get(artifact.id) as { id: number };
+  return `${artifact.currentVersion}:${row.n}:${row.at}:${ticks.id}`;
 }
 
 /**

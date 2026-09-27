@@ -44,7 +44,7 @@ function reasonText(r: Reason, row: LibraryRow): string {
     case "unsent":
       return `${r.count} comment${r.count === 1 ? "" : "s"} you have not sent yet`;
     case "visitors":
-      return `${r.count} from visitors waiting for you to forward`;
+      return `${r.count} from visitors for you to look at`;
     case "new":
       return r.message ? `${r.who} published v${r.version}: ${r.message}` : `${r.who} published v${r.version}`;
   }

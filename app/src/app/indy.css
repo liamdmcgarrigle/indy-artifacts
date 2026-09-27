@@ -272,6 +272,183 @@ kbd.kbd {
 .art-content ul[data-type="taskList"] > li > div { flex: 1; min-width: 0; }
 .art-content ul[data-type="taskList"] > li > div > p { margin: 0; }
 
+/* ------------------------------------------------------------ tickable tasks */
+
+/* While reading, a task item is a box people tick, its words, and who ticked
+   it. The box sits in the gutter; its tap area is far bigger than it looks. */
+.art-content ul.contains-task-list { padding-left: 0.25em; }
+.art-content ul[data-type="taskList"] > li.art-task,
+.art-content li.art-task {
+  display: block;
+  position: relative;
+  list-style: none;
+  margin: 0.4em 0;
+  padding-left: 1.85em;
+}
+.art-content li.art-task > p { margin: 0; }
+.art-task__hit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  width: 1.5em;
+  height: calc(1em * var(--art-line-height, 1.6));
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.art-task__hit::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -10px;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+}
+.art-task__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.art-task__box {
+  display: grid;
+  place-items: center;
+  width: 1.12em;
+  height: 1.12em;
+  border: 1.5px solid var(--art-border-strong);
+  border-radius: var(--art-radius-sm, 4px);
+  background: var(--art-surface);
+  transition: background-color 160ms ease, border-color 160ms ease, transform 120ms ease;
+}
+.art-task__box svg {
+  width: 0.8em;
+  height: 0.8em;
+  fill: none;
+  stroke: var(--art-on-accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+}
+.art-task__input:checked + .art-task__box {
+  border-color: var(--art-accent);
+  background: var(--art-accent);
+}
+.art-task__input:checked + .art-task__box svg { stroke-dashoffset: 0; }
+.art-task--live .art-task__box svg { transition: stroke-dashoffset 220ms ease 60ms; }
+.art-task__input:focus-visible + .art-task__box {
+  outline: 2px solid var(--art-focus);
+  outline-offset: 2px;
+}
+.art-task__hit:hover .art-task__input:not(:disabled):not(:checked) + .art-task__box { border-color: var(--art-accent); }
+.art-task__hit:active .art-task__input:not(:disabled) + .art-task__box { transform: scale(0.88); }
+.art-task__input:disabled + .art-task__box { opacity: 0.7; }
+.art-task__hit:has(.art-task__input:disabled) { cursor: default; }
+
+/* The little cross-out: a line drawn through the words from the left. */
+.art-task__text {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 58%;
+  background-size: 0% 0.09em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.art-task--live .art-task__text { transition: background-size 380ms cubic-bezier(0.3, 0.7, 0.2, 1), color 240ms ease; }
+.art-task[data-done="true"] > .art-task__body > :not(ul):not(ol) .art-task__text,
+.art-task[data-done="true"] > .art-task__text,
+.art-task[data-done="true"] > p > .art-task__text {
+  background-size: 100% 0.09em;
+  color: var(--art-text-muted);
+}
+
+/* A checklist may run past the reading width by about a pill, so on a wide
+   screen the pill sits beside a long item rather than dropping under it. */
+@media (min-width: 900px) {
+  .art-content > ul:has(> li.art-task) {
+    max-width: calc(var(--art-measure) + 11em);
+  }
+}
+
+/* Who ticked it: an initial, a name, how long ago. */
+.art-tick-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 100%;
+  margin-left: 0.55em;
+  padding: 0.12em 0.6em 0.12em 0.14em;
+  border: 1px solid var(--art-border);
+  border-radius: 999px;
+  background: var(--art-surface-2);
+  color: var(--art-text-muted);
+  font-family: var(--art-font-sans);
+  font-size: 0.74em;
+  font-weight: 450;
+  line-height: 1.45;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  animation: art-tick-in 260ms ease both;
+}
+.art-tick-by__avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.55em;
+  height: 1.55em;
+  border-radius: 50%;
+  background: var(--art-accent);
+  color: var(--art-on-accent);
+  font-size: 0.86em;
+  font-weight: 650;
+  line-height: 1;
+}
+.art-tick-by--visitor .art-tick-by__avatar {
+  background: var(--art-surface);
+  color: var(--art-text);
+  box-shadow: inset 0 0 0 1px var(--art-border-strong);
+}
+.art-tick-by--agent .art-tick-by__avatar {
+  background: var(--art-info-wash, var(--art-surface));
+  color: var(--art-info, var(--art-text));
+}
+.art-tick-by__name {
+  overflow: hidden;
+  max-width: 14em;
+  color: var(--art-text);
+  font-weight: 550;
+  text-overflow: ellipsis;
+}
+.art-tick-by__ago { color: var(--art-text-faint); }
+.art-tick-by__ago::before { content: "\00b7\00a0"; }
+.art-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@keyframes art-tick-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (max-width: 640px) {
+  .art-tick-by__name { max-width: 8em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .art-task--live .art-task__text,
+  .art-task--live .art-task__box svg { transition: none; }
+  .art-tick-by { animation: none; }
+}
+
 .art-tabs__panels { display: contents; }
 /* Table cells hold a paragraph in the editor; the pipeline put text straight in. */
 .art-content th > p,
@@ -1359,6 +1536,57 @@ span.art-typeable {
   box-shadow: inset 0 0 0 8px currentColor;
 }
 
+/* ------------------------------------------------ a visitor saying who they are */
+
+.identity {
+  overflow: hidden;
+  border-color: var(--input);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow-dialog);
+}
+.identity__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 20px 18px;
+}
+.identity__title {
+  padding-right: 28px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.identity__lede {
+  margin-top: -6px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.identity__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.identity__note {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-3);
+}
+.identity__error {
+  font-size: 13px;
+  color: var(--destructive);
+}
+.identity__row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+@media (max-width: 640px) {
+  .identity__row > * { flex: 1; height: 44px; }
+}
+
 /* ------------------------------------------------------------------ sharing */
 
 .share {
@@ -1732,6 +1960,12 @@ span.art-typeable {
   padding: 10px 12px;
   border-top: 1px solid var(--border);
   background: var(--well);
+}
+.pop__forward-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
 }
 
 /* Menus move focus to the row under the pointer; the row's own highlight

@@ -15,8 +15,9 @@ so you can step back through them and compare any two.
 
 Pages can also ask questions. An agent puts a form on a page, you or whoever you share it with
 answer, and the agent reads the responses. Pages are private until you share them, either with
-anyone who has the link or only with people who confirm their email with a code. A visitor's
-comments and answers wait for you before any agent sees them.
+anyone who has the link or only with people who confirm their email with a code. Visitors give a
+name and email before they comment or tick, and agents see their comments marked as a visitor's,
+so they check with you before acting on them.
 
 ## Running Indy
 
@@ -344,9 +345,11 @@ so an SVG or HTML file opened directly runs nothing on Indy's origin. Showing on
 page lets anyone who can open the page load that whole build, including stories not on the
 page, so keep that in mind before sharing a page from a private project.
 
-A visitor on a share link sees only that page and the comments made through that link. Their
-comments and answers reach an agent only after you forward them, and they arrive marked untrusted so
-the agent treats them as data.
+A visitor on a share link sees only that page and the comments made through that link. Ticks
+belong to the page, so a visitor sees the names (never the emails) of everyone who ticked, including
+people on other links. A visitor's comments reach agents as they are written, marked untrusted and
+`needs_operator_ok`, so the agent treats them as data and asks you before acting; "Ask agent to
+address" on the thread clears that. Form answers from visitors still wait for you.
 
 Only you create share links unless you turn on "Agents may create share links" under Settings ›
 Shared links, which is off by default. With it on, an agent can share a page through the
@@ -355,8 +358,9 @@ give a reason that quotes or restates your request. Its links expire within 30 d
 does not ask for longer. They show the version that was current when the link was made unless the
 agent asks to follow later versions, and visitors cannot comment unless it turns comments on. The
 Share dialog and the Shared links list show which agent made each link and its reason, and you
-revoke these links the usual way. Agents cannot change the setting, and they cannot change or
-revoke a link you made.
+revoke these links the usual way. No MCP tool changes the setting, and agents cannot change or
+revoke a link you made. With `INDY_AUTH=local`, anything that can reach Indy from an allowed host
+counts as you, including an agent with a shell, so there the setting only guards against mistakes.
 
 ## Working on Indy
 

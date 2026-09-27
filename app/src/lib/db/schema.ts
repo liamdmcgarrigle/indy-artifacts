@@ -325,4 +325,46 @@ export const MIGRATIONS: string[] = [
 
   ALTER TABLE versions ADD COLUMN storybooks_json TEXT NOT NULL DEFAULT '{}';
   `,
+  // 8: people tick task-list items. A tick is kept by the item's words (see
+  // lib/tasks.ts), so it outlives versions that keep them; the log is the
+  // history an agent reads. A visitor's comments reach agents at once, flagged
+  // until the owner endorses them (endorsed_at).
+  `
+  CREATE TABLE ticks (
+    artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    item_key TEXT NOT NULL,
+    item_text TEXT NOT NULL,
+    checked INTEGER NOT NULL,
+    by_kind TEXT NOT NULL CHECK (by_kind IN ('owner','visitor','agent')),
+    by_name TEXT NOT NULL,
+    by_email TEXT,
+    verified INTEGER NOT NULL DEFAULT 0,
+    link_id TEXT,
+    version_number INTEGER NOT NULL,
+    at TEXT NOT NULL,
+    PRIMARY KEY (artifact_id, item_key)
+  ) STRICT;
+
+  CREATE TABLE tick_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    item_key TEXT NOT NULL,
+    item_text TEXT NOT NULL,
+    checked INTEGER NOT NULL,
+    by_kind TEXT NOT NULL,
+    by_name TEXT NOT NULL,
+    by_email TEXT,
+    verified INTEGER NOT NULL DEFAULT 0,
+    link_id TEXT,
+    version_number INTEGER NOT NULL,
+    sent_at TEXT,
+    created_at TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX idx_tick_log_artifact ON tick_log (artifact_id, created_at);
+
+  ALTER TABLE comments ADD COLUMN visitor_verified INTEGER;
+  -- The owner asking an agent to act on a visitor's comment; until then agents ask first.
+  ALTER TABLE comments ADD COLUMN endorsed_at TEXT;
+  UPDATE comments SET visitor_verified = 1 WHERE author_kind = 'visitor' AND visitor_email IS NOT NULL;
+  `,
 ];

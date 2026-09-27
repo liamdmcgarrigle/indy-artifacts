@@ -137,7 +137,7 @@ function baseQuery(where: string, withSource = true): string {
     SELECT a.*, ${withSource ? "v.source" : "NULL"} AS source, v.message AS version_message, v.author_kind AS last_kind, v.author_name AS last_name,
       (SELECT COUNT(*) FROM comments c WHERE c.artifact_id = a.id AND c.parent_id IS NULL AND c.status = 'open') AS open_threads,
       (SELECT COUNT(*) FROM comments c WHERE c.artifact_id = a.id AND c.status = 'open' AND c.sent_at IS NULL
-        AND (c.author_kind = 'human' OR (c.author_kind = 'visitor' AND c.approved_at IS NOT NULL))) AS unsent
+        AND c.author_kind IN ('human', 'visitor')) AS unsent
     FROM artifacts a
     LEFT JOIN versions v ON v.artifact_id = a.id AND v.number = a.current_version
     ${where}`;
@@ -241,7 +241,7 @@ export function needsYou(ctx: ServiceContext, opts: { countOnly?: boolean } = {}
   const visitors = ctx.db
     .prepare(
       `SELECT artifact_id, COUNT(*) AS n FROM (
-         SELECT artifact_id FROM comments WHERE author_kind = 'visitor' AND approved_at IS NULL AND status = 'open'
+         SELECT artifact_id FROM comments WHERE author_kind = 'visitor' AND parent_id IS NULL AND endorsed_at IS NULL AND status = 'open'
          UNION ALL
          SELECT artifact_id FROM responses WHERE respondent_kind = 'visitor' AND approved_at IS NULL
        ) GROUP BY artifact_id`,

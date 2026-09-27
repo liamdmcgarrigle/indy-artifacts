@@ -201,8 +201,8 @@ export function ShareDialog({
           <div className="share__options">
             <label className="share__row">
               <span className="share__text">
-                <span className="share__name">Visitors can comment</span>
-                <span className="share__desc">Their comments wait for you. Nothing reaches an agent until you forward it.</span>
+                <span className="share__name">Visitors can comment and tick boxes</span>
+                <span className="share__desc">They give their name and email first. The agent sees their comments flagged to check with you before acting.</span>
               </span>
               <Switch checked={state.link!.allowComments} disabled={busy} onCheckedChange={(on) => void change({ allow_comments: on })} />
             </label>

@@ -10,6 +10,7 @@ import { normalizeContainers } from "@/lib/pipeline/normalize";
 import { isBadge, parseKpiLine } from "@/lib/pipeline/parse";
 import { docSchema, type KpiItem } from "./schema";
 import { fingerprint } from "./fingerprint";
+import { collectTasks, type TaskItem } from "@/lib/tasks";
 
 // mdast nodes are read structurally; the directive and gfm node types are not
 // all in one published union.
@@ -150,7 +151,7 @@ function list(node: Md, ctx: Ctx): JSONContent {
   if (tasks && tasks !== items.length) throw new Unmodelled("mixed task list");
   const content = items.map((i) => ({
     type: tasks ? "taskItem" : "listItem",
-    attrs: tasks ? { checked: i.checked, spread: !!i.spread } : { spread: !!i.spread },
+    attrs: tasks ? { checked: i.checked, spread: !!i.spread, taskKey: i.data?.taskKey ?? null } : { spread: !!i.spread },
     content: blocks(i.children, ctx),
   }));
   // A list item must open with a paragraph in the editor's schema.
@@ -232,6 +233,9 @@ export function markdownToDoc(markdown: string): JSONContent {
   const tree = parser.parse(normalized) as Md;
   const ctx: Ctx = { source: normalized };
 
+  // Each task item carries the key its ticks are stored under.
+  for (const { node, item } of collectTasks(tree, normalized)) node.data = { ...(node.data ?? {}), taskKey: item.key };
+
   // Number embeds in the order the pipeline does, so the frame URLs match.
   embedCounter = 0;
   visit(tree, "code", (node: Md) => {
@@ -295,4 +299,10 @@ export function markdownToDoc(markdown: string): JSONContent {
     if (node.attrs?.src !== null) node.attrs!.fp = fingerprint(node);
   }
   return normal;
+}
+
+/** The task items on a page, in order, with their keys and the ticks the source gives them. */
+export function taskItemsOf(markdown: string): TaskItem[] {
+  const normalized = normalizeContainers(markdown).source;
+  return collectTasks(parser.parse(normalized), normalized).map((t) => t.item);
 }

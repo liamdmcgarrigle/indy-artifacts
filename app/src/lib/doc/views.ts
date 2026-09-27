@@ -7,6 +7,7 @@ import { Placeholder, UndoRedo, Dropcursor, Gapcursor } from "@tiptap/extensions
 import { docExtensions, type DocOptions } from "./schema";
 import { ChoiceView, FieldView, OptionView } from "@/components/forms/NodeViews";
 import type * as EditViews from "@/components/editor/edit-views";
+import { taskItemView, TickDecorations, wireRawTasks, type TickStore } from "./tasks-view";
 
 /**
  * Browser-only node views for the directive containers and raw blocks.
@@ -27,6 +28,8 @@ export interface ViewOptions extends DocOptions {
   editing?: boolean;
   /** The editing node views, loaded on demand; required when editing. */
   editViews?: typeof EditViews;
+  /** People's ticks on task items, when reading; task lists are tickable with one. */
+  ticks?: TickStore;
 }
 
 const BODY: Record<string, string | null> = {
@@ -309,19 +312,24 @@ function tabView(props: NodeViewRendererProps): NodeView {
   };
 }
 
-function rawView(props: NodeViewRendererProps): NodeView {
-  const dom = document.createElement("div");
-  dom.className = "art-raw";
-  dom.innerHTML = String(props.node.attrs.html ?? "");
-  // The pipeline's HTML is one top-level element; show it as that element.
-  const only = dom.childElementCount === 1 ? (dom.firstElementChild as HTMLElement) : null;
-  const view = only ?? dom;
-  if (only) only.remove();
-  return {
-    dom: view,
-    ignoreMutation: () => true,
-    stopEvent: () => false,
-    update: (node) => node.type === props.node.type && node.attrs.html === props.node.attrs.html,
+function rawView(ticks: TickStore | undefined) {
+  return (props: NodeViewRendererProps): NodeView => {
+    const dom = document.createElement("div");
+    dom.className = "art-raw";
+    dom.innerHTML = String(props.node.attrs.html ?? "");
+    // The pipeline's HTML is one top-level element; show it as that element.
+    const only = dom.childElementCount === 1 ? (dom.firstElementChild as HTMLElement) : null;
+    const view = only ?? dom;
+    if (only) only.remove();
+    // Task items in here are the view's own DOM, so they are made tickable in place.
+    const off = ticks ? wireRawTasks(view, ticks) : null;
+    return {
+      dom: view,
+      ignoreMutation: () => true,
+      stopEvent: (e) => !!(e.target as HTMLElement | null)?.closest?.(".art-task__hit"),
+      update: (node) => node.type === props.node.type && node.attrs.html === props.node.attrs.html,
+      destroy: () => off?.(),
+    };
   };
 }
 
@@ -353,7 +361,10 @@ export function viewExtensions(options: ViewOptions = {}): AnyExtension[] {
       case "tab":
         return ext.extend({ addNodeView: () => (editing ? tabView : containerView(false)) });
       case "rawBlock":
-        return ext.extend({ addNodeView: () => (editing ? ReactNodeViewRenderer(edit!.RawEdit, own) : rawView) });
+        return ext.extend({ addNodeView: () => (editing ? ReactNodeViewRenderer(edit!.RawEdit, own) : rawView(options.ticks)) });
+      // Reading, a task item is ticked by people over the source; editing, its box is the source.
+      case "taskItem":
+        return !editing && options.ticks ? ext.extend({ addNodeView: () => taskItemView(options.ticks!) }) : ext;
       // Questions are React, on shadcn controls. Their events are theirs: the
       // page must not turn a tap on a radio button into a selection.
       case "field":
@@ -375,7 +386,7 @@ export function viewExtensions(options: ViewOptions = {}): AnyExtension[] {
         return ext;
     }
   });
-  if (!editing) return exts;
+  if (!editing) return options.ticks ? [...exts, TickDecorations(options.ticks)] : exts;
   return [
     ...exts,
     UndoRedo,
