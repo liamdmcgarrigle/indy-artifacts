@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -8,9 +9,33 @@ import { resolve } from "node:path";
  * read so an existing install keeps working after the rename.
  */
 
+/**
+ * A setting from the environment. NAME_FILE, when NAME itself is not set,
+ * names a file to read it from instead, as Docker and Swarm secrets are
+ * mounted: RESEND_API_KEY_FILE=/run/secrets/resend_api_key.
+ */
 function env(name: string, legacy?: string): string | undefined {
-  const value = process.env[name] ?? (legacy ? process.env[legacy] : undefined);
+  let value = process.env[name] ?? (legacy ? process.env[legacy] : undefined);
+  if (value === undefined || value.trim() === "") {
+    const file = process.env[`${name}_FILE`] ?? (legacy ? process.env[`${legacy}_FILE`] : undefined);
+    if (file?.trim()) {
+      try {
+        value = readFileSync(file.trim(), "utf8");
+      } catch (err) {
+        throw new Error(`${name}_FILE is set to ${file.trim()}, which cannot be read: ${(err as Error).message}`);
+      }
+    }
+  }
   return value === undefined || value.trim() === "" ? undefined : value.trim();
+}
+
+function proxyHops(value: string | undefined): number {
+  if (value === undefined) return 0;
+  const hops = Number(value);
+  if (!Number.isInteger(hops) || hops < 0 || hops > 10) {
+    throw new Error(`INDY_PROXY_HOPS must be a whole number from 0 to 10, not "${value}"`);
+  }
+  return hops;
 }
 
 export type AuthMode = "password" | "local";
@@ -33,6 +58,8 @@ export interface Config {
   buildModules: string[];
   /** Indy's shadcn components (components/ui, lib/utils), which artifacts import as "@/...". */
   artifactKit: string | null;
+  /** How many trusted reverse proxies sit in front of Indy's own, for telling clients apart. */
+  proxyHops: number;
   /** Scratch space for compiling artifacts. */
   tmpDir: string | null;
 }
@@ -83,6 +110,7 @@ export function readConfig(): Config {
       .filter(Boolean),
     artifactKit: env("INDY_ARTIFACT_KIT") ?? resolve(process.cwd(), "src"),
     tmpDir: env("INDY_TMP", "ARTIFACTS_TMP") ?? null,
+    proxyHops: proxyHops(env("INDY_PROXY_HOPS")),
   };
 }
 

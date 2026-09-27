@@ -103,6 +103,7 @@ To use the bundled Caddy, point a domain's DNS at the server, open ports 80 and 
 INDY_URL=https://indy.example.com
 INDY_DOMAIN=indy.example.com
 INDY_BIND=127.0.0.1
+INDY_PROXY_HOPS=1
 ```
 
 Then start with the `https` profile. Caddy gets the certificate and renews it on its own.
@@ -111,9 +112,9 @@ Then start with the `https` profile. Caddy gets the certificate and renews it on
 docker compose --profile https up -d
 ```
 
-If you already run a proxy, forward everything to port 1936. It has to pass websockets on `/collab`
-(live editing) and must not buffer responses on `/api/live`, which keeps open pages up to date.
-For nginx:
+If you already run a proxy, forward everything to port 1936 and set `INDY_PROXY_HOPS=1`. The proxy
+has to pass websockets on `/collab` (live editing) and must not buffer responses on `/api/live`,
+which keeps open pages up to date. Traefik does both without extra settings. For nginx:
 
 ```nginx
 location / {
@@ -121,6 +122,7 @@ location / {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
     proxy_buffering off;
@@ -144,7 +146,12 @@ Everything is an environment variable in `.env`. Only `INDY_URL` is required.
 | `INDY_EMAIL_FROM` | `Indy <onboarding@resend.dev>` | The sender for emails. |
 | `INDY_AUTH` | `password` | `local` skips sign-in and treats every request as you. Only for an install nobody else can reach. |
 | `INDY_ASSET_ROOTS` | | Colon-separated folders a page may load images from by absolute path. Each must also be mounted into the container. |
+| `INDY_PROXY_HOPS` | `0` | How many reverse proxies (Traefik, nginx, a load balancer) sit in front of Indy. Set `1` behind one, so sign-in limits count each visitor separately. The bundled Caddy needs `1` too. |
 | `INDY_IMAGE` | `ghcr.io/liamdmcgarrigle/indy-artifacts:latest` | The image to run. Pin a release such as `:1.2` to update on your own schedule. |
+
+Any of these can be read from a file instead, the way Docker and Swarm mount secrets: set
+`RESEND_API_KEY_FILE=/run/secrets/resend_api_key` in place of `RESEND_API_KEY`. When both are set,
+the plain variable wins.
 
 Older installs that still set `ARTIFACTS_PUBLIC_URL`, `ARTIFACTS_DATA` and the other `ARTIFACTS_*`
 names keep working; each is read when its `INDY_*` name is not set.
