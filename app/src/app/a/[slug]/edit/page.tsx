@@ -6,8 +6,11 @@ import { getContext } from "@/lib/service/context";
 import { requireArtifact, requireVersion } from "@/lib/service/artifacts";
 import { NotFoundError } from "@/lib/service/errors";
 import { collabToken } from "@/lib/auth/accounts";
+import { artifactMetadata } from "@/lib/view";
 
 export const dynamic = "force-dynamic";
+
+export const generateMetadata = ({ params }: { params: Promise<{ slug: string }> }) => artifactMetadata(params, (title) => `Editing ${title}`);
 
 export default async function EditPage({ params }: { params: Promise<{ slug: string }> }) {
   await pageOwner();

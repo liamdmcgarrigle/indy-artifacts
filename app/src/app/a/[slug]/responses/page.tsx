@@ -9,9 +9,10 @@ import { NotFoundError } from "@/lib/service/errors";
 import { answerText, isEmpty, type FieldSpec } from "@/lib/forms/spec";
 import { Button } from "@/components/ui/button";
 import { ago } from "@/lib/time";
+import { artifactMetadata } from "@/lib/view";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Responses" };
+export const generateMetadata = ({ params }: { params: Promise<{ slug: string }> }) => artifactMetadata(params, (title) => `Responses to ${title}`);
 
 /** Counts for a question with options; an average for numbers; the latest words for text. */
 function Summary({ field, responses }: { field: FieldSpec; responses: FormResponse[] }) {

@@ -1,10 +1,12 @@
 import { pageOwner } from "@/lib/auth/page";
 import { notFound } from "next/navigation";
 import { ArtifactView } from "@/components/ArtifactView";
-import { loadView } from "@/lib/view";
+import { artifactMetadata, loadView } from "@/lib/view";
 import { NotFoundError } from "@/lib/service/errors";
 
 export const dynamic = "force-dynamic";
+
+export const generateMetadata = ({ params }: { params: Promise<{ slug: string }> }) => artifactMetadata(params);
 
 export default async function ArtifactPage({ params }: { params: Promise<{ slug: string }> }) {
   const { user } = await pageOwner();

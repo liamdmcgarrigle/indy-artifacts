@@ -8,6 +8,8 @@ import { docForView } from "./doc";
 import { countResponses, formOf } from "./service/responses";
 import type { ArtifactViewProps, ThreadView } from "@/components/ArtifactView";
 import type { Audience } from "./service/comments";
+import type { Metadata } from "next";
+import { pageOwner } from "./auth/page";
 import { activeLink } from "./service/sharing";
 import { getBuild } from "./service/storybooks";
 import type { ServiceContext } from "./service/context";
@@ -124,4 +126,19 @@ export function loadView(slug: string, versionNumber?: number, opts: { audience?
     sharing: activeLink(ctx, slug)?.mode ?? "private",
     storybooks: storybooksShown(ctx, version.storybooks),
   };
+}
+
+/**
+ * The browser tab names the page, so several open pages can be told apart. Only
+ * the owner sees these pages, so the title is looked up after the same check.
+ */
+export async function artifactMetadata(params: Promise<{ slug: string }>, label?: (title: string) => string): Promise<Metadata> {
+  await pageOwner();
+  const { slug } = await params;
+  try {
+    const { title } = requireArtifact(getContext(), slug);
+    return { title: label ? label(title) : title };
+  } catch {
+    return {};
+  }
 }
