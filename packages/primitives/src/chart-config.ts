@@ -293,7 +293,10 @@ export function chartConfig(
         const rows = spec.data.filter((row) => String(row[spec.x]) === label);
         if (spec.stats) {
           const r = rows[0] ?? {};
-          return { min: toNumber(r.min), q1: toNumber(r.q1), median: toNumber(r.median), q3: toNumber(r.q3), max: toNumber(r.max) };
+          // The five numbers given are the whiskers: the plugin would otherwise cap them at 1.5 IQR.
+          const min = toNumber(r.min);
+          const max = toNumber(r.max);
+          return { min, q1: toNumber(r.q1), median: toNumber(r.median), q3: toNumber(r.q3), max, whiskerMin: min, whiskerMax: max };
         }
         return rows.map((row) => toValue(row[key])).filter((v): v is number => v !== null);
       });
