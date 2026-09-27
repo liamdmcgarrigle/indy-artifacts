@@ -76,8 +76,8 @@ Claude Code only signs in this way when Indy is on HTTPS. On plain HTTP, or on a
 browser, make a token on the Connect page and pass it as a header instead. Settings › Agents lists
 every connected agent and disconnects any one of them.
 
-The optional Indy plugin adds two skills, `publish` for making pages and `feedback` for picking up
-your comments, and tells the agent at the start of each session that Indy is there:
+The optional Indy plugin adds three skills, `publish` for making pages, `charts` for choosing the
+right chart, and `feedback` for picking up your comments, and tells the agent at the start of each session that Indy is there:
 
 ```bash
 claude plugin marketplace add liamdmcgarrigle/indy-artifacts && claude plugin install indy@indy
