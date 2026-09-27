@@ -20,6 +20,8 @@ interface ShareState {
     opens: number;
     lastOpenedAt: string | null;
     lastOpenedBy: string | null;
+    /** Set when an agent made the link with artifact_share. */
+    agent?: { agent: string; reason: string } | null;
   } | null;
   privateUrl: string;
   emailGate: boolean;
@@ -186,6 +188,12 @@ export function ShareDialog({
           <p className="share__note">
             This page shows stories from the {storybooks.join(" and ")} Storybook{storybooks.length > 1 ? "s" : ""}. Anyone who can open it can also load the other stories in
             {storybooks.length > 1 ? " those builds" : " that build"}.
+          </p>
+        ) : null}
+
+        {shared && state.link!.agent ? (
+          <p className="share__note">
+            Created by agent {state.link!.agent.agent}: {state.link!.agent.reason}
           </p>
         ) : null}
 

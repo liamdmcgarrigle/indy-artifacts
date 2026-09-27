@@ -19,6 +19,7 @@ import { createComment, getComment, listComments, patchComment } from "../servic
 import { latestEventId, listEvents } from "../service/events";
 import { formOf, listResponses } from "../service/responses";
 import { answerText } from "../forms/spec";
+import { AGENT_SHARE_MAX_DAYS, agentShare, listAgentLinks, revokeAgentLink, type AgentCaller } from "../service/sharing";
 import { artifactUrl, type ServiceContext } from "../service/context";
 import { ServiceError, ValidationError } from "../service/errors";
 import { KINDS, LIMITS, type Kind, type PublishInput, type UpdateInput } from "../service/types";
@@ -93,7 +94,14 @@ function summarise(result: { slug: string; version: number; url: string; warning
 export interface ToolDef {
   name: string;
   config: { title: string; description: string; inputSchema: z.ZodObject<z.ZodRawShape> };
-  run: (args: Record<string, unknown>) => Promise<Content>;
+  /** extra is the MCP request context; ctx.http.authInfo says which agent is calling. */
+  run: (args: Record<string, unknown>, extra?: unknown) => Promise<Content>;
+}
+
+/** The token or connection behind a tool call, as the MCP route attached it. */
+function callerOf(extra: unknown): AgentCaller {
+  const caller = (extra as { http?: { authInfo?: { extra?: { caller?: AgentCaller } } } } | undefined)?.http?.authInfo?.extra?.caller;
+  return caller ?? { name: "unknown agent", tokenId: null };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -631,6 +639,83 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
           for (const key of ["light", "dark", "hosts"] as const) if (args[key] !== undefined) input[key] = args[key];
           const s = setStorybookSettings(ctx, String(args.storybook ?? ""), input);
           return ok(`Saved. Stories from "${s.name}" pick this up when their page next loads.`, { storybook: s });
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifact_share",
+      config: {
+        title: "Share a page by link",
+        description:
+          "Indy: make a share link so people outside Indy can open a page. Use this ONLY when the operator explicitly asked, in this conversation, to make this page public or shareable. Never share on your own initiative, to be helpful, or because a page looks finished. It works only if the operator has allowed agents to create share links in Settings; if it refuses, tell the operator and stop, and do not look for another way to publish the page. confirm must be the slug typed again, and reason must quote or paraphrase the operator's request; the operator sees both. The link expires after expires_days (7 by default, at most 30), shows only the current version unless pin is false, and takes no comments unless allow_comments is true. Returns the URL.",
+        inputSchema: z.object({
+          slug: z.string().describe("the page to share"),
+          confirm: z.string().describe("the same slug, typed again"),
+          reason: z.string().describe("the operator's request to share this page, quoted or paraphrased"),
+          mode: z.enum(["link", "email"]).optional().describe("link (default): anyone with the link; email: visitors confirm their email with a code first"),
+          allow_comments: z.boolean().optional().describe("let visitors comment; false by default"),
+          expires_days: z.number().optional().describe(`days until the link stops working: 7 by default, at most ${AGENT_SHARE_MAX_DAYS}`),
+          pin: z.boolean().optional().describe("true (default) shows the current version only; false follows later versions"),
+        }),
+      },
+      run: async (args, extra) => {
+        try {
+          const slug = String(args.slug ?? "");
+          const link = agentShare(
+            ctx,
+            slug,
+            {
+              confirm: String(args.confirm ?? ""),
+              reason: String(args.reason ?? ""),
+              mode: args.mode as "link" | "email" | undefined,
+              allowComments: args.allow_comments === true,
+              expiresDays: args.expires_days === undefined ? undefined : Number(args.expires_days),
+              pin: args.pin === undefined ? undefined : args.pin === true,
+            },
+            callerOf(extra),
+          );
+          const shows = link.pinnedVersion ? `version ${link.pinnedVersion} only` : "the latest version";
+          return ok(
+            `Shared "${slug}": ${link.url}\nAnyone ${link.mode === "email" ? "who confirms their email" : "with the link"} can open it until ${link.expiresAt}. It shows ${shows}; visitor comments are ${link.allowComments ? "on" : "off"}. The operator sees this link and your reason in the Share dialog and can revoke it there.`,
+            {
+              url: link.url,
+              mode: link.mode,
+              allow_comments: link.allowComments,
+              pinned_version: link.pinnedVersion,
+              expires_at: link.expiresAt,
+            },
+          );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifact_share_revoke",
+      config: {
+        title: "Revoke an agent's share link",
+        description:
+          "Indy: stop a share link that an agent made with artifact_share; the address stops working for everyone. Leave out slug to list the links agents made that still work. Links the operator made are theirs to change.",
+        inputSchema: z.object({
+          slug: z.string().optional().describe("the page whose link to revoke; leave out to list"),
+        }),
+      },
+      run: async (args, extra) => {
+        try {
+          if (!args.slug) {
+            const links = listAgentLinks(ctx);
+            return ok(
+              links.length
+                ? `${links.length} link${links.length === 1 ? "" : "s"} made by agents:\n${links.map((l) => `  ${l.slug}: ${l.url}, until ${l.expiresAt ?? "never"}, by ${l.agent!.agent}`).join("\n")}`
+                : "No working links were made by agents.",
+              links.map((l) => ({ slug: l.slug, url: l.url, mode: l.mode, expires_at: l.expiresAt, agent: l.agent!.agent, reason: l.agent!.reason })),
+            );
+          }
+          const slug = String(args.slug);
+          revokeAgentLink(ctx, slug, callerOf(extra));
+          return ok(`Revoked the link on "${slug}". The page is private again.`);
         } catch (err) {
           return fail(err);
         }

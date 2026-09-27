@@ -4,7 +4,7 @@ export type AuthorKind = "agent" | "human";
 export type CommentAuthorKind = AuthorKind | "visitor";
 export type BuildStatus = "none" | "ok" | "error";
 export type CommentStatus = "open" | "resolved";
-export type EventKind = "comment.created" | "feedback.sent" | "version.created" | "response.created";
+export type EventKind = "comment.created" | "feedback.sent" | "version.created" | "response.created" | "share.created" | "share.revoked";
 
 export const KINDS: Kind[] = ["markdown", "react", "svelte", "html"];
 

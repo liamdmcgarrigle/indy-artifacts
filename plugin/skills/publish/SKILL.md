@@ -117,3 +117,14 @@ Storybooks; see the `storybook` skill.
 reads an older version back, including the build log when a compiled page failed.
 `artifact_type` writes into a markdown page a few characters at a time so the operator can
 watch it happen; use it only when they are looking at the page and asked for a change.
+
+## Sharing
+
+Pages are private, and sharing is the operator's call. `artifact_share` makes a share link, but
+only when the operator asked you in this conversation to make that page public or shareable.
+Never share on your own initiative. It works only if they have allowed agents to create share
+links in Settings; if it refuses, tell them and stop. Pass `confirm` (the slug again) and
+`reason` (their request, quoted or paraphrased); they see both. The link lasts 7 days unless
+`expires_days` says otherwise (30 at most), shows only the current version, and takes no
+comments unless `allow_comments` is true. `artifact_share_revoke` lists the links agents made,
+or revokes one by slug.

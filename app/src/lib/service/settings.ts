@@ -17,6 +17,8 @@ export interface AppSettings {
   imageQuality: number;
   /** The theme a page gets when neither it nor its project names one. */
   defaultTheme: string;
+  /** Agents may create share links with artifact_share. Off unless the owner turns it on. */
+  agentSharing: boolean;
 }
 
 /**
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   imageMaxEdge: 2560,
   imageQuality: 80,
   defaultTheme: "paper",
+  agentSharing: false,
 };
 
 const KEY = "app_settings";
@@ -66,6 +69,10 @@ export function updateSettings(ctx: ServiceContext, patch: Partial<Record<keyof 
   }
   if (patch.imageMaxEdge !== undefined) next.imageMaxEdge = whole(patch.imageMaxEdge, "the largest image side", 320, 8192);
   if (patch.imageQuality !== undefined) next.imageQuality = whole(patch.imageQuality, "image quality", 30, 100);
+  if (patch.agentSharing !== undefined) {
+    if (typeof patch.agentSharing !== "boolean") throw new ValidationError("agentSharing must be true or false");
+    next.agentSharing = patch.agentSharing;
+  }
   if (patch.defaultTheme !== undefined) next.defaultTheme = requireTheme(ctx, String(patch.defaultTheme)).name;
   ctx.db
     .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")

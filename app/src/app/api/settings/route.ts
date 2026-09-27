@@ -31,6 +31,7 @@ export async function PATCH(request: Request) {
       imageMaxEdge: input.image_max_edge,
       imageQuality: input.image_quality,
       defaultTheme: input.default_theme,
+      agentSharing: input.agent_sharing,
     });
     return json(await state());
   } catch (err) {

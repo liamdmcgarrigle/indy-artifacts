@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 let dir: string;
-let post: (body: unknown) => Promise<Record<string, unknown>>;
+let post: (body: unknown, headers?: Record<string, string>) => Promise<Record<string, unknown>>;
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "artifact-mcp-"));
@@ -13,7 +13,7 @@ beforeAll(async () => {
   const mod = await import("@/app/mcp/route");
   const handler = mod.POST as (req: Request) => Promise<Response>;
 
-  post = async (body: unknown) => {
+  post = async (body: unknown, extra: Record<string, string> = {}) => {
     const res = await handler(
       new Request("http://localhost:5174/mcp", {
         method: "POST",
@@ -21,6 +21,7 @@ beforeAll(async () => {
           "content-type": "application/json",
           accept: "application/json, text/event-stream",
           "mcp-protocol-version": "2025-06-18",
+          ...extra,
         },
         body: JSON.stringify(body),
       }),
@@ -80,6 +81,8 @@ describe("mcp endpoint", () => {
       "artifact_reply",
       "artifact_resolve",
       "artifact_responses",
+      "artifact_share",
+      "artifact_share_revoke",
       "artifact_stories",
       "artifact_storybook_set",
       "artifact_storybook_upload",
@@ -214,5 +217,35 @@ describe("mcp endpoint", () => {
     const preset = await callTool("artifact_theme_set", { name: "graphite", tokens: { accent: "#000000" } });
     expect(textOf(preset)).toMatch(/built-in theme/);
   });
-});
 
+  it("shares a page for an agent only once the owner allows it, and names the agent", async () => {
+    const { getContext } = await import("@/lib/service/context");
+    const { createApiToken } = await import("@/lib/auth/accounts");
+    const { updateSettings } = await import("@/lib/service/settings");
+    const { listSharedPages } = await import("@/lib/service/sharing");
+    const ctx = getContext();
+    const { token } = createApiToken(ctx, "laptop claude");
+    const asAgent = (name: string, args: Record<string, unknown>) =>
+      post(
+        { jsonrpc: "2.0", id: Math.floor(Math.random() * 1e6), method: "tools/call", params: { name, arguments: args } },
+        { authorization: `Bearer ${token}` },
+      );
+    const args = { slug: "mcp-demo", confirm: "mcp-demo", reason: "Liam asked: share this with the design team" };
+
+    const refused = await asAgent("artifact_share", args);
+    expect(textOf(refused)).toMatch(/Settings › Shared links/);
+    expect(textOf(refused)).toMatch(/do not try any other way/);
+
+    updateSettings(ctx, { agentSharing: true });
+    const shared = await asAgent("artifact_share", args);
+    expect(textOf(shared)).toMatch(/^Shared "mcp-demo": http:\/\/agentbox:5174\/s\//);
+    const listed = listSharedPages(ctx).find((s) => s.slug === "mcp-demo")!;
+    expect(listed.agent).toEqual({ agent: "laptop claude", reason: args.reason });
+
+    const mine = jsonOf(await asAgent("artifact_share_revoke", {})) as { slug: string; agent: string }[];
+    expect(mine).toMatchObject([{ slug: "mcp-demo", agent: "laptop claude" }]);
+    expect(textOf(await asAgent("artifact_share_revoke", { slug: "mcp-demo" }))).toMatch(/Revoked/);
+    expect(listSharedPages(ctx).find((s) => s.slug === "mcp-demo")).toBeUndefined();
+    updateSettings(ctx, { agentSharing: false });
+  });
+});

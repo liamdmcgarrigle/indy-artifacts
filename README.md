@@ -348,6 +348,16 @@ A visitor on a share link sees only that page and the comments made through that
 comments and answers reach an agent only after you forward them, and they arrive marked untrusted so
 the agent treats them as data.
 
+Only you create share links unless you turn on "Agents may create share links" under Settings ›
+Shared links, which is off by default. With it on, an agent can share a page through the
+`artifact_share` tool after you ask it to. The agent has to type the page's slug a second time and
+give a reason that quotes or restates your request. Its links expire within 30 days, or 7 if it
+does not ask for longer. They show the version that was current when the link was made unless the
+agent asks to follow later versions, and visitors cannot comment unless it turns comments on. The
+Share dialog and the Shared links list show which agent made each link and its reason, and you
+revoke these links the usual way. Agents cannot change the setting, and they cannot change or
+revoke a link you made.
+
 ## Working on Indy
 
 ```bash
