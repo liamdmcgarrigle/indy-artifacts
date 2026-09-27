@@ -1,4 +1,4 @@
-# Artifacts authoring reference
+# Indy authoring reference
 
 Everything you can put in an artifact, with one example of each.
 
@@ -205,16 +205,18 @@ log in `build_log`, so the operator can see what happened and you can read it ba
 
 ## Assets
 
-Attach a file by absolute host path, not by pasting bytes:
+Attach a file by its absolute path on the machine Indy runs on, not by pasting bytes:
 
 ```
-assets: [{ name: "run-chart.png", path: "/home/liam/work/backup-studio/out/chart.png" }]
+assets: [{ name: "run-chart.png", path: "/srv/work/backup-studio/out/chart.png" }]
 ```
 
-The path must be under `/home/liam/work`, `/home/liam/orca` or `/tmp`. Reference it from
-markdown as `assets/run-chart.png`. Assets carry forward: an update that omits `assets`
-keeps the previous version's set. Names match `[A-Za-z0-9._-]{1,80}`, and the allowed
-extensions are `png jpg jpeg gif webp svg mp4 webm json csv txt`.
+The path must be under one of the folders Indy was told to read (`INDY_ASSET_ROOTS`), so this
+works only when the agent and Indy share a machine. Reference the file from markdown as
+`assets/run-chart.png`. Assets carry forward: an update that omits `assets` keeps the
+previous version's set. Names match `[A-Za-z0-9._-]{1,80}`, and the allowed extensions are
+`png jpg jpeg gif webp svg mp4 webm json csv txt`. Indy may scale down and recompress
+images as it stores them.
 
 ## Limits
 

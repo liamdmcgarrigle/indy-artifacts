@@ -212,6 +212,8 @@ export interface ApiToken {
   prefix: string;
   createdAt: string;
   lastUsedAt: string | null;
+  /** 'token' was made by hand in Settings; 'oauth' is an agent that signed in through the browser. */
+  kind: "token" | "oauth";
 }
 
 export const TOKEN_PREFIX = "indy_tk_";
@@ -225,7 +227,7 @@ export function createApiToken(ctx: ServiceContext, name: string): { token: stri
   ctx.db
     .prepare("INSERT INTO api_tokens (id, name, prefix, hash, created_at) VALUES (?, ?, ?, ?, ?)")
     .run(id, clean, prefix, sha256(token), iso(now()));
-  return { token, record: { id, name: clean, prefix, createdAt: iso(now()), lastUsedAt: null } };
+  return { token, record: { id, name: clean, prefix, createdAt: iso(now()), lastUsedAt: null, kind: "token" } };
 }
 
 export function listApiTokens(ctx: ServiceContext): ApiToken[] {
@@ -238,11 +240,14 @@ export function listApiTokens(ctx: ServiceContext): ApiToken[] {
     prefix: String(r.prefix),
     createdAt: String(r.created_at),
     lastUsedAt: (r.last_used_at as string | null) ?? null,
+    kind: r.kind === "oauth" ? ("oauth" as const) : ("token" as const),
   }));
 }
 
 export function revokeApiToken(ctx: ServiceContext, id: string): void {
   ctx.db.prepare("UPDATE api_tokens SET revoked_at = ? WHERE id = ?").run(iso(now()), id);
+  // An OAuth connection's access and refresh tokens end with it.
+  ctx.db.prepare("DELETE FROM oauth_tokens WHERE connection_id = ?").run(id);
 }
 
 /** The token's name if it is live, touching its last-used time. */

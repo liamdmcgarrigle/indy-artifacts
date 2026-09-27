@@ -1,91 +1,52 @@
-# artifacts plugin
+# Indy plugin
 
-One directory that both Claude Code and Codex accept. It gives an agent the `artifacts`
-skill and the `artifacts` MCP server at `http://127.0.0.1:5174/mcp`, which is how it
-publishes pages, reads the operator's comments, and replies to them.
+One folder that Claude Code and Codex both install. It teaches an agent when and how to publish
+to Indy. The connection itself is added separately, with the agent's own `mcp add` command, so it
+works the same with or without the plugin. Indy's Connect page (`/connect`) shows both steps with
+your address filled in.
 
 ```
 plugin/
-  .claude-plugin/plugin.json   manifest for Claude Code
-  .codex-plugin/plugin.json    manifest for Codex, same fields
-  .mcp.json                    the streamable-http MCP endpoint
-  skills/artifacts/SKILL.md    when to publish, the workflow, identity, feedback
-  skills/artifacts/reference.md the block vocabulary, one example each, the limits
+  .claude-plugin/plugin.json    Claude Code manifest
+  .codex-plugin/plugin.json     Codex manifest
+  hooks/hooks.json              SessionStart, shared by both
+  hooks/session-start.sh        one line of context: Indy is there, and when to use it
+  skills/publish/               when to publish, how, and what to do with comments
+  skills/publish/reference.md   every block, one example each; the server serves the same file
+  skills/feedback/              pick up the operator's comments on this project's pages
 ```
 
-The marketplace manifests live at the repo root: `.claude-plugin/marketplace.json` for
-Claude Code and `.agents/plugins/marketplace.json` for Codex. Both name the marketplace
-`artifacts-local` and point at `./plugin`.
+The marketplace is `.claude-plugin/marketplace.json` at the repository root. Codex reads the same
+file, so both agents install `indy@indy`:
 
-## Install into Claude Code
-
-```sh
-claude plugin marketplace add /home/liam/work/artifacts
-claude plugin install artifacts@artifacts-local --scope user
+```bash
+claude plugin marketplace add liamdmcgarrigle/indy-artifacts && claude plugin install indy@indy
+codex plugin marketplace add liamdmcgarrigle/indy-artifacts && codex plugin add indy@indy
 ```
 
-Verified on agentbox, 2026-09-20:
+## What each part is for
 
-```
-✔ Successfully added marketplace: artifacts-local (declared in user settings)
-✔ Successfully installed plugin: artifacts@artifacts-local (scope: user)
-```
+The session-start hook prints one line: Indy is set up, publish results that read better as pages,
+and the publish skill has the details. It makes no network call and costs about 60 tokens. It runs
+on startup, `/clear` and compaction, but not on resume, where the line is already in the
+conversation. Codex asks once before it runs a plugin's hook; `/hooks` shows it.
 
-`claude plugin details artifacts@artifacts-local` then reports the inventory:
+Each skill costs one line of context until it is used. `publish` carries the workflow: publish, give
+the link, handle comments, and merge the operator's edits instead of overwriting them. `feedback` is
+for "I left some notes": it finds this project's pages with open comments and works through them.
+The operator can also run it as `/indy:feedback`.
 
-```
-Component inventory
-  Skills (1)  artifacts
-  MCP servers (1)  artifacts  (tool schemas resolved at runtime; not counted)
+The plugin ships no MCP server. Codex reads a server's URL literally, and in Claude Code a
+plugin's fixed `Authorization` header gets in the way of signing in through the browser. So each
+agent adds the server itself, by OAuth or with a token, and the plugin only adds knowledge.
 
-Projected token cost
-  Always-on:   ~113 tok   added to every session
-```
+Comments don't arrive by themselves. The agent collects them with `artifact_wait` when you said
+you would review now, or when you ask with the feedback skill.
 
-Restart the session to pick it up. The MCP server shows as unreachable until the
-artifacts container is running; the skill works regardless.
+## Changing the plugin
 
-## Install into Codex
-
-```sh
-codex plugin marketplace add /home/liam/work/artifacts
-codex plugin add artifacts@artifacts-local
-```
-
-Verified on agentbox, 2026-09-20:
-
-```
-Added marketplace `artifacts-local` from /home/liam/work/artifacts.
-Installed marketplace root: /home/liam/work/artifacts
-
-Added plugin `artifacts` from marketplace `artifacts-local`.
-Installed plugin root: /home/liam/.codex/plugins/cache/artifacts-local/artifacts/0.1.0
-```
-
-`codex plugin list` then shows `artifacts@artifacts-local  installed, enabled  0.1.0`.
-Codex copies the plugin into its cache at install time, so it does not read the working
-tree afterwards.
-
-## After you edit the plugin
-
-Claude Code reads a directory marketplace live, but refresh it if a manifest changed:
-
-```sh
-claude plugin marketplace update artifacts-local
-claude plugin update artifacts@artifacts-local
-```
-
-Codex installed a copy, so re-add it to pick up changes:
-
-```sh
-codex plugin add artifacts@artifacts-local
-```
-
-## Validate before committing a change
-
-```sh
-claude plugin validate /home/liam/work/artifacts/plugin   # the plugin manifest
-claude plugin validate /home/liam/work/artifacts          # the marketplace manifest
-```
-
-Both print `✔ Validation passed`.
+- `reference.md` is the one copy of the authoring reference. After editing it, run
+  `npm run sync:reference` in `app/` so the server serves the same text; a test fails until you do.
+- Bump the version with `npm run set-version` for any change you want users to receive. Claude
+  Code only updates a plugin when its version changes.
+- `claude plugin validate plugin` and `claude plugin validate .` check both manifests.

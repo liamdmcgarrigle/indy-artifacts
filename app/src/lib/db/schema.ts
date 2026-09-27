@@ -226,4 +226,35 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE comments ADD COLUMN link_id TEXT;
   `,
+  // 4: OAuth for MCP clients. A grant is an agent connection in api_tokens (kind 'oauth').
+  `
+  ALTER TABLE api_tokens ADD COLUMN kind TEXT NOT NULL DEFAULT 'token';
+  ALTER TABLE api_tokens ADD COLUMN client_id TEXT;
+
+  CREATE TABLE oauth_clients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    redirect_uris_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE TABLE oauth_codes (
+    hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    challenge TEXT NOT NULL,
+    resource TEXT,
+    connection_name TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE TABLE oauth_tokens (
+    hash TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES api_tokens(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('access','refresh')),
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX idx_oauth_tokens_connection ON oauth_tokens (connection_id);
+  `,
 ];

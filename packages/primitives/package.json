@@ -1,11 +1,18 @@
 {
   "name": "@artifacts/primitives",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "./dist/primitives.js",
-  "exports": { ".": "./dist/primitives.js", "./css": "./dist/primitives.css" },
-  "scripts": { "build": "node build.mjs" },
-  "devDependencies": { "esbuild": "0.28.2" }
+  "exports": {
+    ".": "./dist/primitives.js",
+    "./css": "./dist/primitives.css"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
 }

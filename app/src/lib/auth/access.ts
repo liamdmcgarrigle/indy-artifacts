@@ -3,6 +3,7 @@ import type { ServiceContext } from "../service/context";
 import { UnauthorizedError } from "../service/errors";
 import { checkApiToken, secret, sessionUser, type User } from "./accounts";
 import { hmac, safeEqual } from "./crypto";
+import { checkAccessToken } from "./oauth";
 
 /**
  * Who is asking. The owner arrives with a session cookie, or with nothing at
@@ -51,7 +52,7 @@ export function principalFrom(ctx: ServiceContext, headers: Headers): Principal 
   if (internal && safeEqual(internal, internalKey(ctx))) return { kind: "agent", tokenId: "internal", name: "live edit" };
   const token = bearer(headers);
   if (token) {
-    const found = checkApiToken(ctx, token);
+    const found = checkApiToken(ctx, token) ?? checkAccessToken(ctx, token);
     if (found) return { kind: "agent", tokenId: found.id, name: found.name };
   }
   const user = sessionUser(ctx, parseCookies(headers.get("cookie"))[SESSION_COOKIE]);

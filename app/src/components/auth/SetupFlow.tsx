@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SackMark } from "@/components/indy/brand";
-import { ConnectAgent } from "@/components/indy/ConnectAgent";
 import { cn } from "@/lib/utils";
 
 export interface InstallCheck {
@@ -17,7 +16,7 @@ export interface InstallCheck {
   detail: string;
 }
 
-const STEPS = ["Your account", "Connect an agent", "Email"];
+const STEPS = ["Your account", "Email", "Connect an agent"];
 
 async function post(path: string, payload: unknown, method = "POST") {
   const res = await fetch(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
@@ -36,13 +35,11 @@ function strength(pw: string): number {
   return Math.min(score, 4);
 }
 
-export function SetupFlow({ url, checks, email }: { url: string; checks: InstallCheck[]; email: boolean }) {
+export function SetupFlow({ checks, email }: { checks: InstallCheck[]; email: boolean }) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
-  const [tokenName, setTokenName] = useState("my laptop · claude");
   const [twoStep, setTwoStep] = useState(false);
 
   const score = strength(form.password);
@@ -61,24 +58,12 @@ export function SetupFlow({ url, checks, email }: { url: string; checks: Install
     }
   }
 
-  async function makeToken() {
-    setBusy(true);
-    setError(null);
-    try {
-      const data = await post("/api/tokens", { name: tokenName });
-      setToken(data.token);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function finish() {
     setBusy(true);
     try {
       if (email && twoStep) await post("/api/account", { two_step: true }, "PATCH");
-      window.location.assign("/");
+      // The last step is its own page, which Settings links to as well.
+      window.location.assign("/connect?welcome=1");
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -169,45 +154,6 @@ export function SetupFlow({ url, checks, email }: { url: string; checks: Install
           {step === 1 ? (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <h1 className="text-xl font-semibold">Connect an agent</h1>
-                <p className="text-sm leading-relaxed text-fg-3">
-                  Each agent gets its own token, so you can revoke one without the others. You can make more in
-                  Settings.
-                </p>
-              </div>
-              {token ? (
-                <>
-                  <p className="text-[13px] text-warn">Copy it now. It won&apos;t be shown again.</p>
-                  <ConnectAgent url={url} token={token} />
-                </>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="token-name" className="text-fg-2">Name it after where it runs</Label>
-                    <Input id="token-name" value={tokenName} onChange={(e) => setTokenName(e.target.value)} className="h-10" />
-                  </div>
-                  <Button onClick={makeToken} disabled={busy} className="h-10 w-fit font-semibold">
-                    Make a token
-                  </Button>
-                </div>
-              )}
-              {error ? <p role="alert" className="text-[13px] text-bad">{error}</p> : null}
-              <div className="flex justify-end gap-3 pt-2">
-                {token ? null : (
-                  <Button variant="ghost" onClick={() => setStep(2)} className="text-fg-3">
-                    Skip for now
-                  </Button>
-                )}
-                <Button variant={token ? "default" : "outline"} onClick={() => setStep(2)}>
-                  Continue
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {step === 2 ? (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
                 <h1 className="text-xl font-semibold">Email</h1>
                 <p className="text-sm leading-relaxed text-fg-3">
                   {email
@@ -226,7 +172,7 @@ export function SetupFlow({ url, checks, email }: { url: string; checks: Install
               ) : null}
               {error ? <p role="alert" className="text-[13px] text-bad">{error}</p> : null}
               <Button onClick={finish} disabled={busy} className="h-11 text-[15px] font-semibold">
-                Open Indy
+                Continue
               </Button>
             </div>
           ) : null}

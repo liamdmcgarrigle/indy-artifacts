@@ -4,7 +4,6 @@ import { getContext } from "@/lib/service/context";
 import { owner, sessionUser } from "@/lib/auth/accounts";
 import { SESSION_COOKIE } from "@/lib/auth/access";
 import { config } from "@/lib/config";
-import { Swap } from "@/components/indy/swap";
 import { SackMark } from "@/components/indy/brand";
 import { LoginForm } from "@/components/auth/LoginForm";
 
@@ -24,19 +23,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main className="grid min-h-dvh grid-cols-1 bg-background lg:grid-cols-[minmax(0,1fr)_520px]">
       <section
-        aria-label="The swap"
-        className="relative hidden flex-col items-center justify-center gap-7 overflow-hidden border-r border-hairline bg-sidebar lg:flex"
+        aria-hidden
+        className="relative hidden flex-col items-center justify-center border-r border-hairline bg-sidebar px-16 lg:flex"
       >
-        <div
-          className="swap-glow pointer-events-none absolute left-1/2 top-[46%] size-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={{
-            background:
-              "radial-gradient(circle, rgb(217 178 111 / 0.16) 0%, rgb(217 178 111 / 0.05) 38%, rgb(217 178 111 / 0) 70%)",
-          }}
-        />
-        <Swap className="relative h-[504px] w-[420px] max-h-[62vh]" />
-        <p className="swap-caption relative font-mono text-[13px] tracking-[0.02em] text-fg-3">
-          every version replaces the last, and nothing is lost
+        <p className="max-w-[440px] text-balance text-center font-display text-[44px] font-semibold leading-[1.08] tracking-[-0.025em] text-fg-2">
+          Where you&rsquo;ll find the world&rsquo;s best artifacts.
         </p>
       </section>
 

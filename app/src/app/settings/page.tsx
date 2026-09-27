@@ -16,7 +16,6 @@ export default async function SettingsPage() {
   const c = config();
   return (
     <SettingsView
-      url={c.url}
       user={user ? { name: user.name, email: user.email, twoStep: user.twoStep } : null}
       tokens={listApiTokens(ctx)}
       shares={listSharedPages(ctx)}

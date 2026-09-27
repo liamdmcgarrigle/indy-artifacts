@@ -1,6 +1,6 @@
 {
   "name": "app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
@@ -10,7 +10,8 @@
     "start": "next start --hostname 0.0.0.0 --port 1936",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "vendor": "node scripts/build-vendor.mjs"
+    "vendor": "node scripts/build-vendor.mjs",
+    "sync:reference": "node scripts/sync-reference.mjs"
   },
   "dependencies": {
     "@artifacts/primitives": "*",

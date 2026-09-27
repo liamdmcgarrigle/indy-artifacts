@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { ConnectAgent } from "@/components/indy/ConnectAgent";
 import { copyText } from "@/lib/clipboard";
 import { ago } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -21,6 +20,7 @@ interface Token {
   prefix: string;
   createdAt: string;
   lastUsedAt: string | null;
+  kind: "token" | "oauth";
 }
 
 interface Share {
@@ -63,7 +63,6 @@ async function send(url: string, method: string, payload?: unknown) {
  * room Indy may take.
  */
 export function SettingsView(props: {
-  url: string;
   user: { name: string; email: string; twoStep: boolean } | null;
   tokens: Token[];
   shares: Share[];
@@ -147,7 +146,7 @@ export function SettingsView(props: {
       <main className="flex flex-1 justify-center px-4 pt-10 pb-24 max-md:pt-6">
         <div className="flex w-full max-w-[820px] flex-col gap-7">
           {section === "account" ? <AccountSection user={props.user} email={props.email.on} say={say} /> : null}
-          {section === "agents" ? <AgentsSection url={props.url} tokens={tokens} setTokens={setTokens} say={say} /> : null}
+          {section === "agents" ? <AgentsSection tokens={tokens} setTokens={setTokens} say={say} /> : null}
           {section === "email" ? <EmailSection email={props.email} /> : null}
           {section === "shares" ? <SharesSection shares={shares} setShares={setShares} say={say} /> : null}
           {section === "data" ? (
@@ -325,32 +324,14 @@ function AccountSection({ user, email, say }: { user: { name: string; email: str
 
 // ---------------------------------------------------------------- agents
 
-function AgentsSection({ url, tokens, setTokens, say }: { url: string; tokens: Token[]; setTokens: (t: Token[]) => void; say: Say }) {
-  const [naming, setNaming] = useState<string | null>(null);
-  const [made, setMade] = useState<{ name: string; token: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function create() {
-    if (!naming?.trim()) return;
-    setBusy(true);
-    try {
-      const data = (await send("/api/tokens", "POST", { name: naming.trim() })) as { token: string; record: Token };
-      setTokens([data.record, ...tokens]);
-      setMade({ name: data.record.name, token: data.token });
-      setNaming(null);
-    } catch (err) {
-      say.bad(err);
-    } finally {
-      setBusy(false);
-    }
-  }
-
+function AgentsSection({ tokens, setTokens, say }: { tokens: Token[]; setTokens: (t: Token[]) => void; say: Say }) {
   async function revoke(t: Token) {
-    if (!window.confirm(`Revoke "${t.name}"? That agent loses access straight away.`)) return;
+    const what = t.kind === "oauth" ? `Disconnect "${t.name}"? It has to sign in again to reach Indy.` : `Revoke "${t.name}"? That agent loses access straight away.`;
+    if (!window.confirm(what)) return;
     try {
       await send(`/api/tokens/${t.id}`, "DELETE");
       setTokens(tokens.filter((x) => x.id !== t.id));
-      say.good(`Revoked "${t.name}".`);
+      say.good(t.kind === "oauth" ? `Disconnected "${t.name}".` : `Revoked "${t.name}".`);
     } catch (err) {
       say.bad(err);
     }
@@ -358,70 +339,43 @@ function AgentsSection({ url, tokens, setTokens, say }: { url: string; tokens: T
 
   return (
     <>
-      <Head title="Agents" lede="Each agent connects over MCP with its own token. Revoke one and only that agent loses access." />
+      <Head title="Agents" lede="Every agent that can reach Indy, and how it signs in. Disconnect one and only that agent loses access." />
       <Card
-        title="Tokens"
+        title="Connected agents"
         action={
-          naming === null ? (
-            <Button size="sm" onClick={() => setNaming("")}>
-              New token
-            </Button>
-          ) : null
+          <Button size="sm" asChild>
+            <Link href="/connect">Connect an agent</Link>
+          </Button>
         }
       >
-        {naming !== null ? (
-          <form
-            className="flex items-center gap-2 border-b border-hairline px-[18px] py-3 max-sm:flex-col max-sm:items-stretch"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void create();
-            }}
-          >
-            <Input autoFocus placeholder="Which agent, on which machine? e.g. laptop · codex" value={naming} onChange={(e) => setNaming(e.target.value)} />
-            <div className="flex gap-2">
-              <Button type="submit" size="sm" disabled={busy || !naming.trim()}>
-                Make token
-              </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setNaming(null)}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        ) : null}
         {tokens.length === 0 ? (
-          <p className="m-0 px-[18px] py-6 text-sm text-muted-foreground">No agent has a token yet. Make one to connect an agent.</p>
+          <p className="m-0 px-[18px] py-6 text-sm text-muted-foreground">
+            No agent is connected yet. <Link href="/connect" className="text-sand-strong hover:underline">Connect one</Link> to start publishing.
+          </p>
         ) : (
           tokens.map((t) => {
             const recent = t.lastUsedAt && Date.now() - new Date(t.lastUsedAt).getTime() < 3_600_000;
             return (
-              <div key={t.id} className="grid grid-cols-[minmax(0,1fr)_140px_150px_72px] items-center gap-3.5 border-b border-hairline px-[18px] py-3 text-[13px] last:border-b-0 max-sm:grid-cols-[minmax(0,1fr)_auto]">
+              <div key={t.id} className="grid grid-cols-[minmax(0,1fr)_140px_150px_84px] items-center gap-3.5 border-b border-hairline px-[18px] py-3 text-[13px] last:border-b-0 max-sm:grid-cols-[minmax(0,1fr)_auto]">
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate font-medium">{t.name}</span>
-                  <span className="font-mono text-[11px] text-muted-foreground">{t.prefix}…</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {t.kind === "oauth" ? "signed in through the browser" : <span className="font-mono">{t.prefix}…</span>}
+                  </span>
                 </span>
-                <span className="text-fg-3 max-sm:hidden">made {ago(t.createdAt)} ago</span>
+                <span className="text-fg-3 max-sm:hidden">added {ago(t.createdAt)} ago</span>
                 <span className="flex items-center gap-1.5 text-fg-3 max-sm:hidden">
                   <span className={cn("size-1.5 rounded-full", recent ? "bg-good" : t.lastUsedAt ? "bg-muted-foreground" : "bg-border")} />
                   {t.lastUsedAt ? `used ${ago(t.lastUsedAt)} ago` : "never used"}
                 </span>
                 <button type="button" className="text-right text-bad hover:underline" onClick={() => void revoke(t)}>
-                  Revoke
+                  {t.kind === "oauth" ? "Disconnect" : "Revoke"}
                 </button>
               </div>
             );
           })
         )}
       </Card>
-
-      {made ? (
-        <section className="flex flex-col gap-3 rounded-xl border border-sand-line bg-card p-[18px] shadow-[0_0_0_3px_var(--sand-soft)]">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="m-0 text-sm font-semibold">"{made.name}" is ready</h2>
-            <span className="text-xs text-warn">Copy it now. It won't be shown again.</span>
-          </div>
-          <ConnectAgent url={url} token={made.token} />
-        </section>
-      ) : null}
     </>
   );
 }

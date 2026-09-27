@@ -39,5 +39,5 @@ export default async function SetupPage() {
     },
   ];
 
-  return <SetupFlow url={c.url} checks={checks} email={emailEnabled(c)} />;
+  return <SetupFlow checks={checks} email={emailEnabled(c)} />;
 }

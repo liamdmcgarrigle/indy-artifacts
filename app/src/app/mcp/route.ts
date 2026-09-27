@@ -1,8 +1,11 @@
 import { createMcpHandler } from "mcp-handler";
 import { buildTools, REFERENCE_URI } from "@/lib/mcp/tools";
 import { REFERENCE_MD } from "@/lib/mcp/reference";
+import pkg from "../../../package.json";
 import { getContext } from "@/lib/service/context";
-import { principalFrom } from "@/lib/auth/access";
+import { bearer, principalFrom } from "@/lib/auth/access";
+import { SCOPE } from "@/lib/auth/oauth";
+import { requestBase } from "@/lib/api/oauth";
 import { json } from "@/lib/api/respond";
 
 export const dynamic = "force-dynamic";
@@ -26,23 +29,34 @@ const handler = createMcpHandler(
     );
   },
   {
-    serverInfo: { name: "indy", version: "0.2.0" },
+    serverInfo: { name: "indy", version: pkg.version },
     instructions:
       "Indy hosts artifacts: versioned pages, reports and forms the operator reads, comments on and answers in a browser. Publish one with artifact_publish instead of pasting a long report into the terminal, and read indy://reference for the blocks. The operator's comments do not interrupt you: after publishing, call artifact_wait to collect them, or artifact_comments to check.",
   },
 );
 
-/** An agent needs a token from Settings → Agents, unless the install trusts every request. */
+/**
+ * An agent without a valid token gets a 401 that says where to sign in:
+ * MCP clients follow resource_metadata to Indy's OAuth server and send the
+ * owner to the browser to approve them. Hand-made tokens work too.
+ */
 async function guarded(request: Request): Promise<Response> {
   if (!principalFrom(getContext(), request.headers)) {
+    const url = requestBase(request.headers);
+    const presented = Boolean(bearer(request.headers));
+    const challenge = [
+      `Bearer resource_metadata="${url}/.well-known/oauth-protected-resource/mcp"`,
+      `scope="${SCOPE}"`,
+      ...(presented ? ['error="invalid_token"', 'error_description="The token is unknown, expired or revoked"'] : []),
+    ].join(", ");
     return json(
       {
         error: {
           code: "unauthorized",
-          message: "Indy needs a token. Create one in Settings → Agents and send it as 'Authorization: Bearer <token>'.",
+          message: `Indy needs you to sign in. Connect this agent from ${url}/connect, or send a token from Settings › Agents as 'Authorization: Bearer <token>'.`,
         },
       },
-      { status: 401, headers: { "www-authenticate": 'Bearer realm="indy"' } },
+      { status: 401, headers: { "www-authenticate": challenge, "access-control-expose-headers": "www-authenticate" } },
     );
   }
   return handler(request);

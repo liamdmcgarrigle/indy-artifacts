@@ -2,8 +2,12 @@
 # ghcr.io/<owner>/indy-artifacts.
 #
 #   push to main      :latest and :sha-<short>
-#   tag v1.2.3        :1.2.3, :1.2 and :1
+#   new VERSION       also :1.2.3, :1.2 and :1, a v1.2.3 tag and a GitHub release
 #   pull request      tests and a build, nothing published
+#
+# VERSION at the repo root is the version. Bump it with `npm run set-version
+# 1.2.3`; the first push to main that carries a version with no tag yet
+# releases it. Later pushes on the same version only move :latest.
 #
 # Each architecture builds on its own native runner (no QEMU, which is slow
 # for a Next build), pushes by digest, and a last job joins the two into one
@@ -15,7 +19,6 @@ name: image
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -27,6 +30,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      release: ${{ steps.read.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read VERSION, and whether it is released yet
+        id: read
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          release=false
+          if [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$GITHUB_EVENT_NAME" = "push" ] \
+             && [ -z "$(git ls-remote --tags origin "refs/tags/v$version")" ]; then
+            release=true
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "Indy $version, new release: $release"
+
   test:
     runs-on: ubuntu-24.04
     steps:
@@ -96,7 +119,7 @@ jobs:
           retention-days: 1
 
   publish:
-    needs: build
+    needs: [build, version]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
@@ -129,9 +152,9 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=v${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+            type=semver,pattern={{major}},value=v${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
 
       - name: Join the architectures under each tag
         working-directory: /tmp/digests
@@ -142,3 +165,18 @@ jobs:
 
       - name: Show the result
         run: docker buildx imagetools inspect ${{ steps.name.outputs.image }}:${{ steps.meta.outputs.version }}
+
+  release:
+    needs: [publish, version]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Tag v${{ needs.version.outputs.version }} and write the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Indy $VERSION" --generate-notes

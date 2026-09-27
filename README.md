@@ -52,28 +52,42 @@ The last setup step makes a token for your first agent and shows the command to 
 
 ### 3. Connect an agent
 
-Agents talk to Indy over MCP at `<INDY_URL>/mcp`, with the token in a header.
+Indy's Connect page (`<INDY_URL>/connect`, and the last step of setup) walks through this with your
+address filled in, and shows when the agent reaches Indy.
 
-Claude Code:
+Agents connect over MCP at `<INDY_URL>/mcp` and sign in through the browser with OAuth: the agent
+opens Indy, you approve it, and nothing needs copying. For Claude Code:
 
 ```bash
-claude mcp add --transport http --scope user indy https://indy.example.com/mcp \
-  --header "Authorization: Bearer indy_tk_..."
+claude mcp add --transport http --scope user indy https://indy.example.com/mcp
+# then in Claude Code: /mcp, pick indy, Authenticate
 ```
 
-Codex, in `~/.codex/config.toml`:
+For Codex, which starts the sign-in by itself:
 
-```toml
-[mcp_servers.indy]
-url = "https://indy.example.com/mcp"
-bearer_token_env_var = "INDY_TOKEN"
+```bash
+codex mcp add indy --url https://indy.example.com/mcp
 ```
 
-Any other MCP client takes the same URL and header over streamable HTTP. The server describes its
-own tools and serves the full block reference as `indy://reference`, so an agent can learn the
-format without anything else installed. The tools are `artifact_publish`, `artifact_update`,
-`artifact_type`, `artifact_get`, `artifact_list`, `artifact_diff`, `artifact_comments`,
-`artifact_reply`, `artifact_resolve`, `artifact_wait` and `artifact_responses`.
+Claude Code only signs in this way when Indy is on HTTPS. On plain HTTP, or on a machine with no
+browser, make a token on the Connect page and pass it as a header instead. Settings › Agents lists
+every connected agent and disconnects any one of them.
+
+The optional Indy plugin adds two skills, `publish` for making pages and `feedback` for picking up
+your comments, and tells the agent at the start of each session that Indy is there:
+
+```bash
+claude plugin marketplace add liamdmcgarrigle/indy-artifacts && claude plugin install indy@indy
+codex plugin marketplace add liamdmcgarrigle/indy-artifacts && codex plugin add indy@indy
+```
+
+Any other MCP client takes `<INDY_URL>/mcp` over streamable HTTP, and either discovers the OAuth
+sign-in from it or sends a token in an `Authorization: Bearer` header. claude.ai and Claude Desktop
+can add it as a custom connector when Indy is on a public HTTPS address. The server describes its own tools and serves the full block
+reference as `indy://reference`, so an agent can learn the format without the plugin. The tools are
+`artifact_publish`, `artifact_update`, `artifact_type`, `artifact_get`, `artifact_list`,
+`artifact_diff`, `artifact_comments`, `artifact_reply`, `artifact_resolve`, `artifact_wait` and
+`artifact_responses`.
 
 ### HTTPS
 
@@ -250,7 +264,7 @@ data:
 The full set is `:::card`, `:::callout`, `:::kpis`, `:::columns` with `:::col`, `:::tabs` with
 `:::tab`, `:::details`, the form blocks `::field` and `:::choice` with `:::option`, and the fences
 `chart`, `table`, `mermaid` and `html`. The reference agents learn from is
-`plugin/skills/artifacts/reference.md`, the same text MCP serves as `indy://reference`.
+`plugin/skills/publish/reference.md`, the same text MCP serves as `indy://reference`.
 
 ### Themes
 
@@ -290,8 +304,16 @@ npm run typecheck
 
 Layout: `app/` is the Next.js server, viewer, API and MCP endpoint. `collab/` is the document
 server behind live editing. `packages/primitives` holds the `<art-*>` elements pages are built from.
-`themes/` has the theme files, `plugin/` the agent skill, and `tools/` a Playwright screenshot
-harness.
+`themes/` has the theme files, `plugin/` the Claude Code and Codex plugin, and `tools/` a
+Playwright screenshot harness.
+
+### Versions
+
+`VERSION` holds the version. To release, run `npm run set-version 0.3.0`, which also writes it into
+the package manifests and both plugin manifests, then merge to `main`. The first build of a new
+version publishes `:0.3.0`, `:0.3` and `:0`, tags `v0.3.0` and writes a GitHub release. A test
+fails if any copy of the version disagrees with `VERSION`. Bump it for every plugin change too:
+Claude Code only offers a plugin update when its version changes.
 
 ## Licence
 

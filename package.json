@@ -2,7 +2,7 @@
   "name": "artifacts-root",
   "private": true,
   "license": "AGPL-3.0-or-later",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "workspaces": [
     "packages/*",
     "app",
@@ -14,7 +14,8 @@
     "dev": "npm run build:primitives && npm run dev -w app",
     "test": "npm run build:primitives && npm run vendor -w app && npm run test -w app",
     "typecheck": "npm run typecheck -w app",
-    "collab": "npm start -w collab"
+    "collab": "npm start -w collab",
+    "set-version": "node scripts/set-version.mjs"
   },
   "engines": {
     "node": ">=24"

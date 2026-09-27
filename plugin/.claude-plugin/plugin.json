@@ -1,9 +1,18 @@
 {
-  "name": "artifacts",
-  "version": "0.1.0",
-  "description": "Publish and review versioned, sandboxed visual artifacts on agentbox",
+  "name": "indy",
+  "displayName": "Indy",
+  "version": "0.2.0",
+  "description": "Publish reports, plans and forms to your Indy, and pick up the comments you leave on them",
   "author": {
     "name": "Liam McGarrigle"
   },
-  "license": "MIT"
+  "homepage": "https://github.com/liamdmcgarrigle/indy-artifacts",
+  "repository": "https://github.com/liamdmcgarrigle/indy-artifacts",
+  "license": "AGPL-3.0-or-later",
+  "keywords": [
+    "indy",
+    "artifacts",
+    "reports",
+    "mcp"
+  ]
 }
