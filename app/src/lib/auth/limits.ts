@@ -1,4 +1,5 @@
 import { ServiceError } from "../service/errors";
+import { config } from "@/lib/config";
 
 /**
  * Attempts counted in memory, per key, over a fixed window. Indy is one
@@ -42,13 +43,18 @@ export function clearLimit(key: string): void {
 /**
  * The address a request came from. Indy's own proxy appends the peer it saw
  * as the last x-forwarded-for entry, which a client cannot forge; entries
- * before it can be. Behind another proxy this is that proxy's address, which
- * makes the limit shared, not absent.
+ * before it can be. Behind a reverse proxy such as Traefik or Caddy that peer
+ * is the proxy, so INDY_PROXY_HOPS says how many trusted proxies sit in front:
+ * each one appended the address it saw, and the entry that many places before
+ * the last is the client's.
  */
-export function clientAddress(headers: Headers): string {
-  const chain = headers.get("x-forwarded-for");
-  const last = chain?.split(",").pop()?.trim();
-  return last || "direct";
+export function clientAddress(headers: Headers, hops = config().proxyHops): string {
+  const chain = (headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (chain.length === 0) return "direct";
+  return chain[Math.max(0, chain.length - 1 - hops)];
 }
 
 export function resetLimitsForTesting(): void {
