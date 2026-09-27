@@ -256,6 +256,8 @@ kbd.kbd {
 /* The editor is the page: no focus ring, no caret while reading. */
 .doc .ProseMirror { outline: none; }
 .doc .ProseMirror[contenteditable="false"] { caret-color: transparent; }
+/* caret-color is inherited: the fields a reader types into (form answers) get theirs back. */
+.doc .ProseMirror[contenteditable="false"] :is(input, textarea, select, [contenteditable="true"]) { caret-color: auto; }
 
 /* Tailwind's preflight strips list markers; artifact content keeps them. */
 .art-content ul { list-style: disc; }
