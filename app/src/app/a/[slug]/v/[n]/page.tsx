@@ -3,13 +3,16 @@ import { pageOwner } from "@/lib/auth/page";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArtifactView } from "@/components/ArtifactView";
-import { loadView } from "@/lib/view";
+import { artifactMetadata, loadView } from "@/lib/view";
 import { diffVersions, requireArtifact } from "@/lib/service/artifacts";
 import { getContext } from "@/lib/service/context";
 import { NotFoundError } from "@/lib/service/errors";
 import { SchemeToggle } from "@/components/SchemeToggle";
 
 export const dynamic = "force-dynamic";
+
+export const generateMetadata = ({ params }: { params: Promise<{ slug: string; n: string }> }) =>
+  params.then(({ n }) => artifactMetadata(params, (title) => `${title}, version ${n}`));
 
 function DiffLine({ line }: { line: string }) {
   if (line.startsWith("+++") || line.startsWith("---")) return <span className="hunk">{line}</span>;
