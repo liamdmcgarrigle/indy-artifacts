@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildDir, getContext } from "@/lib/service/context";
-import { requireArtifact, requireVersion } from "@/lib/service/artifacts";
+import { requireArtifact, versionAssets } from "@/lib/service/artifacts";
 import { checkCapability } from "@/lib/auth/accounts";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +22,8 @@ export async function GET(
     const ctx = getContext();
     if (!checkCapability(ctx, cap, slug, Number(n))) return new Response("expired", { status: 403 });
     const artifact = requireArtifact(ctx, slug);
-    const version = requireVersion(ctx, artifact, Number(n));
-    const contents = await readFile(join(buildDir(ctx, artifact.id, version.number), file), "utf8");
+    versionAssets(ctx, artifact, Number(n)); // the version must exist
+    const contents = await readFile(join(buildDir(ctx, artifact.id, Number(n)), file), "utf8");
     return new Response(contents, {
       headers: {
         "content-type": type,

@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { assetDir, getContext } from "@/lib/service/context";
-import { requireArtifact, requireVersion } from "@/lib/service/artifacts";
+import { requireArtifact, versionAssets } from "@/lib/service/artifacts";
 import { assetType } from "@/lib/service/assets";
 import { fail, json } from "@/lib/api/respond";
 import { checkCapability } from "@/lib/auth/accounts";
@@ -20,11 +20,10 @@ export async function GET(
     if (!checkCapability(ctx, cap, slug, Number(n))) return json({ error: { code: "forbidden", message: "this link has expired; reload the page" } }, { status: 403 });
     if (!/^[A-Za-z0-9._-]{1,80}$/.test(name)) return json({ error: { code: "invalid", message: "bad asset name" } }, { status: 400 });
     const artifact = requireArtifact(ctx, slug);
-    const version = requireVersion(ctx, artifact, Number(n));
-    const record = version.assets.find((a) => a.name === name);
+    const record = versionAssets(ctx, artifact, Number(n)).find((a) => a.name === name);
     if (!record) return json({ error: { code: "not_found", message: `no asset "${name}"` } }, { status: 404 });
 
-    const path = join(assetDir(ctx, artifact.id, version.number), name);
+    const path = join(assetDir(ctx, artifact.id, Number(n)), name);
     const info = await stat(path);
     const stream = Readable.toWeb(createReadStream(path)) as ReadableStream;
     return new Response(stream, {

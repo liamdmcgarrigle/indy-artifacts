@@ -1,8 +1,11 @@
 "use client";
 
+import { Ago } from "@/components/indy/Ago";
+import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCommands, type PaletteCommand } from "@/components/indy/CommandPalette";
 import {
   anchorForBlock,
   anchorFromPick,
@@ -20,13 +23,10 @@ import {
   type Spot,
 } from "@/lib/anchors";
 import type { Editor, JSONContent } from "@tiptap/core";
-import { docToMarkdown } from "@/lib/doc/serialize";
-import { withFront } from "@/lib/doc/frontmatter";
 import { Typeable } from "./editor/Typeable";
 import { DocView } from "./viewer/DocView";
 import { ViewerHeader, ViewerMenuItem, ViewerMenuSeparator } from "./viewer/ViewerHeader";
 import { readNavList, type NavList } from "./library/nav-list";
-import { agoLong } from "@/lib/time";
 import type { FieldSpec, FormSettings } from "@/lib/forms/spec";
 import { FormProvider } from "./forms/FormState";
 import { FormBar } from "./forms/FormBar";
@@ -91,7 +91,6 @@ export interface ArtifactViewProps {
   buildLog: string | null;
   warnings: { line: number; message: string }[];
   html: string | null;
-  source: string | null;
   embedBase: string;
   framed: boolean;
   versions: VersionStub[];
@@ -167,6 +166,14 @@ function when(iso: string): string {
   return `${Math.round(hours / 24)}d`;
 }
 
+
+/** Whether two pin layouts put every pin in the same place. */
+function samePins<T extends { thread: { id: string } }>(a: T[], b: T[]): boolean {
+  if (a.length !== b.length) return false;
+  const flat = (list: T[]) => JSON.stringify(list.map((p) => ({ ...p, thread: p.thread.id })));
+  return flat(a) === flat(b);
+}
+
 export function ArtifactView(props: ArtifactViewProps) {
   // art-embed reads this when it upgrades, which happens during commit, before
   // effects run, so it has to be set in the render phase.
@@ -228,7 +235,7 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   const isLatest = props.versionNumber === props.currentVersion;
   const somethingOpen = useRef(false);
-  somethingOpen.current = tool || draft !== null || activeId !== null || panel !== "none" || bubble !== null || editing || menu !== null;
+  somethingOpen.current = tool || draft !== null || activeId !== null || panel !== "none" || bubble !== null || editing || menu !== null || shareOpen;
   const visible = useMemo(
     () => threads.filter((t) => (showResolved ? true : t.status === "open")),
     [threads, showResolved],
@@ -332,7 +339,9 @@ export function ArtifactView(props: ArtifactViewProps) {
         ...spot(resolved.rect, thread.anchor.type),
       });
     });
-    setPins(fanOut(next));
+    // Measuring runs often; re-rendering the page only when a pin moved.
+    const placed = fanOut(next);
+    setPins((prev) => (samePins(prev, placed) ? prev : placed));
 
     if (draft?.anchor) {
       const resolved = resolveAnchor(content, draft.anchor);
@@ -382,12 +391,15 @@ export function ArtifactView(props: ArtifactViewProps) {
     const observer = new ResizeObserver(schedule);
     if (contentRef.current) observer.observe(contentRef.current);
     window.addEventListener("resize", schedule);
-    const timer = window.setInterval(schedule, 1200);
+    // Frames, images and charts settle after the first paint and move the
+    // text under the pins; watch for that instead of polling.
+    const mutations = new MutationObserver(schedule);
+    if (contentRef.current) mutations.observe(contentRef.current, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "height", "class"] });
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      mutations.disconnect();
       window.removeEventListener("resize", schedule);
-      window.clearInterval(timer);
     };
   }, [recompute]);
 
@@ -555,6 +567,10 @@ export function ArtifactView(props: ArtifactViewProps) {
         }
         return;
       }
+      // A menu or dialog closing on Escape has already handled the key; the
+      // page's shortcuts must not also act on it, or send the reader home.
+      if (event.defaultPrevented) return;
+      if (target?.closest?.('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
       if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) {
         if (event.key === "Escape") (target as HTMLElement).blur();
         return;
@@ -771,7 +787,7 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   // ---- editing ---------------------------------------------------------------
 
-  const canEdit = !visitor && isLatest && props.kind === "markdown" && props.source !== null && props.doc !== null;
+  const canEdit = !visitor && isLatest && props.kind === "markdown" && props.doc !== null;
   // A phone has no hover, so it gets the bottom bar instead of shortcuts.
   const [hoverless, setHoverless] = useState(false);
   useEffect(() => setHoverless(!window.matchMedia("(hover: hover)").matches), []);
@@ -812,6 +828,8 @@ export function ArtifactView(props: ArtifactViewProps) {
   async function finishEditing() {
     const editor = editorRef.current;
     if (!editor || saving) return;
+    // The serializer is editing code: loaded here, not with the page.
+    const [{ docToMarkdown }, { withFront }] = await Promise.all([import("@/lib/doc/serialize"), import("@/lib/doc/frontmatter")]);
     const json = editor.getJSON();
     const patch: Record<string, string | null> = {};
     const title = head?.title.trim() ?? "";
@@ -822,7 +840,8 @@ export function ArtifactView(props: ArtifactViewProps) {
       json.attrs = { ...json.attrs, front: withFront((json.attrs?.front as string[] | null) ?? null, patch) };
     }
     const source = docToMarkdown(json);
-    if (source === props.source) {
+    // Nothing changed if the edit reads back exactly as the page it started from.
+    if (shownDoc && source === docToMarkdown(shownDoc)) {
       setEditing(false);
       setDirty(false);
       return;
@@ -851,6 +870,8 @@ export function ArtifactView(props: ArtifactViewProps) {
       setDirty(false);
       setNotice({ kind: "good", text: `Saved as version ${data.version?.number ?? props.currentVersion + 1}.` });
       router.refresh();
+    } catch {
+      setNotice({ kind: "bad", text: "Indy did not answer, so nothing was saved. Your changes are still on the page." });
     } finally {
       setSaving(false);
     }
@@ -875,17 +896,55 @@ export function ArtifactView(props: ArtifactViewProps) {
     const url = new URL(window.location.href);
     if (url.searchParams.get("edit") !== "1") return;
     url.searchParams.delete("edit");
-    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    // Keep the router's state on the entry; a null state makes Back reload.
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
     startRef.current();
   }, []);
 
-  // Leaving with unsaved changes asks first.
+  // ?find=words comes from a search hit in the command palette: select the
+  // first place the page says it and bring it into view.
   useEffect(() => {
-    if (!editing || !dirty) return;
-    const guard = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", guard);
-    return () => window.removeEventListener("beforeunload", guard);
-  }, [editing, dirty]);
+    const url = new URL(window.location.href);
+    const term = url.searchParams.get("find")?.trim().toLowerCase();
+    if (!term) return;
+    url.searchParams.delete("find");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    // The document replaces its server-rendered fallback just after mount.
+    const timer = window.setTimeout(() => {
+      const root = document.querySelector(".art-content");
+      if (!root) return;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const at = (node.textContent ?? "").toLowerCase().indexOf(term);
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + term.length);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        node.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+        return;
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // What this page can do, offered in the command palette too.
+  const commands = useMemo(() => {
+    if (visitor) return [];
+    const list: PaletteCommand[] = [];
+    if (canEdit) list.push({ id: "edit", label: "Edit this page", keys: ["e"], run: () => startRef.current() });
+    list.push({ id: "share", label: "Share…", run: () => setShareOpen(true) });
+    if (canComment) list.push({ id: "comment", label: "Comment on the page", keys: ["c"], run: () => toggleTool() });
+    if (props.versionNumber > 1) list.push({ id: "older", label: "Previous version", keys: ["["], run: () => goVersion(props.versionNumber - 1) });
+    if (props.versionNumber < props.currentVersion) list.push({ id: "newer", label: "Next version", keys: ["]"], run: () => goVersion(props.versionNumber + 1) });
+    return list;
+  }, [visitor, canEdit, canComment, toggleTool, goVersion, props.versionNumber, props.currentVersion]);
+  useCommands("viewer", commands);
+
+  // Leaving with unsaved changes asks first, by reload, close or Back.
+  useLeaveGuard(editing && dirty && !saving);
 
   // ---- writes --------------------------------------------------------------
 
@@ -898,7 +957,8 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
   }
 
-  async function postComment(parentId?: string, bodyText?: string) {
+  /** True once the comment is saved, so a reply box only clears on success. */
+  async function postComment(parentId?: string, bodyText?: string): Promise<boolean> {
     const payload = {
       body: bodyText ?? draft?.body ?? "",
       author_name: author,
@@ -907,7 +967,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       parent_id: parentId ?? null,
       version_number: props.versionNumber,
     };
-    if (!payload.body.trim()) return;
+    if (!payload.body.trim()) return false;
     setBusy(true);
     try {
       const res = await fetch(commentsApi, {
@@ -918,7 +978,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       if (!res.ok) {
         const err = (await res.json()) as { error?: { message?: string } };
         setNotice({ kind: "bad", text: err.error?.message ?? "could not save that comment" });
-        return;
+        return false;
       }
       if (!parentId) {
         setDraft(null);
@@ -927,6 +987,10 @@ export function ArtifactView(props: ArtifactViewProps) {
       }
       await refreshThreads();
       if (payload.notify) setNotice({ kind: "good", text: "Comment sent to the agent." });
+      return true;
+    } catch {
+      setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -935,13 +999,19 @@ export function ArtifactView(props: ArtifactViewProps) {
   async function setStatus(id: string, status: "open" | "resolved") {
     setBusy(true);
     try {
-      await fetch(`/api/comments/${id}`, {
+      const res = await fetch(`/api/comments/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status }),
       });
+      if (!res.ok) {
+        setNotice({ kind: "bad", text: status === "resolved" ? "Could not resolve that thread." : "Could not reopen that thread." });
+        return;
+      }
       if (status === "resolved") setActiveId(null);
       await refreshThreads();
+    } catch {
+      setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
     } finally {
       setBusy(false);
     }
@@ -989,6 +1059,8 @@ export function ArtifactView(props: ArtifactViewProps) {
           ? `Sent ${data.count} comment${data.count === 1 ? "" : "s"} to the agent.`
           : "Nothing new to send.",
       });
+    } catch {
+      setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
     } finally {
       setBusy(false);
     }
@@ -1026,10 +1098,8 @@ export function ArtifactView(props: ArtifactViewProps) {
         nav={nav && navIndex >= 0 ? { label: nav.label, index: navIndex, count: nav.slugs.length } : null}
         threads={visible.length}
         unsent={unsent}
-        agentName={props.agentName}
         panel={panel}
         canEdit={canEdit}
-        canCompare={props.versionNumber > 1}
         responses={props.form ? props.form.responses : null}
         onVersion={goVersion}
         onNav={goNav}
@@ -1331,7 +1401,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                       <button className="btn btn--ghost" onClick={() => setDraft(null)}>
                         Cancel
                       </button>
-                      <button className="btn btn--primary" onClick={() => postComment()} disabled={busy || !draft.body.trim() || (visitor !== null && !author.trim())}>
+                      <button className="btn btn--primary" onClick={() => void postComment()} disabled={busy || !draft.body.trim() || (visitor !== null && !author.trim())}>
                         Comment
                       </button>
                     </span>
@@ -1439,7 +1509,7 @@ function ArticleHead(
   return (
     <div className="doc-head">
       <div className="doc-head__kicker">
-        {KIND_LABEL[props.kind] ?? "Page"} · updated {agoLong(props.createdAt)}
+        {KIND_LABEL[props.kind] ?? "Page"} · updated <Ago iso={props.createdAt} long />
         {props.visitor ? null : ` by ${props.authorName}`}
       </div>
       {ownTitle ? null : head ? (
@@ -1477,7 +1547,7 @@ function ThreadCard({
   onForward: () => void;
   onClose: () => void;
   onStatus: (status: "open" | "resolved") => void;
-  onReply: (text: string) => void;
+  onReply: (text: string) => Promise<boolean>;
 }) {
   return (
     <div className="pop__card">
@@ -1577,13 +1647,14 @@ function quoteOf(anchor: Anchor | null): string {
   return `\u201c${head}${truncate(quote, 90)}${tail}\u201d`;
 }
 
-function ReplyBox({ onSend, busy }: { onSend: (text: string) => void; busy: boolean }) {
+function ReplyBox({ onSend, busy }: { onSend: (text: string) => Promise<boolean>; busy: boolean }) {
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
 
-  function send() {
+  async function send() {
     if (!text.trim()) return;
-    onSend(text);
+    // The text stays until the reply is saved, so a failure loses nothing.
+    if (!(await onSend(text))) return;
     setText("");
     setFocused(false);
   }
@@ -1600,7 +1671,7 @@ function ReplyBox({ onSend, busy }: { onSend: (text: string) => void; busy: bool
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
-            send();
+            void send();
           }
         }}
       />

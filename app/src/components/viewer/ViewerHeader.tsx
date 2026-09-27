@@ -43,7 +43,6 @@ export function ViewerHeader({
   unsent,
   panel,
   canEdit,
-  canCompare,
   responses,
   onVersion,
   onNav,
@@ -66,11 +65,8 @@ export function ViewerHeader({
   nav: { label: string; index: number; count: number } | null;
   threads: number;
   unsent: number;
-  /** Kept for callers; the button always says "agent". */
-  agentName?: string | null;
   panel: "none" | "list" | "send";
   canEdit: boolean;
-  canCompare: boolean;
   /** Response count, on a form page. */
   responses?: number | null;
   onVersion: (n: number) => void;

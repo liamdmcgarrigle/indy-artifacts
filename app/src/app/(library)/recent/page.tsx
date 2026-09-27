@@ -1,4 +1,4 @@
-import { getContext } from "@/lib/service/context";
+import { ownerContext } from "@/lib/auth/page";
 import { listLibrary } from "@/lib/service/library";
 import { ViewHeader } from "@/components/library/ViewHeader";
 import { LibraryBoard } from "@/components/library/LibraryBoard";
@@ -7,8 +7,8 @@ import { EmptyState } from "@/components/library/EmptyState";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "All recent" };
 
-export default function Page() {
-  const rows = listLibrary(getContext(), { view: "recent" });
+export default async function Page() {
+  const rows = listLibrary((await ownerContext()), { view: "recent" });
   return (
     <>
       <ViewHeader title="All recent" subtitle="Everything not archived, newest change first" />

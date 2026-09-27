@@ -62,7 +62,6 @@ export default async function SharedPage({ params }: Params) {
       warnings={[]}
       buildLog={null}
       sharing={undefined}
-      source={null}
       initialThreads={link.allowComments ? view.initialThreads : []}
       form={view.form ? { ...view.form, responses: 0 } : null}
       userName={null}

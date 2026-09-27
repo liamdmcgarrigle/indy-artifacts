@@ -6,13 +6,10 @@ import { SESSION_COOKIE } from "@/lib/auth/access";
 import { config } from "@/lib/config";
 import { SackMark } from "@/components/indy/brand";
 import { LoginForm } from "@/components/auth/LoginForm";
+import { safeNext } from "@/lib/auth/next";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Sign in" };
-
-function safeNext(next: string | undefined): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
-}
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const ctx = getContext();

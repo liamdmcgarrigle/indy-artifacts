@@ -1,6 +1,6 @@
 import { config } from "../config";
 import type { ServiceContext } from "../service/context";
-import { UnauthorizedError } from "../service/errors";
+import { ForbiddenError, UnauthorizedError } from "../service/errors";
 import { checkApiToken, secret, sessionUser, type User } from "./accounts";
 import { hmac, safeEqual } from "./crypto";
 import { checkAccessToken } from "./oauth";
@@ -47,6 +47,43 @@ export function internalKey(ctx: ServiceContext): string {
   return hmac(secret(ctx), "internal");
 }
 
+/**
+ * With no sign-in (INDY_AUTH=local) every request is the owner, so a web page
+ * that rebinds its own domain to this machine could read Indy. The Host header
+ * gives that away: only Indy's own name, or loopback, is accepted.
+ */
+export function hostAllowed(headers: Headers): boolean {
+  const host = (headers.get("x-forwarded-host") ?? headers.get("host") ?? "").split(",")[0].trim().toLowerCase();
+  if (!host) return true;
+  const name = host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0];
+  if (["localhost", "127.0.0.1", "[::1]"].includes(name)) return true;
+  try {
+    return name === new URL(config().url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A browser request that changes something must come from Indy's own pages.
+ * Browsers say where a request came from (Sec-Fetch-Site, Origin); scripts
+ * and agents send neither, and cannot ride on someone's cookies anyway.
+ */
+export function sameSite(request: Request): boolean {
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
+  const site = request.headers.get("sec-fetch-site");
+  if (site) return site === "same-origin" || site === "none";
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  if (origin === "null") return false;
+  try {
+    const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "").split(",")[0].trim();
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
 export function principalFrom(ctx: ServiceContext, headers: Headers): Principal | null {
   const internal = headers.get("x-indy-internal");
   if (internal && safeEqual(internal, internalKey(ctx))) return { kind: "agent", tokenId: "internal", name: "live edit" };
@@ -57,7 +94,7 @@ export function principalFrom(ctx: ServiceContext, headers: Headers): Principal 
   }
   const user = sessionUser(ctx, parseCookies(headers.get("cookie"))[SESSION_COOKIE]);
   if (user) return { kind: "owner", user };
-  if (config().auth === "local") return { kind: "owner", user: null };
+  if (config().auth === "local" && hostAllowed(headers)) return { kind: "owner", user: null };
   return null;
 }
 
@@ -65,6 +102,7 @@ export function principalFrom(ctx: ServiceContext, headers: Headers): Principal 
 export function requireMember(ctx: ServiceContext, request: Request): Principal {
   const who = principalFrom(ctx, request.headers);
   if (!who) throw new UnauthorizedError();
+  if (who.kind === "owner" && !sameSite(request)) throw new ForbiddenError("That request came from another site.");
   return who;
 }
 
@@ -72,6 +110,7 @@ export function requireMember(ctx: ServiceContext, request: Request): Principal 
 export function requireOwner(ctx: ServiceContext, request: Request): Principal & { kind: "owner" } {
   const who = principalFrom(ctx, request.headers);
   if (!who || who.kind !== "owner") throw new UnauthorizedError();
+  if (!sameSite(request)) throw new ForbiddenError("That request came from another site.");
   return who;
 }
 

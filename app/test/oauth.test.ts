@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { getContext } from "@/lib/service/context";
 import { resetConfigForTesting } from "@/lib/config";
 import { principalFrom } from "@/lib/auth/access";
-import { listApiTokens, revokeApiToken } from "@/lib/auth/accounts";
+import { listApiTokens } from "@/lib/auth/accounts";
 import { checkAuthorize, exchange, issueAuthCode, OAuthError, registerClient, type AuthorizeRequest } from "@/lib/auth/oauth";
 
 const URL_ = "http://indy.test:1936";
@@ -72,12 +72,12 @@ describe("oauth", () => {
 
     const refreshed = exchange(ctx, new URLSearchParams({ grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: client.id }), MCP);
     expect(principalFrom(ctx, bearerHeaders(refreshed.access_token))).toMatchObject({ kind: "agent" });
-    // Rotation: the old refresh token no longer works.
+    // Rotation: the old refresh token no longer works, and using it again
+    // means a copy is loose, so the whole connection ends.
     expect(() => exchange(ctx, new URLSearchParams({ grant_type: "refresh_token", refresh_token: tokens.refresh_token }), MCP)).toThrow(OAuthError);
-
-    revokeApiToken(ctx, connection.id);
     expect(principalFrom(ctx, bearerHeaders(refreshed.access_token))).toBeNull();
     expect(() => exchange(ctx, new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshed.refresh_token }), MCP)).toThrow(OAuthError);
+    expect(listApiTokens(ctx).find((t) => t.id === connection.id)).toBeUndefined();
   });
 
   it("refuses a wrong PKCE verifier, another client's code and a foreign resource", () => {

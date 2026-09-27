@@ -35,8 +35,28 @@ export interface Config {
   tmpDir: string | null;
 }
 
+/**
+ * INDY_URL, checked once at start. Links, cookies and OAuth are all built
+ * from it, so a typo such as a missing scheme fails loudly here instead of as
+ * a 500 on every page.
+ */
+function publicUrl(raw: string): string {
+  const url = raw.trim().replace(/\/+$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`INDY_URL must be a full address such as https://indy.example.com, not "${raw}".`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+    throw new Error(`INDY_URL must start with http:// or https://, not "${raw}".`);
+  if (parsed.pathname !== "/" || parsed.search || parsed.hash)
+    throw new Error(`INDY_URL must be the site's root, with no path: "${raw}". Indy can't run under a sub-path.`);
+  return url;
+}
+
 export function readConfig(): Config {
-  const url = (env("INDY_URL", "ARTIFACTS_PUBLIC_URL") ?? "http://localhost:1936").replace(/\/+$/, "");
+  const url = publicUrl(env("INDY_URL", "ARTIFACTS_PUBLIC_URL") ?? "http://localhost:1936");
   const roots = env("INDY_ASSET_ROOTS", "ARTIFACTS_ASSET_ROOTS");
   return {
     url,

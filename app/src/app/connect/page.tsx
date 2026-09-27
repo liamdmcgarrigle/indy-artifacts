@@ -17,6 +17,7 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
       welcome={welcome === "1"}
       initialAgent={agent === "codex" || agent === "other" ? agent : "claude"}
       local={config().auth === "local"}
+      now={new Date().toISOString()}
     />
   );
 }

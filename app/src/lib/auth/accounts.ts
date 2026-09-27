@@ -69,19 +69,16 @@ export async function createOwner(
   if (!validEmail(email)) throw new ValidationError("that email address does not look right");
   if (input.password.length < 10) throw new ValidationError("use a password of at least 10 characters");
   const id = id12();
-  ctx.db
+  // Hash first: it yields to the event loop, and the insert must not. Two
+  // setups racing each other would otherwise both pass the check above.
+  const hash = await hashPassword(input.password);
+  const result = ctx.db
     .prepare(
-      "INSERT INTO users (id, email, name, password_hash, two_step, created_at) VALUES (:id, :email, :name, :hash, 0, :at)",
+      `INSERT INTO users (id, email, name, password_hash, two_step, created_at)
+       SELECT :id, :email, :name, :hash, 0, :at WHERE NOT EXISTS (SELECT 1 FROM users)`,
     )
-    .run(
-      bind({
-        id,
-        email,
-        name: input.name?.trim() || email.split("@")[0],
-        hash: await hashPassword(input.password),
-        at: iso(now()),
-      }),
-    );
+    .run(bind({ id, email, name: input.name?.trim() || email.split("@")[0], hash, at: iso(now()) }));
+  if (Number(result.changes) === 0) throw new ValidationError("this install already has an owner");
   return userById(ctx, id)!;
 }
 
@@ -287,11 +284,33 @@ export function secret(ctx: ServiceContext): string {
  * page loads follow. It sits in the path rather than the query so a bundle's
  * relative imports inherit it.
  */
-export const CAPABILITY_TTL_MS = 7 * DAY;
+export const CAPABILITY_TTL_MS = DAY;
+const CAPABILITY_BUCKET_MS = DAY;
 
-export function capability(ctx: ServiceContext, slug: string, version: number, ttlMs = CAPABILITY_TTL_MS): string {
+/**
+ * Lets a browser open one page's live document on the document server for a
+ * while. The document server derives the same secret from the database, so
+ * it checks this without calling back.
+ */
+export function collabToken(ctx: ServiceContext, slug: string, ttlMs = 12 * 60 * 60 * 1000): string {
   const exp = Math.floor((Date.now() + ttlMs) / 1000);
-  return `${exp}.${hmac(secret(ctx), `${slug}/${version}|${exp}`)}`;
+  return `${exp}.${hmac(secret(ctx), `collab|${slug}|${exp}`)}`;
+}
+
+/** The artifact behind a slug, so a signature outlives neither a rename nor a deleted page's reused slug. */
+function artifactIdOf(ctx: ServiceContext, slug: string): string | null {
+  const row = ctx.db.prepare("SELECT id FROM artifacts WHERE slug = ?").get(slug) as Row | undefined;
+  return row ? String(row.id) : null;
+}
+
+/**
+ * The expiry is rounded up to a whole day, so a page's frame and asset
+ * addresses stay the same all day and the browser can cache them. A link
+ * lives one to two days; an open page renews it whenever it refreshes.
+ */
+export function capability(ctx: ServiceContext, slug: string, version: number, ttlMs = CAPABILITY_TTL_MS): string {
+  const exp = Math.ceil((Date.now() + ttlMs) / CAPABILITY_BUCKET_MS) * (CAPABILITY_BUCKET_MS / 1000);
+  return `${exp}.${hmac(secret(ctx), `${artifactIdOf(ctx, slug) ?? slug}/${version}|${exp}`)}`;
 }
 
 export function checkCapability(ctx: ServiceContext, cap: string, slug: string, version: number): boolean {
@@ -299,7 +318,9 @@ export function checkCapability(ctx: ServiceContext, cap: string, slug: string, 
   if (dot < 0) return false;
   const exp = Number(cap.slice(0, dot));
   if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return false;
-  return safeEqual(hmac(secret(ctx), `${slug}/${version}|${exp}`), cap.slice(dot + 1));
+  const id = artifactIdOf(ctx, slug);
+  if (!id) return false;
+  return safeEqual(hmac(secret(ctx), `${id}/${version}|${exp}`), cap.slice(dot + 1));
 }
 
 // ---------------------------------------------------------------- first run

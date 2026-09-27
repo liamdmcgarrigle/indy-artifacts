@@ -1,5 +1,6 @@
 "use client";
 
+import { Ago } from "@/components/indy/Ago";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { projectColour } from "@/lib/colors";
-import { ago } from "@/lib/time";
 import type { LibraryRow, NeedsYouRow, Reason } from "@/lib/service/library";
 import { cn } from "@/lib/utils";
 import { ShapeThumb } from "./ShapeThumb";
@@ -95,8 +95,12 @@ function RowMenu({
       <DropdownMenuContent align="end" className="w-52" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem
           onSelect={async () => {
-            await patch(row.slug, { pinned: !row.pinned });
-            onChanged();
+            try {
+              await patch(row.slug, { pinned: !row.pinned });
+              onChanged();
+            } catch (err) {
+              toast.error((err as Error).message);
+            }
           }}
         >
           {row.pinned ? <PinOff /> : <Pin />} {row.pinned ? "Unpin" : "Pin"}
@@ -104,8 +108,12 @@ function RowMenu({
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={async () => {
-            await patch(row.slug, { archived: !row.archived });
-            onChanged();
+            try {
+              await patch(row.slug, { archived: !row.archived });
+              onChanged();
+            } catch (err) {
+              toast.error((err as Error).message);
+            }
           }}
         >
           {row.archived ? <ArchiveRestore /> : <Archive />} {row.archived ? "Restore" : "Archive"}
@@ -120,9 +128,9 @@ function RowMenu({
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onSelect={() => {
-            void copyText(`${window.location.origin}/a/${row.slug}`);
-            toast("Link copied");
+          onSelect={async () => {
+            if (await copyText(`${window.location.origin}/a/${row.slug}`)) toast("Link copied");
+            else toast.error("Your browser would not copy the link.");
           }}
         >
           <Copy /> Copy link
@@ -173,8 +181,12 @@ export function LibraryBoard({ sections, listLabel }: { sections: BoardSection[]
           action: {
             label: "Undo",
             onClick: async () => {
-              await patch(item.row.slug, { archived: !next });
-              refresh();
+              try {
+                await patch(item.row.slug, { archived: !next });
+                refresh();
+              } catch (err) {
+                toast.error((err as Error).message);
+              }
             },
           },
         });
@@ -246,7 +258,7 @@ export function LibraryBoard({ sections, listLabel }: { sections: BoardSection[]
                       {row.agentName ? <span className="truncate">· {row.agentName}</span> : null}
                     </span>
                     <span className="text-right font-mono text-xs text-muted-foreground">
-                      {r.reason.kind === "live" ? <span className="text-good">live</span> : ago(r.at)}
+                      {r.reason.kind === "live" ? <span className="text-good">live</span> : <Ago iso={r.at} />}
                     </span>
                   </Link>
                 );
@@ -324,7 +336,7 @@ export function LibraryBoard({ sections, listLabel }: { sections: BoardSection[]
                     <span className={cn("font-mono max-md:hidden", row.unsent ? "text-warn" : "text-fg-2")}>
                       {row.openThreads || <span className="text-faint">—</span>}
                     </span>
-                    <span className="text-right font-mono text-muted-foreground">{ago(row.updatedAt)}</span>
+                    <span className="text-right font-mono text-muted-foreground"><Ago iso={row.updatedAt} /></span>
                     <span className={cn("transition-opacity md:opacity-0 md:group-hover:opacity-100", focus === i && "md:opacity-100")}>
                       <RowMenu row={row} onChanged={refresh} onOrganise={(r, what) => setOrganise({ row: r, what })} />
                     </span>

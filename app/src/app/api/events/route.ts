@@ -45,7 +45,8 @@ export async function GET(request: Request) {
     const deadline = Date.now() + wait * 1000;
     for (;;) {
       const page = listEvents(ctx, { after, slug, undeliveredOnly });
-      if (page.events.length || Date.now() >= deadline)
+      // A caller that has gone away gets no answer, and stops the polling.
+      if (page.events.length || Date.now() >= deadline || request.signal.aborted)
         return json({ events: page.events.map(wire), last_id: page.lastId });
       await sleep(1000);
     }

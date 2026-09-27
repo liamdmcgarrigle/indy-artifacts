@@ -53,8 +53,9 @@ export function ShareGate({ token, title, sharedBy, isForm }: { token: string; t
     } catch (err) {
       setError((err as Error).message);
       setDigits(["", "", "", "", "", ""]);
-      boxes.current[0]?.focus();
       setBusy(false);
+      // After the fieldset is enabled again; a disabled box cannot take focus.
+      window.setTimeout(() => boxes.current[0]?.focus(), 0);
     }
   }
 

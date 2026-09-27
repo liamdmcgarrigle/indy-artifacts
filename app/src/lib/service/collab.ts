@@ -7,23 +7,26 @@
  * version written outside the live path tells the document server to reset.
  *
  * Fire and forget by design: publishing must not fail because the document
- * server is restarting, and a reset that misses is repaired the next time the
- * document is loaded cold.
+ * server is restarting. A reset that misses is repaired when the document is
+ * next loaded, because the document server reseeds any copy made from an
+ * older version, and refuses to snapshot one.
  */
 import { config } from "../config";
+import { internalKey } from "../auth/access";
+import type { ServiceContext } from "./context";
 
 function collabUrl(): string {
   return config().collabUrl;
 }
 
-export function resetLiveDocument(slug: string, text: string | null): void {
+export function resetLiveDocument(ctx: ServiceContext, slug: string, text: string | null, version: number): void {
   if (text === null) return;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1500);
   void fetch(`${collabUrl()}/reset`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ slug, text }),
+    headers: { "content-type": "application/json", "x-indy-internal": internalKey(ctx) },
+    body: JSON.stringify({ slug, text, version }),
     signal: controller.signal,
   })
     .catch(() => undefined)

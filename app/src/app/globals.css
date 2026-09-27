@@ -1155,11 +1155,12 @@ kbd {
   display: flex;
   align-items: center;
   gap: var(--art-space-2);
-  padding: 0 var(--art-space-4);
-  height: 52px;
+  padding: var(--art-space-2) var(--art-space-4);
+  min-height: 52px;
   border-bottom: 1px solid var(--art-hairline);
   background: var(--art-surface);
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .editor__panes {

@@ -6,9 +6,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { Placeholder, UndoRedo, Dropcursor, Gapcursor } from "@tiptap/extensions";
 import { docExtensions, type DocOptions } from "./schema";
 import { ChoiceView, FieldView, OptionView } from "@/components/forms/NodeViews";
-import { KpisEdit } from "@/components/editor/KpisEdit";
-import { ChartEdit, TableEdit } from "@/components/editor/DataEdit";
-import { EmbedEdit, RawEdit } from "@/components/editor/SourceEdit";
+import type * as EditViews from "@/components/editor/edit-views";
 
 /**
  * Browser-only node views for the directive containers and raw blocks.
@@ -27,6 +25,8 @@ type Rendered = HTMLElement & { connectedCallback?: () => void };
 
 export interface ViewOptions extends DocOptions {
   editing?: boolean;
+  /** The editing node views, loaded on demand; required when editing. */
+  editViews?: typeof EditViews;
 }
 
 const BODY: Record<string, string | null> = {
@@ -310,6 +310,8 @@ export const MenuKeys = Extension.create<object, { handler: ((event: KeyboardEve
 /** The shared extensions with browser node views attached. */
 export function viewExtensions(options: ViewOptions = {}): AnyExtension[] {
   const editing = options.editing === true;
+  const edit = options.editViews;
+  if (editing && !edit) throw new Error("viewExtensions: editing needs editViews");
   const exts = docExtensions(options).map((ext) => {
     switch (ext.name) {
       case "tabs":
@@ -317,7 +319,7 @@ export function viewExtensions(options: ViewOptions = {}): AnyExtension[] {
       case "tab":
         return ext.extend({ addNodeView: () => (editing ? tabView : containerView(false)) });
       case "rawBlock":
-        return ext.extend({ addNodeView: () => (editing ? ReactNodeViewRenderer(RawEdit, own) : rawView) });
+        return ext.extend({ addNodeView: () => (editing ? ReactNodeViewRenderer(edit!.RawEdit, own) : rawView) });
       // Questions are React, on shadcn controls. Their events are theirs: the
       // page must not turn a tap on a radio button into a selection.
       case "field":
@@ -327,13 +329,13 @@ export function viewExtensions(options: ViewOptions = {}): AnyExtension[] {
       case "option":
         return ext.extend({ addNodeView: () => ReactNodeViewRenderer(OptionView, editing ? {} : own) });
       case "kpis":
-        return editing ? ext.extend({ addNodeView: () => ReactNodeViewRenderer(KpisEdit, own) }) : ext;
+        return editing ? ext.extend({ addNodeView: () => ReactNodeViewRenderer(edit!.KpisEdit, own) }) : ext;
       case "chart":
-        return editing ? ext.extend({ addNodeView: () => ReactNodeViewRenderer(ChartEdit, own) }) : ext;
+        return editing ? ext.extend({ addNodeView: () => ReactNodeViewRenderer(edit!.ChartEdit, own) }) : ext;
       case "dataTable":
-        return editing ? ext.extend({ addNodeView: () => ReactNodeViewRenderer(TableEdit, own) }) : ext;
+        return editing ? ext.extend({ addNodeView: () => ReactNodeViewRenderer(edit!.TableEdit, own) }) : ext;
       case "embed":
-        return editing ? ext.extend({ addNodeView: () => ReactNodeViewRenderer(EmbedEdit, own) }) : ext;
+        return editing ? ext.extend({ addNodeView: () => ReactNodeViewRenderer(edit!.EmbedEdit, own) }) : ext;
       default:
         if (ext.name in BODY) return ext.extend({ addNodeView: () => containerView(editing) });
         return ext;

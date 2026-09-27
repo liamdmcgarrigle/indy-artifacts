@@ -41,10 +41,12 @@ export function submitResponse(
   ctx: ServiceContext,
   slug: string,
   raw: Record<string, unknown>,
-  who: { kind: "owner" | "visitor"; email?: string | null; linkId?: string | null } = { kind: "owner" },
+  who: { kind: "owner" | "visitor"; email?: string | null; linkId?: string | null; version?: number | null } = { kind: "owner" },
 ): FormResponse {
   const artifact = requireArtifact(ctx, slug);
-  const version = requireVersion(ctx, artifact);
+  // A link held to an older version shows that version's questions, so its
+  // answers are checked against those.
+  const version = requireVersion(ctx, artifact, who.version ?? undefined);
   const form = formOf(version.source);
   if (!form.fields.length) throw new ValidationError("this page has no questions to answer");
   const answers = cleanAnswers(form.fields, raw ?? {});
@@ -81,7 +83,9 @@ export function submitResponse(
         created_at: response.createdAt,
       }),
     );
-  recordEvent(ctx, artifact.id, "response.created", { id: response.id });
+  // A visitor's answers reach an agent only once the owner forwards them, so
+  // the event that tells agents about a response waits until then too.
+  if (who.kind === "owner") recordEvent(ctx, artifact.id, "response.created", { id: response.id });
   return response;
 }
 
@@ -107,10 +111,13 @@ export function listResponses(ctx: ServiceContext, slug: string, opts: { agent?:
 /** The owner passing a visitor's answers on to agents. */
 export function forwardResponse(ctx: ServiceContext, slug: string, id: string): void {
   const artifact = requireArtifact(ctx, slug);
-  const done = ctx.db
-    .prepare("UPDATE responses SET approved_at = COALESCE(approved_at, ?) WHERE id = ? AND artifact_id = ?")
-    .run(new Date().toISOString(), id, artifact.id);
-  if (Number(done.changes) === 0) throw new ValidationError(`no response ${id} on this page`);
+  const found = ctx.db.prepare("SELECT approved_at FROM responses WHERE id = ? AND artifact_id = ?").get(id, artifact.id) as
+    | { approved_at: string | null }
+    | undefined;
+  if (!found) throw new ValidationError(`no response ${id} on this page`);
+  if (found.approved_at) return;
+  ctx.db.prepare("UPDATE responses SET approved_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+  recordEvent(ctx, artifact.id, "response.created", { id });
 }
 
 export function countResponses(ctx: ServiceContext, artifactId: string): number {

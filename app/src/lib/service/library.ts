@@ -131,11 +131,13 @@ export function shapeOf(kind: Kind, source: string | null): ShapeToken[] {
 
 // ------------------------------------------------------------ rows
 
-function baseQuery(where: string): string {
+/** `source` is only read when the rows are drawn; counting them needs none of it. */
+function baseQuery(where: string, withSource = true): string {
   return `
-    SELECT a.*, v.source AS source, v.author_kind AS last_kind, v.author_name AS last_name,
+    SELECT a.*, ${withSource ? "v.source" : "NULL"} AS source, v.message AS version_message, v.author_kind AS last_kind, v.author_name AS last_name,
       (SELECT COUNT(*) FROM comments c WHERE c.artifact_id = a.id AND c.parent_id IS NULL AND c.status = 'open') AS open_threads,
-      (SELECT COUNT(*) FROM comments c WHERE c.artifact_id = a.id AND c.status = 'open' AND c.author_kind = 'human' AND c.sent_at IS NULL) AS unsent
+      (SELECT COUNT(*) FROM comments c WHERE c.artifact_id = a.id AND c.status = 'open' AND c.sent_at IS NULL
+        AND (c.author_kind = 'human' OR (c.author_kind = 'visitor' AND c.approved_at IS NOT NULL))) AS unsent
     FROM artifacts a
     LEFT JOIN versions v ON v.artifact_id = a.id AND v.number = a.current_version
     ${where}`;
@@ -223,8 +225,8 @@ export function listLibrary(ctx: ServiceContext, filter: LibraryFilter, limit = 
 }
 
 /** Every page with a reason to look at it, most urgent first, newest within that. */
-export function needsYou(ctx: ServiceContext): NeedsYouRow[] {
-  const rows = ctx.db.prepare(baseQuery("WHERE a.archived_at IS NULL OR a.pinned_at IS NOT NULL")).all() as Row[];
+export function needsYou(ctx: ServiceContext, opts: { countOnly?: boolean } = {}): NeedsYouRow[] {
+  const rows = ctx.db.prepare(baseQuery("WHERE a.archived_at IS NULL OR a.pinned_at IS NOT NULL", !opts.countOnly)).all() as Row[];
 
   // The newest agent comment per artifact, to compare with when you last looked.
   const replies = ctx.db
@@ -276,9 +278,7 @@ export function needsYou(ctx: ServiceContext): NeedsYouRow[] {
         kind: "new",
         who: base.lastAuthor ?? "agent",
         version: base.currentVersion,
-        message: (ctx.db
-          .prepare("SELECT message FROM versions WHERE artifact_id = ? AND number = ?")
-          .get(String(row.id), base.currentVersion) as Row | undefined)?.message as string | null,
+        message: (row.version_message as string | null) ?? null,
       };
       rank = 4;
     }
@@ -318,7 +318,7 @@ export function sidebarCounts(ctx: ServiceContext): SidebarCounts {
     Number((ctx.db.prepare(sql).get(...(params as never[])) as Row).n);
   const since = new Date(Date.now() - LIVE_WINDOW_MS).toISOString();
   return {
-    needsYou: needsYou(ctx).length,
+    needsYou: needsYou(ctx, { countOnly: true }).length,
     recent: one("SELECT COUNT(*) AS n FROM artifacts WHERE archived_at IS NULL"),
     pinned: one("SELECT COUNT(*) AS n FROM artifacts WHERE pinned_at IS NOT NULL"),
     live: one("SELECT COUNT(*) AS n FROM artifacts WHERE live_by IS NOT NULL AND live_at > ?", [since]),

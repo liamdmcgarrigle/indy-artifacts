@@ -3,9 +3,9 @@ import { extname, join, resolve, sep } from "node:path";
 import { assetDir, type ServiceContext } from "./context";
 import { ValidationError } from "./errors";
 import { LIMITS, type AssetInput, type AssetRecord } from "./types";
-import { compressImage } from "./images";
+import { compressible, compressImage } from "./images";
 import { getSettings } from "./settings";
-import { assertRoom, forgetUsage } from "./storage";
+import { assertRoom, grewBy } from "./storage";
 
 const TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -73,12 +73,17 @@ export async function copyAssets(
   await assertRoom(ctx, incoming);
   await mkdir(dir, { recursive: true });
   for (const { name, real, type } of checked) {
+    if (!settings.compressImages || !compressible(type)) {
+      await copyFile(real, join(dir, name));
+      out.push({ name, size: (await stat(join(dir, name))).size, type });
+      continue;
+    }
     const { data, changed } = await compressImage(await readFile(real), type, settings);
     if (changed) await writeFile(join(dir, name), data);
     else await copyFile(real, join(dir, name));
     out.push({ name, size: data.length, type });
   }
-  forgetUsage();
+  grewBy("assets", out.reduce((n, a) => n + a.size, 0));
   return out;
 }
 

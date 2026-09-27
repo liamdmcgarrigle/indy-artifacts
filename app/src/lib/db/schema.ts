@@ -257,4 +257,9 @@ export const MIGRATIONS: string[] = [
   ) STRICT;
   CREATE INDEX idx_oauth_tokens_connection ON oauth_tokens (connection_id);
   `,
+  // 5: the pinned and series views sort on these.
+  `
+  CREATE INDEX IF NOT EXISTS idx_artifacts_pinned ON artifacts (pinned_at);
+  CREATE INDEX IF NOT EXISTS idx_artifacts_series ON artifacts (series, created_at);
+  `,
 ];

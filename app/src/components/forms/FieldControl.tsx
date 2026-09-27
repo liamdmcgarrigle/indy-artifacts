@@ -1,5 +1,6 @@
 "use client";
 
+import { onRadioKeys, radioTab } from "@/components/indy/radio";
 import { Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -121,13 +122,14 @@ export function FieldControl({
     case "rating": {
       const n = Number(value ?? 0);
       return (
-        <div id={id} {...aria} role="radiogroup" className="flex gap-1">
+        <div id={id} {...aria} role="radiogroup" onKeyDown={onRadioKeys} className="flex gap-1">
           {Array.from({ length: field.max ?? 5 }, (_, i) => i + 1).map((v) => (
             <button
               key={v}
               type="button"
               role="radio"
               aria-checked={n === v}
+              tabIndex={radioTab(n === v, v - 1, n > 0)}
               aria-label={`${v} of ${field.max ?? 5}`}
               onClick={() => onChange(n === v ? null : v)}
               className="flex size-12 items-center justify-center rounded-lg text-faint transition-colors hover:text-sand"
@@ -145,13 +147,14 @@ export function FieldControl({
       const steps = Array.from({ length: Math.min(max - min + 1, 11) }, (_, i) => min + i);
       return (
         <div className="flex flex-col gap-2">
-          <div id={id} {...aria} role="radiogroup" className="flex gap-2">
-            {steps.map((v) => (
+          <div id={id} {...aria} role="radiogroup" onKeyDown={onRadioKeys} className="flex gap-2">
+            {steps.map((v, i) => (
               <button
                 key={v}
                 type="button"
                 role="radio"
                 aria-checked={value === v}
+                tabIndex={radioTab(value === v, i, steps.includes(value as number))}
                 onClick={() => onChange(value === v ? null : v)}
                 className={cn("q-tile q-tile--step", value === v && "q-tile--on")}
               >
@@ -165,7 +168,8 @@ export function FieldControl({
                 {min} is {field.low ?? "lowest"}
               </span>
               <span>
-                {max} is {field.high ?? "highest"}
+                {/* Long scales are cut to eleven steps, so the top is the last one shown. */}
+                {steps[steps.length - 1]} is {field.high ?? "highest"}
               </span>
             </div>
           ) : null}

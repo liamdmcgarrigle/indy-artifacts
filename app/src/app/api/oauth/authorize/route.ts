@@ -1,5 +1,4 @@
 import { getContext } from "@/lib/service/context";
-import { config } from "@/lib/config";
 import { requireOwner } from "@/lib/auth/access";
 import { checkAuthorize, issueAuthCode } from "@/lib/auth/oauth";
 import { fail } from "@/lib/api/respond";
@@ -8,26 +7,13 @@ import { requestBase } from "@/lib/api/oauth";
 export const dynamic = "force-dynamic";
 
 /**
- * The consent form's post. The session cookie is SameSite=Lax, so another
- * site cannot post this form as the owner; the Origin check says so twice.
+ * The consent form's post. The session cookie is SameSite=Lax, and
+ * requireOwner refuses a post from any other site (an opaque origin included).
  */
 export async function POST(request: Request) {
   try {
     const ctx = getContext();
-    const c = config();
     requireOwner(ctx, request);
-    // Compared with the host the browser actually used, which may be an IP
-    // rather than the name in INDY_URL.
-    const origin = request.headers.get("origin");
-    const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-    if (origin && origin !== "null") {
-      let originHost = "";
-      try {
-        originHost = new URL(origin).host;
-      } catch {}
-      if (originHost !== host && originHost !== new URL(c.url).host) return new Response("Cross-site request refused.", { status: 403 });
-    }
-
     const form = await request.formData();
     const params = new URLSearchParams(String(form.get("params") ?? ""));
     const base = requestBase(request.headers);

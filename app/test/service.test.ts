@@ -376,3 +376,22 @@ describe("failed first publish", () => {
     bad.db.close();
   });
 });
+
+describe("two updates at once", () => {
+  it("lets one win and gives the other a conflict, never a crash", async () => {
+    await publishArtifact(ctx, { slug: "race", source: md("Race") });
+    const results = await Promise.allSettled([
+      updateArtifact(ctx, "race", { expectedVersion: 1, source: md("Race", "one") }),
+      updateArtifact(ctx, "race", { expectedVersion: 1, source: md("Race", "two") }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const lost = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(lost.reason).toBeInstanceOf(ConflictError);
+    expect(requireArtifact(ctx, "race").currentVersion).toBe(2);
+  });
+
+  it("refuses a missing expected_version as a bad request", async () => {
+    await publishArtifact(ctx, { slug: "noversion", source: md("No version") });
+    await expect(updateArtifact(ctx, "noversion", { expectedVersion: Number(undefined), source: md("x") })).rejects.toThrow(ValidationError);
+  });
+});

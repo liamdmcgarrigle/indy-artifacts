@@ -60,7 +60,16 @@ function allowlistPlugin(rootDir: string): esbuild.Plugin {
         const importer = args.importer || "";
         const fromArtifact = importer.startsWith(rootDir + sep) || importer === rootDir;
         if (!fromArtifact) return undefined;
-        if (args.path.startsWith(".") || args.path.startsWith("/")) return undefined;
+        const refuse = (text: string) => ({ errors: [{ text }] });
+        // `with { type: "text" }` would inline any file the server can read.
+        if (args.with && Object.keys(args.with).length > 0) return refuse(`import attributes are not allowed: "${args.path}"`);
+        if (args.path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(args.path)) return refuse(`absolute imports are not allowed: "${args.path}"`);
+        if (args.path.startsWith(".")) {
+          // Relative imports reach the artifact's own files and nothing else.
+          const target = resolve(args.resolveDir || rootDir, args.path);
+          if (target !== rootDir && !target.startsWith(rootDir + sep)) return refuse(`import "${args.path}" reaches outside the artifact's files`);
+          return undefined;
+        }
         if (ALLOWED_PACKAGES.includes(packageName(args.path))) return undefined;
         return {
           errors: [
@@ -170,12 +179,18 @@ export async function buildArtifact(input: BuildInput): Promise<BuildResult> {
     };
 
     let timer: NodeJS.Timeout | undefined;
+    // A context can be cancelled: a build past its time stops, rather than
+    // carrying on and writing into a folder that has moved on.
+    const context = await esbuild.context(options);
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`build exceeded ${BUILD_TIMEOUT_MS / 1000}s`)), BUILD_TIMEOUT_MS);
+      timer = setTimeout(() => {
+        void context.cancel();
+        reject(new Error(`build exceeded ${BUILD_TIMEOUT_MS / 1000}s`));
+      }, BUILD_TIMEOUT_MS);
     });
 
     try {
-      const result = (await Promise.race([esbuild.build(options), timeout])) as esbuild.BuildResult;
+      const result = (await Promise.race([context.rebuild(), timeout])) as esbuild.BuildResult;
       const warnings = result.warnings?.length
         ? (await esbuild.formatMessages(result.warnings, { kind: "warning", color: false })).join("")
         : "";
@@ -198,6 +213,7 @@ export async function buildArtifact(input: BuildInput): Promise<BuildResult> {
       return { status: "ok", log: warnings.trim(), bytes: bundle.size, css };
     } finally {
       if (timer) clearTimeout(timer);
+      await context.dispose().catch(() => {});
     }
   } catch (err) {
     const failure = err as { errors?: esbuild.Message[]; warnings?: esbuild.Message[]; message?: string };

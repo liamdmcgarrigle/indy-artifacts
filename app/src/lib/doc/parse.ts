@@ -267,7 +267,10 @@ export function markdownToDoc(markdown: string): JSONContent {
       if (!(err instanceof Unmodelled)) throw err;
       node = { type: "rawBlock" };
     }
-    node.attrs = { ...(node.attrs ?? {}), src, lines: [start, end], gap: gap.length === 1 && gap[0] === "" ? null : gap };
+    // null stands for the usual one blank line between blocks. The first
+    // block has no block before it, so its gap is always kept as it is.
+    const usual = content.length > 0 && gap.length === 1 && gap[0] === "";
+    node.attrs = { ...(node.attrs ?? {}), src, lines: [start, end], gap: usual ? null : gap };
     content.push(node);
     cursor = end;
   }

@@ -235,6 +235,7 @@ export function exchange(ctx: ServiceContext, form: URLSearchParams, mcpResource
     if (String(row.client_id) !== clientId) throw new OAuthError("invalid_grant", "the code was issued to another client");
     const redirect = form.get("redirect_uri");
     if (redirect !== null && redirect !== String(row.redirect_uri)) throw new OAuthError("invalid_grant", "redirect_uri does not match");
+    if (row.resource && !sameResource(String(row.resource), mcpResource)) throw new OAuthError("invalid_grant", "the code was issued for another resource");
     const verifier = form.get("code_verifier") ?? "";
     if (!/^[A-Za-z0-9\-._~]{43,128}$/.test(verifier) || pkce(verifier) !== String(row.challenge))
       throw new OAuthError("invalid_grant", "code_verifier does not match the code_challenge");
@@ -257,10 +258,21 @@ export function exchange(ctx: ServiceContext, form: URLSearchParams, mcpResource
          WHERE t.hash = ? AND t.kind = 'refresh' AND c.revoked_at IS NULL`,
       )
       .get(sha256(token)) as Row | undefined;
-    if (!row || Date.parse(String(row.expires_at)) < Date.now()) throw new OAuthError("invalid_grant", "the refresh token is not valid; connect again");
+    if (!row) {
+      // A refresh token that was already spent is being used again: someone
+      // else holds a copy. The whole connection goes, and the agent signs in again.
+      const spent = ctx.db.prepare("SELECT connection_id FROM oauth_tokens WHERE hash = ?").get(`spent:${sha256(token)}`) as Row | undefined;
+      if (spent) {
+        ctx.db.prepare("UPDATE api_tokens SET revoked_at = ? WHERE id = ?").run(iso(Date.now()), String(spent.connection_id));
+        ctx.db.prepare("DELETE FROM oauth_tokens WHERE connection_id = ?").run(String(spent.connection_id));
+      }
+      throw new OAuthError("invalid_grant", "the refresh token is not valid; connect again");
+    }
+    if (Date.parse(String(row.expires_at)) < Date.now()) throw new OAuthError("invalid_grant", "the refresh token is not valid; connect again");
     if (clientId && String(row.client_id) !== clientId) throw new OAuthError("invalid_grant", "the refresh token belongs to another client");
-    // Rotation: the old refresh token is spent.
-    ctx.db.prepare("DELETE FROM oauth_tokens WHERE hash = ?").run(sha256(token));
+    // Rotation: the old refresh token is spent, and kept as spent until it
+    // would have expired, so a second use of it can be recognised.
+    ctx.db.prepare("UPDATE oauth_tokens SET hash = ? WHERE hash = ?").run(`spent:${sha256(token)}`, sha256(token));
     return mint(ctx, String(row.connection_id));
   }
 

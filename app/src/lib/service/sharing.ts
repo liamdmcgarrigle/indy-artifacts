@@ -121,6 +121,11 @@ export function setSharing(ctx: ServiceContext, slug: string, input: SharingInpu
         expires: expiryFor(input.expiry, current.expiresAt),
       }),
     );
+  // Visits begun while the link was open never confirmed an email, so a
+  // switch to email-only starts everyone over at the gate.
+  if (input.mode === "email" && current.mode !== "email") {
+    ctx.db.prepare("DELETE FROM visitor_sessions WHERE link_id = ?").run(current.id);
+  }
   return activeLink(ctx, slug);
 }
 

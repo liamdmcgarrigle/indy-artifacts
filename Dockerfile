@@ -4,8 +4,8 @@
 #
 #   deps      npm ci against the lockfile
 #   build     the <art-*> primitives, vendored mermaid, next build (standalone)
-#   extras    the packages a compiled artifact may import, installed on their own
-#   collab    the document server and its two dependencies
+#   extras    the packages a compiled artifact may import, from docker/extras
+#   collab    the document server and its dependencies, from the root lockfile
 #   runtime   the app, the document server and the proxy that fronts them both
 #
 # The extras stage exists because Next's output tracing keeps only the files the
@@ -32,16 +32,26 @@ RUN npm run build:primitives \
 
 FROM node:24-bookworm-slim AS extras
 WORKDIR /extras
-RUN npm init -y > /dev/null \
- && npm install --no-audit --no-fund --omit=dev \
-      react@19.3.0 react-dom@19.3.0 svelte@5.57.1 \
-      chart.js@4.5.1 d3@7.9.0 lucide-react@1.47.0
+# Pinned with a lockfile; the versions match app/package.json, which
+# app/test/deploy.test.ts checks.
+COPY docker/extras/package.json docker/extras/package-lock.json ./
+RUN npm ci --no-audit --no-fund --omit=dev
 
 FROM node:24-bookworm-slim AS collab
-WORKDIR /collab
-COPY collab/package.json ./
-RUN npm install --no-audit --no-fund --omit=dev
-COPY collab/server.mjs ./
+WORKDIR /src
+# The document server's dependencies, from the root lockfile like everything
+# else, then gathered into one folder beside its server.
+COPY package.json package-lock.json ./
+COPY app/package.json app/package.json
+COPY collab/package.json collab/package.json
+COPY packages/primitives/package.json packages/primitives/package.json
+RUN npm ci --omit=dev --workspace collab --include-workspace-root=false --no-audit --no-fund \
+ && rm -f node_modules/collab \
+ && mkdir -p /collab/node_modules \
+ && cp -a node_modules/. /collab/node_modules/ \
+ && if [ -d collab/node_modules ]; then cp -a collab/node_modules/. /collab/node_modules/; fi \
+ && cp collab/package.json /collab/
+COPY collab/server.mjs /collab/
 
 FROM node:24-bookworm-slim AS runtime
 # The source label links the image on ghcr.io to its repository, which is

@@ -51,16 +51,28 @@ async function sizeOf(path: string, seen: Set<string>): Promise<number> {
 }
 
 // Walking the folder on every publish would be slow on a big install, so the
-// answer is kept for a short while and dropped whenever something is written.
+// answer is kept and topped up as Indy writes (grewBy). A delete drops it
+// (forgetUsage); a walk that was already running when that happened is not
+// cached, since it may have counted the files before they went.
 let cached: { at: number; dir: string; usage: Usage } | null = null;
-const FRESH_MS = 30_000;
+let generation = 0;
+const FRESH_MS = 10 * 60_000;
 
 export function forgetUsage(): void {
   cached = null;
+  generation++;
+}
+
+/** Indy just wrote about `bytes` under one part of the data folder. */
+export function grewBy(part: Exclude<keyof Usage, "total">, bytes: number): void {
+  if (!cached || !(bytes > 0)) return;
+  cached.usage[part] += bytes;
+  cached.usage.total += bytes;
 }
 
 export async function dataUsage(ctx: ServiceContext): Promise<Usage> {
   if (cached && cached.dir === ctx.dataDir && Date.now() - cached.at < FRESH_MS) return cached.usage;
+  const started = generation;
   const names = await readdir(ctx.dataDir).catch(() => [] as string[]);
   const usage: Usage = { total: 0, database: 0, assets: 0, builds: 0, other: 0 };
   const seen = new Set<string>();
@@ -72,7 +84,7 @@ export async function dataUsage(ctx: ServiceContext): Promise<Usage> {
     else if (name === "builds") usage.builds += size;
     else usage.other += size;
   }
-  cached = { at: Date.now(), dir: ctx.dataDir, usage };
+  if (started === generation) cached = { at: Date.now(), dir: ctx.dataDir, usage };
   return usage;
 }
 

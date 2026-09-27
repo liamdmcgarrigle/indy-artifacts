@@ -1,5 +1,6 @@
 "use client";
 
+import { onRadioKeys } from "@/components/indy/radio";
 import { useId, useState } from "react";
 import { NodeViewContent, NodeViewWrapper, type ReactNodeViewProps } from "@tiptap/react";
 import { Check, Plus, X } from "lucide-react";
@@ -210,6 +211,7 @@ function ChoiceAnswer({ node }: ReactNodeViewProps) {
       data-field={field?.name}
       role={field?.multiple ? "group" : "radiogroup"}
       aria-label={field?.label}
+      onKeyDown={field?.multiple ? undefined : onRadioKeys}
     >
       {field ? (
         <div className="art-q__head" contentEditable={false}>
@@ -280,7 +282,8 @@ function OptionAnswer({ node, editor, getPos }: ReactNodeViewProps) {
       className={cn("art-opt", selected && "art-opt--on")}
       role={multiple ? "checkbox" : "radio"}
       aria-checked={selected}
-      tabIndex={0}
+      // One stop for Tab in a single choice: the chosen option, or all of them until one is.
+      tabIndex={multiple || selected || current === null || current === undefined || current === "" ? 0 : -1}
       onClick={(e: React.MouseEvent) => {
         // A link inside an option ("Try it") opens; it does not pick.
         if ((e.target as HTMLElement).closest("a, iframe")) return;

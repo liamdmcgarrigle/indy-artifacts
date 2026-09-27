@@ -28,7 +28,7 @@ export function CodeInput({ onComplete, disabled }: { onComplete: (code: string)
   }
 
   return (
-    <fieldset className="flex gap-2" disabled={disabled}>
+    <fieldset className="grid w-full max-w-[376px] grid-cols-6 gap-2" disabled={disabled}>
       <legend className="sr-only">Code</legend>
       {digits.map((d, i) => (
         <input
@@ -46,7 +46,7 @@ export function CodeInput({ onComplete, disabled }: { onComplete: (code: string)
             if (e.key === "Backspace" && !digits[i] && i > 0) refs.current[i - 1]?.focus();
           }}
           className={cn(
-            "h-16 w-14 rounded-lg border border-input bg-card text-center font-mono text-[26px] outline-none",
+            "h-16 w-full min-w-0 rounded-lg border border-input bg-card text-center font-mono text-[26px] outline-none",
             "focus:border-sand focus:ring-[3px] focus:ring-sand-soft",
           )}
         />

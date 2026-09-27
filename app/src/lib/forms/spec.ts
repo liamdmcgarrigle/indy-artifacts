@@ -184,7 +184,9 @@ export function cleanAnswers(fields: FieldSpec[], raw: Record<string, unknown>):
   for (const f of fields) {
     const v = raw[f.name];
     if (v === undefined || v === null) continue;
-    if (f.multiple || f.type === "checkboxes") out[f.name] = (Array.isArray(v) ? v : [v]).map(String);
+    // Each option once, and no more picks than there are options.
+    if (f.multiple || f.type === "checkboxes")
+      out[f.name] = [...new Set((Array.isArray(v) ? v : [v]).map(String))].slice(0, Math.max(f.options?.length ?? 0, 1));
     else if (f.type === "checkbox" || f.type === "switch") out[f.name] = v === true || v === "true";
     else if (["number", "slider", "rating", "scale"].includes(f.type)) out[f.name] = v === "" ? null : Number(v);
     else out[f.name] = String(v);

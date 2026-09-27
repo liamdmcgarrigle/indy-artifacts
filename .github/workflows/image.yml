@@ -4,6 +4,7 @@
 #   push to main      :latest and :sha-<short>
 #   new VERSION       also :1.2.3, :1.2 and :1, a v1.2.3 tag and a GitHub release
 #   pull request      tests and a build, nothing published
+#   manual run        on main as a push; on another branch, a build only
 #
 # VERSION at the repo root is the version. Bump it with `npm run set-version
 # 1.2.3`; the first push to main that carries a version with no tag yet
@@ -11,8 +12,9 @@
 #
 # Each architecture builds on its own native runner (no QEMU, which is slow
 # for a Next build), pushes by digest, and a last job joins the two into one
-# multi-arch tag. The image's source label links the package to this repo, so
-# it takes the repo's visibility: public repo, public image.
+# multi-arch tag. The image's source label links the package to this repo.
+# GitHub makes a new package private even so: after the first publish, set
+# its visibility to public once in the package settings (see the README).
 
 name: image
 
@@ -25,9 +27,11 @@ on:
 permissions:
   contents: read
 
+# A newer push cancels an older pull request build, never a run on main,
+# which may be halfway through publishing a release.
 concurrency:
   group: image-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   version:
@@ -88,7 +92,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -102,17 +106,17 @@ jobs:
           platforms: ${{ matrix.platform }}
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
-          outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) }}
+          outputs: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'type=cacheonly' || format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) }}
 
       - name: Keep the digest
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           name: digest-${{ matrix.runner }}
           path: /tmp/digests/*
@@ -120,7 +124,7 @@ jobs:
 
   publish:
     needs: [build, version]
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: read

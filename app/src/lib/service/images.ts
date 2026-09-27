@@ -15,6 +15,14 @@ import type { AppSettings } from "./settings";
 
 const COMPRESSIBLE = new Set(["image/png", "image/jpeg", "image/webp"]);
 
+export function compressible(type: string): boolean {
+  return COMPRESSIBLE.has(type);
+}
+
+/** Refuse to decode anything bigger than 50 megapixels: a small file can unpack to gigabytes. */
+const MAX_PIXELS = 50_000_000;
+let tuned = false;
+
 export interface Compressed {
   data: Buffer;
   /** True when the stored bytes differ from what the agent sent. */
@@ -25,10 +33,16 @@ export async function compressImage(input: Buffer, type: string, settings: Pick<
   if (!settings.compressImages || !COMPRESSIBLE.has(type)) return { data: input, changed: false };
   try {
     const sharp = (await import("sharp")).default;
-    const meta = await sharp(input).metadata();
+    if (!tuned) {
+      // One image at a time and no cache: Indy runs in a small container.
+      sharp.cache(false);
+      sharp.concurrency(1);
+      tuned = true;
+    }
+    const meta = await sharp(input, { limitInputPixels: MAX_PIXELS }).metadata();
     if ((meta.pages ?? 1) > 1) return { data: input, changed: false };
 
-    let image = sharp(input)
+    let image = sharp(input, { limitInputPixels: MAX_PIXELS })
       .rotate()
       .resize({ width: settings.imageMaxEdge, height: settings.imageMaxEdge, fit: "inside", withoutEnlargement: true });
     const quality = settings.imageQuality;

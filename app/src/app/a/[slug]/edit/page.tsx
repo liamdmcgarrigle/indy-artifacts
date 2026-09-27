@@ -4,6 +4,7 @@ import { Editor } from "@/components/Editor";
 import { getContext } from "@/lib/service/context";
 import { requireArtifact, requireVersion } from "@/lib/service/artifacts";
 import { NotFoundError } from "@/lib/service/errors";
+import { collabToken } from "@/lib/auth/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export default async function EditPage({ params }: { params: Promise<{ slug: str
         version={version.number}
         source={version.source}
         files={version.files}
-        collab
+        collab={collabToken(ctx, artifact.slug)}
       />
     );
   } catch (err) {

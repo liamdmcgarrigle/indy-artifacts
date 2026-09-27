@@ -1,16 +1,22 @@
-# Never send the database, local settings or installed modules into a build.
-data
-.env
-.env.*
-!.env.example
+# Never send the database, local settings, secrets or installed modules into a
+# build. The data folder can sit anywhere a dev server was run from.
+**/data
+**/.env
+**/.env.*
+compose.override.yaml
 **/node_modules
 **/.next
 **/dist
 **/*.tsbuildinfo
 app/test/.corpus
 .git
-.orca
 .shots
 tools/screenshot
-hook
+# Local agent and planning files.
+.orca
+.claude
+.codex
+.agents
+DECISIONS.md
 docs
+hook

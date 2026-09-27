@@ -14,6 +14,8 @@ export function LoginForm({ next }: { next: string }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A wrong code clears the boxes: a new CodeInput, focused on its first box.
+  const [attempt, setAttempt] = useState(0);
 
   async function post(path: string, payload: unknown) {
     const res = await fetch(path, {
@@ -51,6 +53,7 @@ export function LoginForm({ next }: { next: string }) {
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
+      setAttempt((n) => n + 1);
     }
   }
 
@@ -61,7 +64,7 @@ export function LoginForm({ next }: { next: string }) {
           We sent a 6-digit code to <span className="text-foreground">{step.email}</span>. It&apos;s good for 10
           minutes.
         </p>
-        <CodeInput onComplete={verify} disabled={busy} />
+        <CodeInput key={attempt} onComplete={verify} disabled={busy} />
         {error ? <p role="alert" className="text-[13px] text-bad">{error}</p> : null}
         <button
           type="button"

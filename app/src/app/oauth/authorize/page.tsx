@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getContext } from "@/lib/service/context";
 import { config } from "@/lib/config";
 import { owner, sessionUser } from "@/lib/auth/accounts";
-import { SESSION_COOKIE } from "@/lib/auth/access";
+import { hostAllowed, SESSION_COOKIE } from "@/lib/auth/access";
 import { checkAuthorize } from "@/lib/auth/oauth";
 import { SackMark } from "@/components/indy/brand";
 import { Consent } from "@/components/auth/Consent";
@@ -32,7 +32,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
   const ctx = getContext();
   const c = config();
   if (!owner(ctx)) redirect("/setup");
-  const signedIn = c.auth === "local" || sessionUser(ctx, (await cookies()).get(SESSION_COOKIE)?.value);
+  const signedIn = (c.auth === "local" && hostAllowed(await headers())) || sessionUser(ctx, (await cookies()).get(SESSION_COOKIE)?.value);
   if (!signedIn) redirect(`/login?next=${encodeURIComponent(`/oauth/authorize?${params}`)}`);
 
   const checked = checkAuthorize(ctx, params, `${requestBase(await headers())}/mcp`);

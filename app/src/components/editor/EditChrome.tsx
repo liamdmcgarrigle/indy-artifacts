@@ -400,7 +400,12 @@ function BlockBar({ editor }: { editor: Editor }) {
   const type = node.type.name;
   const attrs = (node.attrs.attributes ?? {}) as Record<string, unknown>;
 
-  const keep = (e: React.MouseEvent) => e.preventDefault();
+  // Keeps the text selection while a button is pressed. A <select> is left
+  // alone: preventing its mousedown stops it from opening at all.
+  const keep = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("select")) return;
+    e.preventDefault();
+  };
   const setAttrs = (patch: Record<string, unknown>) => {
     const tr = editor.state.tr.setNodeMarkup(block.pos, undefined, { ...node.attrs, attributes: { ...attrs, ...patch } });
     editor.view.dispatch(tr);

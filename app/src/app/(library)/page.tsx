@@ -1,4 +1,4 @@
-import { getContext } from "@/lib/service/context";
+import { ownerContext } from "@/lib/auth/page";
 import { listLibrary, needsYou } from "@/lib/service/library";
 import { ViewHeader } from "@/components/library/ViewHeader";
 import { LibraryBoard } from "@/components/library/LibraryBoard";
@@ -8,8 +8,8 @@ import { MarkAllSeen } from "@/components/library/MarkAllSeen";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Needs you" };
 
-export default function NeedsYouPage() {
-  const ctx = getContext();
+export default async function NeedsYouPage() {
+  const ctx = (await ownerContext());
   const inbox = needsYou(ctx);
   const inInbox = new Set(inbox.map((r) => r.slug));
   const recent = listLibrary(ctx, { view: "recent" }, 40).filter((r) => !inInbox.has(r.slug));

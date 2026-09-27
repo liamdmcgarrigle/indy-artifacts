@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CopyButton } from "@/components/indy/CopyButton";
 import { SackMark } from "@/components/indy/brand";
-import { ago } from "@/lib/time";
+import { agoLong } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { onRadioKeys } from "@/components/indy/radio";
 
 type Agent = "claude" | "codex" | "other";
 type Method = "browser" | "token";
@@ -75,12 +76,15 @@ export function ConnectView({
   welcome,
   initialAgent,
   local,
+  now,
 }: {
   url: string;
   secure: boolean;
   welcome: boolean;
   initialAgent: Agent;
   local: boolean;
+  /** When the page was rendered, by the server's clock. */
+  now: string;
 }) {
   const mcp = `${url}/mcp`;
   const [agent, setAgent] = useState<Agent>(initialAgent);
@@ -94,13 +98,14 @@ export function ConnectView({
 
   const pick = (a: Agent) => {
     setAgent(a);
-    setMethod(browserWorks(a) ? "browser" : "token");
-    setToken(null);
+    // A token made for one agent works for any of them, and it is shown only once.
+    setMethod(token ? "token" : browserWorks(a) ? "browser" : "token");
     setError(null);
   };
 
-  // Watch for the agent to arrive, from the moment the page opened.
-  const since = useRef(new Date().toISOString());
+  // Watch for the agent to arrive, from the moment the page opened by the
+  // server's clock, which is the one connections are stamped with.
+  const since = useRef(now);
   const [seen, setSeen] = useState<Connection | null>(null);
   const [page, setPage] = useState<{ slug: string; title: string } | null>(null);
   useEffect(() => {
@@ -185,13 +190,14 @@ export function ConnectView({
         ) : null}
 
         <Step n={1} title="Which agent?" done>
-          <div role="radiogroup" aria-label="Agent" className="grid grid-cols-3 gap-2.5 max-sm:grid-cols-1">
+          <div role="radiogroup" aria-label="Agent" onKeyDown={onRadioKeys} className="grid grid-cols-3 gap-2.5 max-sm:grid-cols-1">
             {AGENTS.map((a) => (
               <button
                 key={a.id}
                 type="button"
                 role="radio"
                 aria-checked={agent === a.id}
+                tabIndex={agent === a.id ? 0 : -1}
                 onClick={() => pick(a.id)}
                 className={cn(
                   "flex flex-col items-start gap-0.5 rounded-xl border px-4 py-3 text-left transition-colors",
@@ -207,7 +213,7 @@ export function ConnectView({
 
         <Step n={2} title="Connect it" done={connected}>
           {local ? null : (
-            <div role="radiogroup" aria-label="How it signs in" className="flex w-fit gap-1 rounded-lg border border-border bg-sidebar p-1">
+            <div role="radiogroup" aria-label="How it signs in" onKeyDown={onRadioKeys} className="flex w-fit gap-1 rounded-lg border border-border bg-sidebar p-1">
               {(
                 [
                   { id: "browser", label: "Sign in with the browser", icon: Globe },
@@ -219,6 +225,7 @@ export function ConnectView({
                   type="button"
                   role="radio"
                   aria-checked={method === m.id}
+                  tabIndex={method === m.id ? 0 : -1}
                   disabled={m.id === "browser" && !browserWorks(agent)}
                   onClick={() => setMethod(m.id)}
                   className={cn(
@@ -368,7 +375,7 @@ export function ConnectView({
                   <span className="flex flex-col">
                     <span className="text-sm font-medium">&ldquo;{seen.name}&rdquo; is connected</span>
                     <span className="text-xs text-muted-foreground">
-                      {seen.kind === "oauth" ? "Signed in through the browser" : "Using a token"} · last call {ago(seen.lastUsedAt!)} ago
+                      {seen.kind === "oauth" ? "Signed in through the browser" : "Using a token"} · last call {agoLong(seen.lastUsedAt!)}
                     </span>
                   </span>
                 </div>

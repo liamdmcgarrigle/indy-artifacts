@@ -25,12 +25,16 @@ function Grid({
   rows,
   onColumns,
   onRows,
+  onShape,
   fixedFirst,
 }: {
   columns: string[];
   rows: Cell[][];
+  /** A column renamed: the cells stay where they are. */
   onColumns: (next: string[]) => void;
   onRows: (next: Cell[][]) => void;
+  /** A column added or removed: headers and cells change in one write, or the second would undo the first. */
+  onShape: (columns: string[], rows: Cell[][]) => void;
   /** The first column is the chart's x key: it can be renamed, not removed. */
   fixedFirst?: boolean;
 }) {
@@ -52,10 +56,12 @@ function Grid({
                     type="button"
                     aria-label={`Remove column ${col}`}
                     className="data-grid__x"
-                    onClick={() => {
-                      onColumns(columns.filter((_, j) => j !== c));
-                      onRows(rows.map((row) => row.filter((_, j) => j !== c)));
-                    }}
+                    onClick={() =>
+                      onShape(
+                        columns.filter((_, j) => j !== c),
+                        rows.map((row) => row.filter((_, j) => j !== c)),
+                      )
+                    }
                   >
                     <X className="size-3" />
                   </button>
@@ -66,10 +72,12 @@ function Grid({
               <button
                 type="button"
                 aria-label="Add a column"
-                onClick={() => {
-                  onColumns([...columns, `series ${columns.length}`]);
-                  onRows(rows.map((row) => [...row, 0]));
-                }}
+                onClick={() =>
+                  onShape(
+                    [...columns, `series ${columns.length}`],
+                    rows.map((row) => [...row, 0]),
+                  )
+                }
               >
                 <Plus className="size-3.5" />
               </button>
@@ -188,6 +196,9 @@ export function ChartEdit({ node, updateAttributes }: ReactNodeViewProps) {
             write({ x: next[0], y: next.slice(1), data });
           }}
           onRows={(next) => write({ data: next.map((row) => Object.fromEntries(columns.map((k, i) => [k, row[i] ?? ""]))) })}
+          onShape={(cols, next) =>
+            write({ x: cols[0], y: cols.slice(1), data: next.map((row) => Object.fromEntries(cols.map((k, i) => [k, row[i] ?? ""]))) })
+          }
         />
       ) : null}
     </NodeViewWrapper>
@@ -231,7 +242,10 @@ export function TableEdit({ node, updateAttributes }: ReactNodeViewProps) {
           <input type="checkbox" checked={spec.sortable} onChange={(e) => write({ sortable: e.target.checked })} /> Sortable columns
         </label>
       </div>
-      <Grid columns={spec.columns} rows={spec.rows} onColumns={(columns) => write({ columns })} onRows={(rows) => write({ rows })} />
+      <Grid columns={spec.columns} rows={spec.rows} onColumns={(columns) => write({ columns })}
+        onRows={(rows) => write({ rows })}
+        onShape={(columns, rows) => write({ columns, rows })}
+      />
     </NodeViewWrapper>
   );
 }

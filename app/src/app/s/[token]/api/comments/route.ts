@@ -26,7 +26,8 @@ export async function POST(request: Request, { params }: Params) {
     if (!req.link.allowComments) throw new ForbiddenError("comments are off on this link");
     const input = await body(request);
     const { visitor, setCookie } = ensureVisit(req);
-    const name = String(input.author_name ?? "").trim().slice(0, 80) || visitor.email || "Visitor";
+    // Other visitors on the link read this name, so an email address is never the fallback.
+    const name = String(input.author_name ?? "").trim().slice(0, 80) || "Visitor";
     const comment = createComment(getContext(), req.artifact.slug, {
       body: String(input.body ?? ""),
       authorName: name,

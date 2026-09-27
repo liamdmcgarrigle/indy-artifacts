@@ -1,4 +1,4 @@
-import { getContext } from "@/lib/service/context";
+import { ownerContext } from "@/lib/auth/page";
 import { branchesOf, listLibrary } from "@/lib/service/library";
 import { BranchFilter } from "@/components/library/BranchFilter";
 import { projectColour } from "@/lib/colors";
@@ -21,7 +21,7 @@ export default async function ProjectPage({
 }) {
   const name = decodeURIComponent((await params).name);
   const branch = (await searchParams).branch || null;
-  const ctx = getContext();
+  const ctx = (await ownerContext());
   const rows = listLibrary(ctx, { view: "project", name, branch: branch ?? undefined });
   const live = rows.filter((r) => !r.archived);
   const archived = rows.filter((r) => r.archived);

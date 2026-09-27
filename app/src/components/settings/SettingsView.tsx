@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, AtSign, Globe, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { copyText } from "@/lib/clipboard";
-import { ago } from "@/lib/time";
+import { agoLong } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { AppSettings } from "@/lib/service/settings";
 import type { Usage } from "@/lib/service/storage";
@@ -210,7 +211,12 @@ function AccountSection({ user, email, say }: { user: { name: string; email: str
   const [profile, setProfile] = useState({ name: user?.name ?? "", email: user?.email ?? "" });
   const [pw, setPw] = useState({ current: "", next: "" });
   const [twoStep, setTwoStep] = useState(user?.twoStep ?? false);
+  // Changing the email or turning sign-in codes off asks for the password again.
+  const [confirmPw, setConfirmPw] = useState("");
+  const [turningOff, setTurningOff] = useState(false);
+  const [offPw, setOffPw] = useState("");
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
 
   if (!user) {
     return (
@@ -220,11 +226,15 @@ function AccountSection({ user, email, say }: { user: { name: string; email: str
     );
   }
 
+  const emailChanged = profile.email.trim().toLowerCase() !== user.email.toLowerCase();
+
   async function run(payload: Record<string, unknown>, done: string) {
     setBusy(true);
     try {
       await send("/api/account", "PATCH", payload);
       say.good(done);
+      // The section is rebuilt from the server's copy on every tab switch.
+      router.refresh();
       return true;
     } catch (err) {
       say.bad(err);
@@ -242,7 +252,9 @@ function AccountSection({ user, email, say }: { user: { name: string; email: str
           className="flex flex-col gap-4 p-[18px]"
           onSubmit={(e) => {
             e.preventDefault();
-            void run({ name: profile.name, email: profile.email }, "Saved.");
+            const payload: Record<string, unknown> = { name: profile.name, email: profile.email };
+            if (emailChanged) payload.current_password = confirmPw;
+            void run(payload, "Saved.").then((ok) => ok && setConfirmPw(""));
           }}
         >
           <div className="grid gap-4 sm:grid-cols-2">
@@ -255,8 +267,21 @@ function AccountSection({ user, email, say }: { user: { name: string; email: str
               <Input id="acct-email" type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} />
             </div>
           </div>
+          {emailChanged ? (
+            <div className="flex flex-col gap-1.5 sm:max-w-[calc(50%-8px)]">
+              <Label htmlFor="acct-confirm">Current password</Label>
+              <Input
+                id="acct-confirm"
+                type="password"
+                autoComplete="current-password"
+                value={confirmPw}
+                onChange={(e) => setConfirmPw(e.target.value)}
+              />
+              <p className="m-0 text-xs text-muted-foreground">Sign-in codes go to this address, so changing it needs your password.</p>
+            </div>
+          ) : null}
           <div>
-            <Button type="submit" size="sm" disabled={busy || (profile.name === user.name && profile.email === user.email)}>
+            <Button type="submit" size="sm" disabled={busy || (profile.name === user.name && !emailChanged) || (emailChanged && !confirmPw)}>
               Save
             </Button>
           </div>
@@ -297,13 +322,44 @@ function AccountSection({ user, email, say }: { user: { name: string; email: str
         >
           <Switch
             id="two-step"
-            checked={twoStep}
-            disabled={busy || !email}
+            checked={twoStep && !turningOff}
+            disabled={busy || (!email && !twoStep)}
             onCheckedChange={async (on) => {
-              if (await run({ two_step: on }, on ? "Sign-in codes are on." : "Sign-in codes are off.")) setTwoStep(on);
+              if (!on) {
+                setTurningOff(true);
+                return;
+              }
+              setTurningOff(false);
+              if (await run({ two_step: true }, "Sign-in codes are on.")) setTwoStep(true);
             }}
           />
         </Row>
+        {turningOff ? (
+          <form
+            className="flex items-end gap-2 border-b border-hairline px-[18px] py-4 max-sm:flex-col max-sm:items-stretch"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (await run({ two_step: false, current_password: offPw }, "Sign-in codes are off.")) {
+                setTwoStep(false);
+                setTurningOff(false);
+                setOffPw("");
+              }
+            }}
+          >
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="two-step-pw">Your password, to turn sign-in codes off</Label>
+              <Input id="two-step-pw" type="password" autoComplete="current-password" autoFocus value={offPw} onChange={(e) => setOffPw(e.target.value)} />
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit" size="sm" variant="outline" disabled={busy || !offPw}>
+                Turn off
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => (setTurningOff(false), setOffPw(""))}>
+                Keep them on
+              </Button>
+            </div>
+          </form>
+        ) : null}
         <Row label="Sign out everywhere" help="Ends every session, this one included. Agent tokens keep working.">
           <Button
             size="sm"
@@ -363,10 +419,10 @@ function AgentsSection({ tokens, setTokens, say }: { tokens: Token[]; setTokens:
                     {t.kind === "oauth" ? "signed in through the browser" : <span className="font-mono">{t.prefix}…</span>}
                   </span>
                 </span>
-                <span className="text-fg-3 max-sm:hidden">added {ago(t.createdAt)} ago</span>
+                <span className="text-fg-3 max-sm:hidden">added {agoLong(t.createdAt)}</span>
                 <span className="flex items-center gap-1.5 text-fg-3 max-sm:hidden">
                   <span className={cn("size-1.5 rounded-full", recent ? "bg-good" : t.lastUsedAt ? "bg-muted-foreground" : "bg-border")} />
-                  {t.lastUsedAt ? `used ${ago(t.lastUsedAt)} ago` : "never used"}
+                  {t.lastUsedAt ? `used ${agoLong(t.lastUsedAt)}` : "never used"}
                 </span>
                 <button type="button" className="text-right text-bad hover:underline" onClick={() => void revoke(t)}>
                   {t.kind === "oauth" ? "Disconnect" : "Revoke"}
@@ -452,7 +508,7 @@ function SharesSection({ shares, setShares, say }: { shares: Share[]; setShares:
                 <span className="text-xs text-muted-foreground">
                   {s.mode === "email" ? "Confirmed email" : "Anyone with the link"}
                   {s.allowComments ? " · comments on" : ""} · {s.opens === 0 ? "not opened yet" : `opened ${s.opens}×`}
-                  {s.lastOpenedAt ? `, last ${ago(s.lastOpenedAt)} ago` : ""}
+                  {s.lastOpenedAt ? `, last ${agoLong(s.lastOpenedAt)}` : ""}
                   {s.expiresAt ? ` · expires ${new Date(s.expiresAt).toLocaleDateString()}` : ""}
                 </span>
               </span>

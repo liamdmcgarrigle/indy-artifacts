@@ -4,6 +4,12 @@
 #   docker compose -f compose.dev.yaml up
 #
 # The first start installs dependencies into ./node_modules, so it needs network.
+#
+# It runs as the container's root. Under rootless Podman that is your own user,
+# so files it writes stay yours. Under Docker on Linux, ./node_modules and
+# ./data end up owned by root; on a Mac, the install replaces the host's native
+# esbuild and sharp with Linux builds, so run `npm ci` again before using them
+# outside the container.
 name: indy-dev
 
 services:
@@ -20,6 +26,8 @@ services:
     environment:
       PORT: ${INDY_DEV_PORT:-5178}
       INDY_URL: ${INDY_DEV_URL:-http://localhost:5178}
+      # Other hostnames you open the dev server by, comma separated.
+      INDY_DEV_ORIGINS: ${INDY_DEV_ORIGINS:-}
       INDY_DATA: /work/data
       INDY_TMP: /work/data/tmp
       INDY_THEMES: /work/themes

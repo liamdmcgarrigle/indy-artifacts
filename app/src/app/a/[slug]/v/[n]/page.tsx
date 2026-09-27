@@ -42,7 +42,7 @@ export default async function VersionPage({
           <link rel="stylesheet" href={`/themes/${artifact.theme}.css`} />
           <header className="top">
             <Link className="top__home" href="/">
-              <span className="top__dot" /> Artifacts
+              <span className="top__dot" /> Indy
             </Link>
             <div className="top__title">
               {artifact.title} <span className="top__meta">v{from} to v{number}</span>

@@ -41,14 +41,16 @@ docker compose up -d
 
 Open `INDY_URL` in a browser. A fresh install goes straight to setup, where you create the one
 account. Until you do, anyone who can reach the address can create it, so do this right after the
-first start. If someone else gets there first, remove the data and start again:
+first start. If someone else gets there first, remove Indy's data and start again:
 
 ```bash
-docker compose down -v
+docker compose down
+docker volume rm indy_indy-data
 docker compose up -d
 ```
 
-The last setup step makes a token for your first agent and shows the command to connect it.
+This leaves Caddy's certificates alone, so a reinstall doesn't count against Let's Encrypt's
+limits. Setup ends on the Connect page, which walks you through connecting your first agent.
 
 ### 3. Connect an agent
 
@@ -205,7 +207,7 @@ docker run --rm -v indy_indy-data:/data -v "$PWD":/backup alpine \
 docker compose up -d
 ```
 
-The volume name is the project folder's name followed by `_indy-data`; `docker volume ls` shows it.
+The volume is always called `indy_indy-data`, because `compose.yaml` names the project `indy`.
 
 ### Building the image yourself
 
@@ -216,8 +218,8 @@ docker build -t indy:local .
 ```
 
 Then set `INDY_IMAGE=indy:local` in `.env`. Published images are built for `linux/amd64` and
-`linux/arm64` by `.github/workflows/image.yml`: `:latest` follows `main`, and a `v1.2.3` tag
-publishes `:1.2.3`, `:1.2` and `:1`.
+`linux/arm64` by `.github/workflows/image.yml`: `:latest` follows `main`, and each new version in
+`VERSION` also publishes its own tags (see Versions below).
 
 ## What a page is
 
@@ -314,6 +316,11 @@ the package manifests and both plugin manifests, then merge to `main`. The first
 version publishes `:0.3.0`, `:0.3` and `:0`, tags `v0.3.0` and writes a GitHub release. A test
 fails if any copy of the version disagrees with `VERSION`. Bump it for every plugin change too:
 Claude Code only offers a plugin update when its version changes.
+
+GitHub makes a new container package private, even when the repository is public. After the first
+image is published, open the `indy-artifacts` package on GitHub, go to Package settings, and set
+its visibility to public. Until then, `docker compose pull` fails for everyone else with
+"unauthorized". This only needs doing once.
 
 ## Licence
 

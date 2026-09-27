@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { internalKey } from "../auth/access";
 import { z } from "zod";
 import {
   diffVersions,
@@ -10,7 +11,7 @@ import {
   updateArtifact,
 } from "../service/artifacts";
 import { createComment, getComment, listComments, patchComment } from "../service/comments";
-import { listEvents } from "../service/events";
+import { latestEventId, listEvents } from "../service/events";
 import { formOf, listResponses } from "../service/responses";
 import { answerText } from "../forms/spec";
 import { artifactUrl, type ServiceContext } from "../service/context";
@@ -387,10 +388,14 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
           const speed = String(args.speed ?? "natural");
           const pace = speed === "fast" ? { chunk: 6, delay: 12 } : speed === "slow" ? { chunk: 1, delay: 70 } : { chunk: 2, delay: 32 };
           const append = (args.mode ?? "append") === "append";
+          const typist = (args.agent as { name?: string } | undefined)?.name ?? "agent";
 
+          // The library's Live view lists pages an agent is typing into.
+          const markLive = () => ctx.db.prepare("UPDATE artifacts SET live_by = ?, live_at = ? WHERE id = ?").run(typist, new Date().toISOString(), artifact.id);
+          markLive();
           const res = await fetch(`${collabUrl()}/type`, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/json", "x-indy-internal": internalKey(ctx) },
             body: JSON.stringify({
               slug,
               text: String(args.text ?? ""),
@@ -400,9 +405,10 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
               to: append ? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
               chunk: pace.chunk,
               delay: pace.delay,
-              agent: { name: (args.agent as { name?: string } | undefined)?.name ?? "agent", color: "#7A45D0" },
+              agent: { name: typist, color: "#7A45D0" },
             }),
           });
+          markLive();
           const data = (await res.json()) as { typed?: number; error?: { message?: string } };
           if (!res.ok) return fail(new ServiceError("collab_failed", data.error?.message ?? "the document server refused that", 502));
           return ok(
@@ -431,7 +437,7 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
           const slug = String(args.slug);
           requireArtifact(ctx, slug);
           const timeoutMs = (args.timeout_s ? Number(args.timeout_s) : 30) * 1000;
-          let after = args.after !== undefined ? Number(args.after) : listEvents(ctx, { slug }).lastId;
+          let after = args.after !== undefined ? Number(args.after) : latestEventId(ctx, slug);
           const deadline = Date.now() + timeoutMs;
           for (;;) {
             const { events, lastId } = listEvents(ctx, { slug, after });

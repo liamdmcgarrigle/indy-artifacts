@@ -3,8 +3,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor, JSONContent } from "@tiptap/core";
+import dynamic from "next/dynamic";
 import { viewExtensions } from "@/lib/doc/views";
-import { EditChrome } from "@/components/editor/EditChrome";
+import type * as EditViews from "@/components/editor/edit-views";
+
+// Editing code loads when editing starts; reading a page never fetches it.
+const EditChrome = dynamic(() => import("@/components/editor/EditChrome").then((m) => m.EditChrome), { ssr: false });
+
+function useEditViews(editing: boolean): typeof EditViews | null {
+  const [views, setViews] = useState<typeof EditViews | null>(null);
+  useEffect(() => {
+    if (!editing || views) return;
+    let live = true;
+    void import("@/components/editor/edit-views").then((m) => live && setViews(m));
+    return () => {
+      live = false;
+    };
+  }, [editing, views]);
+  return editing ? views : null;
+}
 
 /** Wait for the <art-*> primitives, which the node views build on. */
 function usePrimitives(): boolean {
@@ -46,12 +63,17 @@ export function DocView(props: {
   onDirty?: () => void;
 }) {
   const primitives = usePrimitives();
+  const editViews = useEditViews(props.editing === true);
+  const editing = props.editing === true && editViews !== null;
   const [mounted, setMounted] = useState(false);
   const markMounted = useCallback(() => setMounted(true), []);
   return (
     <>
       {/* Editing is a different set of node views, so it is a fresh editor. */}
-      {primitives ? <DocEditor key={props.editing ? "edit" : "view"} {...props} onMounted={markMounted} /> : null}
+      {/* Until the editing code arrives, the page stays up as it was. */}
+      {primitives ? (
+        <DocEditor key={editing ? "edit" : "view"} {...props} editing={editing} editViews={editViews} onMounted={markMounted} />
+      ) : null}
       {mounted ? null : <div className="art-content" dangerouslySetInnerHTML={{ __html: props.fallbackHtml }} />}
     </>
   );
@@ -65,16 +87,18 @@ function DocEditor({
   onMounted,
   onEditor,
   onDirty,
+  editViews,
 }: {
   doc: JSONContent;
   assetBase: string;
   editing?: boolean;
+  editViews: typeof EditViews | null;
   onReady?: () => void;
   onMounted: () => void;
   onEditor?: (editor: Editor | null) => void;
   onDirty?: () => void;
 }) {
-  const extensions = useMemo(() => viewExtensions({ assetBase, editing }), [assetBase, editing]);
+  const extensions = useMemo(() => viewExtensions({ assetBase, editing, editViews: editViews ?? undefined }), [assetBase, editing, editViews]);
   const editor = useEditor({
     extensions,
     content: doc,

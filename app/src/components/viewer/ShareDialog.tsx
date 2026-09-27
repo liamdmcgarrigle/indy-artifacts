@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AtSign, Check, Link2, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
@@ -69,10 +69,27 @@ export function ShareDialog({
 
   useEffect(() => {
     void fetch(`/api/artifacts/${slug}/share`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((data: ShareState) => setState(data))
-      .catch(() => setError("Could not load the sharing settings."));
+      .then(async (r) => {
+        const data = (await r.json()) as ShareState & { error?: { message?: string } };
+        if (!r.ok) throw new Error(data.error?.message);
+        setState(data);
+      })
+      .catch((err: Error) => setError(err.message || "Could not load the sharing settings."));
   }, [slug]);
+
+  // Arrow keys move through native radios one change at a time. Each step
+  // shows at once but is saved only once the choice settles, so passing
+  // through "Anyone with the link" does not publish the page on the way.
+  const [picked, setPicked] = useState<Mode | null>(null);
+  const settle = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(settle.current), []);
+  function pick(mode: Mode) {
+    setPicked(mode);
+    window.clearTimeout(settle.current);
+    settle.current = window.setTimeout(() => {
+      void change({ mode }).finally(() => setPicked(null));
+    }, 450);
+  }
 
   async function change(patch: Record<string, unknown>, method: "PUT" | "POST" = "PUT") {
     if (!state) return;
@@ -92,6 +109,8 @@ export function ShareDialog({
       setState(data);
       onMode?.(data.mode);
       setCopied(false);
+    } catch {
+      setError("Indy did not answer. Check the connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -110,10 +129,10 @@ export function ShareDialog({
           </DialogDescription>
         </div>
 
-        <fieldset className="share__modes" disabled={!state || busy}>
+        <fieldset className="share__modes" disabled={!state || (busy && picked === null)}>
           <legend className="share__legend">Who can open it</legend>
           {MODES.map(({ mode, icon: Icon, name, desc }) => {
-            const on = state?.mode === mode;
+            const on = (picked ?? state?.mode) === mode;
             const unavailable = mode === "email" && state !== null && !state.emailGate;
             return (
               <label key={mode} className={cn("share__mode", on && "is-on", unavailable && "is-off")}>
@@ -122,7 +141,7 @@ export function ShareDialog({
                   name="share-mode"
                   checked={on}
                   disabled={unavailable}
-                  onChange={() => void change({ mode })}
+                  onChange={() => pick(mode)}
                 />
                 <span className="share__icon">
                   <Icon className="size-4" />

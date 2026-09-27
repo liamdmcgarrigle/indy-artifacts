@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Layers3 } from "lucide-react";
-import { getContext } from "@/lib/service/context";
+import { ownerContext } from "@/lib/auth/page";
 import { listLibrary } from "@/lib/service/library";
 import { ViewHeader } from "@/components/library/ViewHeader";
 import { LibraryBoard } from "@/components/library/LibraryBoard";
@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: { params: Promise<{ name: str
 
 export default async function SeriesPage({ params }: { params: Promise<{ name: string }> }) {
   const name = decodeURIComponent((await params).name);
-  const rows = listLibrary(getContext(), { view: "series", name });
+  const rows = listLibrary((await ownerContext()), { view: "series", name });
   const [latest, ...earlier] = rows;
   return (
     <>

@@ -284,3 +284,13 @@ describe("editing in place", () => {
     expect(docToMarkdown(doc)).toContain("> quoted  *as is*");
   });
 });
+
+describe("leading blank lines", () => {
+  it("survive a round trip", async () => {
+    const { markdownToDoc } = await import("@/lib/doc/parse");
+    const { docToMarkdown } = await import("@/lib/doc/serialize");
+    for (const md of ["\n# Title\n\nPara\n", "\n\n# Title\n", "# Title\n\nPara\n", "---\ntitle: x\n---\n\n# T\n"]) {
+      expect(docToMarkdown(markdownToDoc(md))).toBe(md);
+    }
+  });
+});

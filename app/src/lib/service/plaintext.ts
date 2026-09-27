@@ -4,22 +4,25 @@ import type { Kind } from "./types";
  * The words of a markdown page without its syntax, for search. Directive
  * fences, attribute braces, table pipes and emphasis marks go; the words
  * inside them, and a chart's labels, stay.
+ *
+ * Line patterns match spaces and tabs, never `\s`: under the m flag `\s`
+ * crosses newlines, and a page of blank lines made each pattern quadratic.
  */
 export function plainText(markdown: string): string {
   return markdown
     .replace(/^---\r?\n[\s\S]*?\r?\n---\s*\n/, "")
-    .replace(/^\s*(```|~~~).*$/gm, "")
-    .replace(/^\s*:{2,}\s*[\w-]*\s*(\{[^}]*\})?\s*$/gm, (_m, attrs: string | undefined) =>
+    .replace(/^[ \t]*(```|~~~).*$/gm, "")
+    .replace(/^[ \t]*:{2,}[ \t]*[\w-]*[ \t]*(\{[^}\n]*\})?[ \t]*$/gm, (_m, attrs: string | undefined) =>
       attrs ? readableAttrs(attrs) : "",
     )
     .replace(/\{(?:tone|name|type|label|required)[^}]*\}/g, "")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*#{1,6}\s+/gm, "")
-    .replace(/^\s*>\s?/gm, "")
+    .replace(/^[ \t]*[-*+][ \t]+/gm, "")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/^[ \t]*>[ \t]?/gm, "")
     .replace(/\|/g, " ")
-    .replace(/^\s*[-: ]{3,}\s*$/gm, "")
+    .replace(/^[ \t]*[-: ]{3,}[ \t]*$/gm, "")
     .replace(/[*_`~]+/g, "")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{2,}/g, "\n")

@@ -153,3 +153,37 @@ describe("migration", () => {
     openDb(path).close();
   });
 });
+
+describe("the address after signing in", () => {
+  it("stays on this site", async () => {
+    const { safeNext } = await import("@/lib/auth/next");
+    expect(safeNext("/a/report?x=1#c")).toBe("/a/report?x=1#c");
+    for (const bad of ["//evil.com", "/\\evil.com", "/\t/evil.com", "https://evil.com", "evil.com", "/%5C", undefined]) {
+      expect(safeNext(bad as string | undefined)).toMatch(/^\/(?!\/)/);
+      expect(new URL(safeNext(bad as string | undefined), "http://indy.test").host).toBe("indy.test");
+    }
+  });
+});
+
+describe("requests from other sites", () => {
+  it("are refused for the owner's changes, and allowed from Indy's own pages and from scripts", async () => {
+    const { sameSite } = await import("@/lib/auth/access");
+    const req = (headers: Record<string, string>, method = "POST") => new Request("http://indy.test/api/x", { method, headers: { host: "indy.test", ...headers } });
+    expect(sameSite(req({ "sec-fetch-site": "same-origin" }))).toBe(true);
+    expect(sameSite(req({ "sec-fetch-site": "cross-site" }))).toBe(false);
+    expect(sameSite(req({ origin: "http://indy.test" }))).toBe(true);
+    expect(sameSite(req({ origin: "https://evil.test" }))).toBe(false);
+    expect(sameSite(req({ origin: "null" }))).toBe(false);
+    expect(sameSite(req({}))).toBe(true);
+    expect(sameSite(req({ origin: "https://evil.test" }, "GET"))).toBe(true);
+  });
+
+  it("with no sign-in, answers only to Indy's own name or loopback", async () => {
+    const { hostAllowed } = await import("@/lib/auth/access");
+    const h = (host: string) => new Headers({ host });
+    expect(hostAllowed(h("localhost:1936"))).toBe(true);
+    expect(hostAllowed(h("127.0.0.1:5178"))).toBe(true);
+    expect(hostAllowed(h("[::1]:1936"))).toBe(true);
+    expect(hostAllowed(h("rebind.evil.test"))).toBe(false);
+  });
+});

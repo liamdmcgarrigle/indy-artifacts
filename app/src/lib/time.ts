@@ -14,12 +14,12 @@ export function ago(iso: string, now = Date.now()): string {
   return d.toLocaleDateString("en", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
 }
 
-/** "25 min ago" style, for sentences. */
+/** "25 min ago", "yesterday", "on Sep 3": reads on its own in a sentence. */
 export function agoLong(iso: string, now = Date.now()): string {
   const short = ago(iso, now);
   if (short === "just now" || short === "yesterday") return short;
   const m = short.match(/^(\d+)([mhd])$/);
-  if (!m) return short;
+  if (!m) return `on ${short}`;
   const unit = { m: "min", h: "hour", d: "day" }[m[2] as "m" | "h" | "d"];
   const n = Number(m[1]);
   return `${n} ${unit}${n === 1 || m[2] === "m" ? "" : "s"} ago`;

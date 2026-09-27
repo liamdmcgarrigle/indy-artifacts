@@ -13,6 +13,19 @@ export function isTyping(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
+/** Inside a dialog or an open menu, the page's own shortcuts step aside. */
+function inLayer(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return Boolean(el?.closest?.('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]'));
+}
+
+/** Enter and space belong to a focused link or button: that is how they are pressed. */
+function activates(target: EventTarget | null, key: string): boolean {
+  if (key !== "enter" && key !== " ") return false;
+  const el = target as HTMLElement | null;
+  return Boolean(el?.closest?.('a[href], button, summary, [role="button"], [role="menuitem"], [role="option"], [role="radio"], [role="tab"]'));
+}
+
 /**
  * Keys like "j", "shift+d", "mod+k" (⌘ on a Mac, Ctrl elsewhere), "?" and
  * "escape". Letter shortcuts are ignored while typing; "mod+" ones are not.
@@ -31,6 +44,8 @@ export function useHotkeys(map: HotkeyMap, enabled = true) {
       const handler = event.key === "?" ? ref.current["?"] : ref.current[parts.join("+")];
       if (!handler) return;
       if (!mod && isTyping(event.target)) return;
+      if (!mod && inLayer(event.target) && key !== "escape") return;
+      if (activates(event.target, key)) return;
       if (event.defaultPrevented) return;
       event.preventDefault();
       handler(event);
