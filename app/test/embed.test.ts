@@ -31,7 +31,7 @@ beforeAll(async () => {
     source: [
       "---",
       "title: Embed demo",
-      "theme: picaflick",
+      "theme: graphite",
       "---",
       "",
       "```mermaid",
@@ -77,7 +77,7 @@ describe("embed documents", () => {
     const html = await (await get("embed-md", 1, "e0", "dark")).text();
     expect(html).toContain('<pre class="mermaid">graph TD; A--&gt;B;</pre>');
     expect(html).toContain('src="/vendor/mermaid.js"');
-    expect(html).toContain('href="/themes/picaflick.css"');
+    expect(html).toMatch(/href="\/themes\/graphite\.css\?v=[0-9a-f]{10}"/);
     expect(html).toContain('data-scheme="dark"');
     expect(html).toContain("/embed-bridge.js");
   });
@@ -132,7 +132,7 @@ describe("embed documents", () => {
     const html = await (await get("embed-html", 1, "page")).text();
     expect(html).toContain("<h1>Page</h1>");
     expect(html).toContain("<title>mine</title>");
-    expect(html).toContain('href="/themes/default.css"');
+    expect(html).toMatch(/href="\/themes\/paper\.css\?v=[0-9a-f]{10}"/);
     expect(html).toContain("/embed-bridge.js");
     expect(html).toContain('data-scheme="light"');
   });

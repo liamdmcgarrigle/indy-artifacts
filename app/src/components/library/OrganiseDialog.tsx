@@ -46,7 +46,7 @@ export function OrganiseDialog({
                 : "A series collects recurring pages, like nightly runs, under one name. Leave it empty to take this page out."}
             </DialogDescription>
           </DialogHeader>
-          <Input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder={target?.what === "project" ? "picaflick" : "Nightly backup"} />
+          <Input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder={target?.what === "project" ? "acme-web" : "Nightly backup"} />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel

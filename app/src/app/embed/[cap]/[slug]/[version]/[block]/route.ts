@@ -1,3 +1,4 @@
+import { effectiveTheme, themeHref } from "@/lib/service/themes";
 import { buildDir, getContext } from "@/lib/service/context";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -23,12 +24,13 @@ export async function GET(request: Request, { params }: Params) {
   const { cap, slug, version, block } = await params;
   const scheme = new URL(request.url).searchParams.get("scheme") === "dark" ? "dark" : "light";
 
-  let options: EmbedOptions = { theme: "default", scheme, title: "Artifact block" };
+  // Until the artifact is known, and for the error page if it never is.
+  let options: EmbedOptions = { themeHref: "", scheme, title: "Artifact block" };
   try {
     if (!checkCapability(ctx, cap, slug, Number(version))) throw new Error("This frame's link has expired. Reload the page.");
     const artifact = requireArtifact(ctx, slug);
     const v = requireVersion(ctx, artifact, Number(version));
-    options = { theme: artifact.theme, scheme, title: artifact.title };
+    options = { themeHref: themeHref(effectiveTheme(ctx, artifact)), scheme, title: artifact.title };
 
     if (artifact.kind === "html") {
       return new Response(htmlPageDocument(v.source ?? "", options), { headers: embedHeaders() });
@@ -68,6 +70,7 @@ export async function GET(request: Request, { params }: Params) {
     return new Response(document, { headers: embedHeaders() });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return new Response(errorDocument(message, options), { status: 404, headers: embedHeaders() });
+    const shown = options.themeHref ? options : { ...options, themeHref: themeHref(effectiveTheme(ctx, {})) };
+    return new Response(errorDocument(message, shown), { status: 404, headers: embedHeaders() });
   }
 }

@@ -1,3 +1,4 @@
+import { effectiveTheme, themeHref } from "@/lib/service/themes";
 import { pageOwner } from "@/lib/auth/page";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -39,7 +40,7 @@ export default async function VersionPage({
       const patch = diffVersions(ctx, slug, from, number);
       return (
         <>
-          <link rel="stylesheet" href={`/themes/${artifact.theme}.css`} />
+          <link rel="stylesheet" href={themeHref(effectiveTheme(ctx, artifact))} />
           <header className="top">
             <Link className="top__home" href="/">
               <span className="top__dot" /> Indy

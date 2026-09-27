@@ -82,7 +82,9 @@ export interface ArtifactViewProps {
   doc: JSONContent | null;
   assetBase: string;
   kind: string;
+  /** The effective theme's name, and its stylesheet. */
   theme: string;
+  themeHref: string;
   currentVersion: number;
   versionNumber: number;
   authorKind: string;
@@ -1078,7 +1080,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       submitUrl={visitor ? `/s/${visitor.token}/api/responses` : undefined}
       onSent={() => (visitor ? undefined : router.refresh())}
     >
-      <link rel="stylesheet" href={`/themes/${props.theme}.css`} />
+      <link rel="stylesheet" href={props.themeHref} />
       {visitor ? (
         <VisitorHeader
           title={props.title}

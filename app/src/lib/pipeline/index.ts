@@ -14,7 +14,7 @@ import { artifactsDirectives } from "./directives";
 import { assignBlocks } from "./blocks";
 import { normalizeContainers } from "./normalize";
 import { schema } from "./sanitize";
-import { DEFAULT_THEME, THEMES, type Frontmatter, type PipelineContext, type RenderOptions, type RenderResult } from "./types";
+import { type Frontmatter, type PipelineContext, type RenderOptions, type RenderResult } from "./types";
 
 // mdast and hast nodes are manipulated structurally here: the published types
 // are narrower than the hName/hProperties escape hatch this pipeline relies on.
@@ -67,8 +67,8 @@ function captureBlocks(ctx: PipelineContext) {
 
 export function normalizeFrontmatter(raw: Record<string, unknown> | null, fallbackTitle = "Untitled"): Frontmatter {
   const o = raw ?? {};
-  const themeRaw = typeof o.theme === "string" ? o.theme : DEFAULT_THEME;
-  const theme = (THEMES as readonly string[]).includes(themeRaw) ? themeRaw : DEFAULT_THEME;
+  // Checked against the themes that exist when the page is saved, not here.
+  const theme = typeof o.theme === "string" ? o.theme.trim() : "";
   const tags = Array.isArray(o.tags) ? o.tags.map(String).slice(0, 20) : [];
   return {
     title: typeof o.title === "string" && o.title.trim() ? o.title.trim() : fallbackTitle,

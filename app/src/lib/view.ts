@@ -1,3 +1,4 @@
+import { effectiveTheme, themeHref } from "./service/themes";
 import { getContext } from "./service/context";
 import { requireArtifact, requireVersion, listVersions } from "./service/artifacts";
 import { listComments } from "./service/comments";
@@ -39,6 +40,7 @@ function docFor(key: string, source: string, rendered: ReturnType<typeof renderV
 export function loadView(slug: string, versionNumber?: number, opts: { audience?: Audience } = {}): ArtifactViewProps {
   const ctx = getContext();
   const artifact = requireArtifact(ctx, slug);
+  const pageTheme = effectiveTheme(ctx, artifact);
   const version = requireVersion(ctx, artifact, versionNumber);
   const framed = artifact.kind !== "markdown";
   const cap = capability(ctx, artifact.slug, version.number);
@@ -83,7 +85,8 @@ export function loadView(slug: string, versionNumber?: number, opts: { audience?
     assetBase,
     form: form && form.fields.length ? { ...form, responses: countResponses(ctx, artifact.id) } : null,
     kind: artifact.kind,
-    theme: artifact.theme,
+    theme: pageTheme.name,
+    themeHref: themeHref(pageTheme),
     currentVersion: artifact.currentVersion,
     versionNumber: version.number,
     authorKind: version.authorKind,

@@ -14,6 +14,8 @@ import { agoLong } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { AppSettings } from "@/lib/service/settings";
 import type { Usage } from "@/lib/service/storage";
+import { Card, Head, Row, send, type Say } from "./parts";
+import { ThemesSection, type ThemesState } from "./ThemesSection";
 
 interface Token {
   id: string;
@@ -36,7 +38,7 @@ interface Share {
   expiresAt: string | null;
 }
 
-type Section = "account" | "agents" | "email" | "shares" | "data";
+type Section = "account" | "agents" | "themes" | "email" | "shares" | "data";
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -45,17 +47,6 @@ function bytes(n: number): string {
   if (n >= GB) return `${(n / GB).toFixed(n >= 10 * GB ? 0 : 1)} GB`;
   if (n >= MB) return `${(n / MB).toFixed(n >= 10 * MB ? 0 : 1)} MB`;
   return `${Math.max(1, Math.round(n / 1024))} KB`;
-}
-
-async function send(url: string, method: string, payload?: unknown) {
-  const res = await fetch(url, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: payload === undefined ? undefined : JSON.stringify(payload),
-  });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & { error?: { message?: string } };
-  if (!res.ok) throw new Error(data.error?.message ?? "That did not save.");
-  return data;
 }
 
 /**
@@ -70,19 +61,21 @@ export function SettingsView(props: {
   settings: AppSettings;
   usage: Usage;
   email: { on: boolean; from: string };
+  themes: ThemesState;
 }) {
   const [section, setSection] = useState<Section>("account");
   const [tokens, setTokens] = useState(props.tokens);
   const [shares, setShares] = useState(props.shares);
   const [usage, setUsage] = useState(props.usage);
   const [settings, setSettings] = useState(props.settings);
+  const [themes, setThemes] = useState(props.themes);
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
 
   // The section is in the address, so a link can open it and Back returns to it.
   useEffect(() => {
     const read = () => {
       const s = new URLSearchParams(window.location.search).get("s") as Section | null;
-      if (s && ["account", "agents", "email", "shares", "data"].includes(s)) setSection(s);
+      if (s && ["account", "agents", "themes", "email", "shares", "data"].includes(s)) setSection(s);
     };
     read();
     window.addEventListener("popstate", read);
@@ -110,6 +103,7 @@ export function SettingsView(props: {
   const nav: { id: Section; name: string; hint?: string }[] = [
     { id: "account", name: "Account" },
     { id: "agents", name: "Agents", hint: String(tokens.length) },
+    { id: "themes", name: "Themes", hint: String(themes.themes.length) },
     { id: "email", name: "Email", hint: props.email.on ? "on" : "off" },
     { id: "shares", name: "Shared links", hint: String(shares.length) },
     { id: "data", name: "Data", hint: bytes(usage.total) },
@@ -148,6 +142,7 @@ export function SettingsView(props: {
         <div className="flex w-full max-w-[820px] flex-col gap-7">
           {section === "account" ? <AccountSection user={props.user} email={props.email.on} say={say} /> : null}
           {section === "agents" ? <AgentsSection tokens={tokens} setTokens={setTokens} say={say} /> : null}
+          {section === "themes" ? <ThemesSection state={themes} setState={setThemes} say={say} /> : null}
           {section === "email" ? <EmailSection email={props.email} /> : null}
           {section === "shares" ? <SharesSection shares={shares} setShares={setShares} say={say} /> : null}
           {section === "data" ? (
@@ -161,46 +156,6 @@ export function SettingsView(props: {
           {notice.text}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-type Say = { good: (text: string) => void; bad: (err: unknown) => void };
-
-function Head({ title, lede }: { title: string; lede: string }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <h1 className="m-0 text-2xl font-semibold tracking-[-0.01em]">{title}</h1>
-      <p className="m-0 text-sm leading-relaxed text-fg-3">{lede}</p>
-    </div>
-  );
-}
-
-function Card({ title, action, children, className }: { title?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
-  return (
-    <section className={cn("overflow-hidden rounded-xl border border-hairline bg-card", className)}>
-      {title ? (
-        <div className="flex min-h-[52px] items-center gap-3 border-b border-hairline px-[18px] py-2.5">
-          <h2 className="m-0 text-sm font-semibold">{title}</h2>
-          {action ? <div className="ml-auto">{action}</div> : null}
-        </div>
-      ) : null}
-      {children}
-    </section>
-  );
-}
-
-/** One setting: what it is on the left, the control on the right; stacked on a phone. */
-function Row({ label, help, children, htmlFor }: { label: string; help?: React.ReactNode; children: React.ReactNode; htmlFor?: string }) {
-  return (
-    <div className="flex items-center gap-4 border-b border-hairline px-[18px] py-4 last:border-b-0 max-sm:flex-col max-sm:items-stretch max-sm:gap-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <Label htmlFor={htmlFor} className="text-sm font-medium">
-          {label}
-        </Label>
-        {help ? <p className="m-0 text-[12.5px] leading-relaxed text-muted-foreground">{help}</p> : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
     </div>
   );
 }

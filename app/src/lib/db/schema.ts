@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   slug TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('markdown','react','svelte','html')),
-  theme TEXT NOT NULL DEFAULT 'default',
+  theme TEXT NOT NULL DEFAULT '',
   project TEXT,
   description TEXT,
   tags_json TEXT NOT NULL DEFAULT '[]',
@@ -261,5 +261,24 @@ export const MIGRATIONS: string[] = [
   `
   CREATE INDEX IF NOT EXISTS idx_artifacts_pinned ON artifacts (pinned_at);
   CREATE INDEX IF NOT EXISTS idx_artifacts_series ON artifacts (series, created_at);
+  `,
+  // 6: themes are data. A page's theme column now holds only a theme it chose
+  // itself ('' otherwise); the built-in theme files it could name are gone.
+  `
+  CREATE TABLE themes (
+    name TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    tokens_json TEXT NOT NULL,
+    dark_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE TABLE project_themes (
+    project TEXT PRIMARY KEY,
+    theme TEXT NOT NULL
+  ) STRICT;
+
+  UPDATE artifacts SET theme = '' WHERE theme IN ('default', 'picaflick', 'backup-studio');
   `,
 ];

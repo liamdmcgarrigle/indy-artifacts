@@ -70,7 +70,6 @@ ENV NODE_ENV=production \
     PORT=1936 \
     INDY_DATA=/data \
     INDY_TMP=/data/tmp \
-    INDY_THEMES=/app/themes \
     INDY_BUILD_MODULES=/artifact-modules/node_modules:/app/node_modules \
     INDY_ARTIFACT_KIT=/artifact-kit \
     INDY_APP_ENTRY=/app/app/server.js \
@@ -81,7 +80,6 @@ WORKDIR /app
 COPY --from=build /src/app/.next/standalone ./
 COPY --from=build /src/app/.next/static ./app/.next/static
 COPY --from=build /src/app/public ./app/public
-COPY --from=build /src/themes ./themes
 COPY --from=extras /extras/node_modules /artifact-modules/node_modules
 COPY --from=build /src/app/src/components/ui /artifact-kit/components/ui
 COPY --from=build /src/app/src/lib/utils.ts /artifact-kit/lib/utils.ts

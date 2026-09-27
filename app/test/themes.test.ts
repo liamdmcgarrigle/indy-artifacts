@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyTokens, deriveTheme, PRESETS, themeCss, type ThemeSpec } from "@/lib/themes/tokens";
+import { contrast } from "@/lib/themes/color";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const themesDir = resolve(repoRoot, "themes");
 const primitivesCss = resolve(repoRoot, "packages/primitives/src/primitives.css");
 
 /**
@@ -79,10 +80,6 @@ const TOKENS = [...SCHEME_TOKENS, ...SHAPE_TOKENS];
 /** Tokens the primitives set themselves rather than taking from a theme. */
 const LOCAL_TOKENS = ["--art-cols"];
 
-const themeFiles = readdirSync(themesDir)
-  .filter((name) => name.endsWith(".css"))
-  .sort();
-
 /** The body of the first rule whose selector matches, brace-balanced. */
 function ruleBody(css: string, selector: RegExp): string | null {
   const match = selector.exec(css);
@@ -104,13 +101,33 @@ function declared(body: string): Set<string> {
   return names;
 }
 
+const custom: ThemeSpec = {
+  // Extremes: a pale accent, a dark "light" background, big type, square corners.
+  tokens: applyTokens(PRESETS[0].spec.tokens, {
+    background: "#2b2b2b",
+    surface: "#333333",
+    text: "#f5f5f5",
+    muted: "#888888",
+    accent: "#ffe066",
+    radius: 0,
+    fontSize: 22,
+    shadow: "none",
+    density: "airy",
+  }),
+  dark: {},
+};
+
+const generated: [string, string][] = [
+  ...PRESETS.map((p) => [p.name, themeCss(p.label, p.spec)] as [string, string]),
+  ["custom", themeCss("custom", custom)],
+];
+
 describe("themes", () => {
-  it("ships the three themes the pipeline knows about", () => {
-    expect(themeFiles).toEqual(["backup-studio.css", "default.css", "picaflick.css"]);
+  it("offers three presets, with paper among them", () => {
+    expect(PRESETS.map((p) => p.name)).toEqual(["paper", "graphite", "indy"]);
   });
 
-  describe.each(themeFiles)("%s", (file) => {
-    const css = readFileSync(resolve(themesDir, file), "utf8");
+  describe.each(generated)("%s", (_name, css) => {
     const light = ruleBody(css, /:root\s*\{/);
     const dark = ruleBody(css, /:root\[data-scheme="dark"\]\s*\{/);
 
@@ -138,10 +155,50 @@ describe("themes", () => {
       expect(css).not.toContain("prefers-color-scheme");
     });
 
-    it("names fonts without loading any", () => {
-      expect(css).not.toContain("@font-face");
-      expect(css).not.toContain("@import");
+    it("brings Indy's own fonts, since frames cannot fetch any", () => {
+      expect(css).toContain('@import url("/fonts/fonts.css");');
+      expect(css).not.toContain("http");
     });
+  });
+});
+
+describe("derivation", () => {
+  const value = (vars: Record<string, string>, key: string) => vars[key];
+
+  it("keeps text readable on both schemes, whatever the colours", () => {
+    for (const spec of [...PRESETS.map((p) => p.spec), custom]) {
+      const d = deriveTheme(spec);
+      for (const vars of [d.light, d.dark]) {
+        expect(contrast(value(vars, "--art-text-muted"), value(vars, "--art-bg"))).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(value(vars, "--art-link"), value(vars, "--art-bg"))).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(value(vars, "--art-on-accent"), value(vars, "--art-accent"))).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("makes a dark scheme from light colours alone, and takes overrides", () => {
+    const spec = { tokens: PRESETS[0].spec.tokens, dark: {} };
+    const d = deriveTheme(spec).dark;
+    expect(contrast(d["--art-text"], d["--art-bg"])).toBeGreaterThan(10);
+    const overridden = deriveTheme({ ...spec, dark: { background: "#101820" } }).dark;
+    expect(overridden["--art-bg"]).toBe("#101820");
+  });
+
+  it("follows radius, density and fonts", () => {
+    const shape = deriveTheme({ tokens: applyTokens(PRESETS[0].spec.tokens, { radius: 10, density: "compact", fontDisplay: "bricolage" }), dark: {} }).shape;
+    expect(shape["--art-radius"]).toBe("10px");
+    expect(shape["--art-radius-lg"]).toBe("14px");
+    expect(shape["--art-space-1"]).toBe("3px");
+    expect(shape["--art-font-display"]).toContain("Bricolage Grotesque");
+  });
+
+  it("refuses settings it does not know, and bad values", () => {
+    const base = PRESETS[0].spec.tokens;
+    expect(() => applyTokens(base, { acent: "#fff" })).toThrow(/not a theme setting/);
+    expect(() => applyTokens(base, { accent: "blue" })).toThrow(/hex colour/);
+    expect(() => applyTokens(base, { fontSans: "Comic Sans" })).toThrow(/must be one of/);
+    expect(() => applyTokens(base, { radius: 99 })).toThrow(/0 to 24/);
+    expect(applyTokens(base, { accent: "#ABC" }).accent).toBe("#aabbcc");
   });
 });
 

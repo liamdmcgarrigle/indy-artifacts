@@ -88,8 +88,8 @@ sign-in from it or sends a token in an `Authorization: Bearer` header. claude.ai
 can add it as a custom connector when Indy is on a public HTTPS address. The server describes its own tools and serves the full block
 reference as `indy://reference`, so an agent can learn the format without the plugin. The tools are
 `artifact_publish`, `artifact_update`, `artifact_type`, `artifact_get`, `artifact_list`,
-`artifact_diff`, `artifact_comments`, `artifact_reply`, `artifact_resolve`, `artifact_wait` and
-`artifact_responses`.
+`artifact_diff`, `artifact_comments`, `artifact_reply`, `artifact_resolve`, `artifact_wait`,
+`artifact_responses`, `artifact_themes` and `artifact_theme_set`.
 
 ### HTTPS
 
@@ -246,7 +246,6 @@ agent writes thirty lines and gets a report:
 ````markdown
 ---
 title: Backup run 2026-09-20
-theme: backup-studio
 ---
 
 :::kpis
@@ -277,9 +276,24 @@ The full set is `:::card`, `:::callout`, `:::kpis`, `:::columns` with `:::col`, 
 
 ### Themes
 
-A theme is one CSS file that sets a fixed list of `--art-*` custom properties, with colours for
-light and dark. `default`, `picaflick` and `backup-studio` ship in the image. Indy serves its own
-fonts, all under the Open Font License, so pages make no requests to a font CDN.
+A theme is twenty settings: ten colours, four fonts, the text size and line height, corner
+radius, shadow depth, spacing and reading width. Indy works out everything else from them,
+including hover colours, chart colours and the whole dark scheme. Any dark colour can be set
+by hand when the derived one is not right.
+
+Pages use their project's theme unless they name one, and projects without a theme use the
+default. You set all of this in Settings › Themes, which previews a theme in light and dark as
+you edit it. Three built-in themes are there to use or copy: Paper, Graphite and Sand. Agents
+can create and change themes of their own and give them to projects with the
+`artifact_theme_set` tool, which the publish skill uses to match a project's own look. Only you
+can delete a theme or choose the default, and the built-in themes can only be copied, not changed.
+
+Before 0.4, Indy shipped `picaflick` and `backup-studio` themes. They are gone, and pages that used
+them now follow their project's theme or the default; rebuild either in Settings › Themes if you
+want it back.
+
+Indy serves its own fonts, all under the Open Font License, so pages make no requests to a
+font CDN.
 
 ## Security
 
@@ -313,7 +327,7 @@ npm run typecheck
 
 Layout: `app/` is the Next.js server, viewer, API and MCP endpoint. `collab/` is the document
 server behind live editing. `packages/primitives` holds the `<art-*>` elements pages are built from.
-`themes/` has the theme files, `plugin/` the Claude Code and Codex plugin, and `tools/` a
+`plugin/` the Claude Code and Codex plugin, and `tools/` a
 Playwright screenshot harness.
 
 ### Versions

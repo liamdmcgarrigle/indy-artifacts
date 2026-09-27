@@ -20,14 +20,45 @@ interaction beyond tabs, and \`html\` when you already have a finished document.
 \`\`\`yaml
 ---
 title: Backup run 2026-09-20      # required
-theme: backup-studio              # default | picaflick | backup-studio (default: default)
-project: backup-studio            # optional grouping label in the index
+project: nightly-backups          # the repository's folder name; also picks the page's theme
+theme: graphite                   # optional; leave it out to follow the project's theme
 description: Nightly run summary  # optional one-liner in the index
 tags: [backup, nightly]           # optional
 ---
 \`\`\`
 
 For the other kinds the same fields are tool arguments instead.
+
+## Themes
+
+A page takes its theme from its project, unless it names one with \`theme\`, and the
+project's comes from Indy's default unless one was set. So set a theme on the project once
+rather than on each page. \`artifact_themes\` lists the themes and which project uses which.
+
+\`artifact_theme_set\` creates or changes a theme and can make it a project's theme:
+
+\`\`\`
+artifact_theme_set
+  name:     "acme-web"
+  label:    "Acme"
+  base:     "paper"                    # paper | graphite | indy, or one of yours; creating only
+  tokens:   { accent: "#e4572e", background: "#fbfaf8", surface: "#ffffff",
+              text: "#1d1b19", muted: "#6b665f", border: "#e8e3dc",
+              fontSans: "manrope", fontBody: "source-serif", radius: 6 }
+  projects: ["acme-web"]
+\`\`\`
+
+The settings are ten colours (\`background\`, \`surface\`, \`text\`, \`muted\`, \`border\`,
+\`accent\`, \`info\`, \`good\`, \`warn\`, \`bad\`, all hex), four fonts (\`fontSans\`, \`fontDisplay\`,
+\`fontBody\`, \`fontMono\`), \`fontSize\` (px), \`lineHeight\`, \`radius\` (px), \`shadow\` (\`none\`,
+\`soft\`, \`lifted\`), \`density\` (\`compact\`, \`normal\`, \`airy\`) and \`measure\` (reading width in
+ch). When creating, anything left out comes from \`base\`; when changing a theme, only what
+you pass changes, and \`base\` is refused. Everything else, including hovers, washes, chart
+colours and the whole dark scheme, is derived; \`dark: { background: "#101010" }\` sets a
+dark colour where the derived one is wrong. Fonts are the ones Indy serves: \`inter\`,
+\`geist\`, \`manrope\`, \`nunito-sans\`, \`bricolage\`, \`source-serif\`, \`jetbrains-mono\`,
+\`geist-mono\` and the \`system-sans\`, \`system-serif\` and \`system-mono\` stacks. The built-in
+themes cannot be changed; copy one by passing it as \`base\` under a new name.
 
 ## Container directives
 
@@ -234,7 +265,7 @@ log in \`build_log\`, so the operator can see what happened and you can read it 
 Attach a file by its absolute path on the machine Indy runs on, not by pasting bytes:
 
 \`\`\`
-assets: [{ name: "run-chart.png", path: "/srv/work/backup-studio/out/chart.png" }]
+assets: [{ name: "run-chart.png", path: "/srv/work/nightly-backups/out/chart.png" }]
 \`\`\`
 
 The path must be under one of the folders Indy was told to read (\`INDY_ASSET_ROOTS\`), so this

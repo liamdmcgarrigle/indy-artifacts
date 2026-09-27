@@ -34,10 +34,9 @@ describe("block identity", () => {
 });
 
 describe("frontmatter", () => {
-  it("defaults theme and falls back on an unknown one", () => {
-    expect(renderMarkdown("---\ntitle: A\n---\n").frontmatter.theme).toBe("default");
-    expect(renderMarkdown("---\ntitle: A\ntheme: nope\n---\n").frontmatter.theme).toBe("default");
-    expect(renderMarkdown("---\ntitle: A\ntheme: picaflick\n---\n").frontmatter.theme).toBe("picaflick");
+  it("passes the theme through, to be checked when the page is saved", () => {
+    expect(renderMarkdown("---\ntitle: A\n---\n").frontmatter.theme).toBe("");
+    expect(renderMarkdown("---\ntitle: A\ntheme: graphite\n---\n").frontmatter.theme).toBe("graphite");
   });
 
   it("carries project, description and tags", () => {

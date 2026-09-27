@@ -39,14 +39,15 @@ const nextConfig: NextConfig = {
       { source: "/primitives/:file*", headers: open },
       { source: "/vendor/:file*", headers: open },
       { source: "/fonts/:file*", headers: open },
-      { source: "/themes/:file*", headers: open },
       // Indy's own pages may only be framed by Indy. The artifact frames under
       // /embed and /api set their own, stricter policy.
       {
         source: "/((?!embed/|api/).*)",
         headers: [
           { key: "x-frame-options", value: "SAMEORIGIN" },
-          { key: "content-security-policy", value: "frame-ancestors 'self'" },
+          // style-src keeps a stylesheet from anywhere else out of Indy's own
+          // pages: theme CSS is generated from settings an agent can change.
+          { key: "content-security-policy", value: "frame-ancestors 'self'; style-src 'self' 'unsafe-inline'" },
           { key: "x-content-type-options", value: "nosniff" },
           { key: "referrer-policy", value: "same-origin" },
         ],
