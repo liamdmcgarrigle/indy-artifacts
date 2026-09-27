@@ -1,0 +1,7 @@
+content.md in this directory is our Q3 platform health review, already written, with all the data. Turn it into one page I can read in the browser.
+
+Use everything in it: the headline numbers, a chart for every chart section (the kind it suggests), every table, the callouts, the timeline, the decision section, a diagram of the architecture, and the questions. Don't change, round or drop any numbers, and don't add analysis of your own. Just package it well.
+
+Put the questions at the end as a real form with the input type each one asks for. Answers have to be saved when someone sends them, so you can read everyone's answers back later.
+
+This is a benchmark run: publish it with the artifact/page tool you have available, give me the link, and stop. Skip the humanizer pass. Don't ask me questions; make reasonable choices.

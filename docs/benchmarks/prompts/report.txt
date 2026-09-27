@@ -1,0 +1,20 @@
+Make me a page for the weekly backup report so I can read it in the browser.
+
+Numbers for the week of 2026-09-21:
+- Files copied: 48,211 (up 6% on last week)
+- Failed: 3
+- Duration: 41 min (2 min longer than last week)
+- Data moved: 212 GB
+
+Files copied per day, photos / documents / other:
+Mon 6100/1400/320, Tue 7200/1650/410, Wed 5400/1200/280, Thu 6900/1500/390, Fri 8100/1900/450, Sat 3000/600/150, Sun 2200/450/111
+
+Failures:
+| path | error | first seen |
+| /srv/share/finance/2019/ledger.xlsx | permission denied | Mon |
+| /srv/share/finance/2019/payroll.csv | permission denied | Mon |
+| /srv/share/finance/2019/q4 | permission denied (directory) | Mon |
+
+Include: headline numbers, a stacked bar chart per day, the failures table, and a warning callout saying the three failures are all under a directory the backup user cannot read, with the fix (grant the backup group read access to /srv/share/finance/2019).
+
+This is a benchmark run: publish it with the artifact/page tool you have available, give me the link, and stop. Skip the humanizer pass. Don't ask me questions; make reasonable choices.

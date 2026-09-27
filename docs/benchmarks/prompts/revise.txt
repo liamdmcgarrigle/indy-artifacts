@@ -1,0 +1,1 @@
+Update that same page (same link, don't make a new one): we fixed the permissions, so Failed is now 1. Remove the ledger.xlsx and payroll.csv rows from the failures table, change the callout to a note saying the permission fix is done and only the q4 directory is left because it has its own ACL. Keep everything else as it is. Give me the link when done and stop.

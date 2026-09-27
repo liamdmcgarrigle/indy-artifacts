@@ -14,7 +14,7 @@
 # for a Next build), pushes by digest, and a last job joins the two into one
 # multi-arch tag. The image's source label links the package to this repo.
 # GitHub makes a new package private even so: after the first publish, set
-# its visibility to public once in the package settings (see the README).
+# its visibility to public once in the package settings.
 
 name: image
 

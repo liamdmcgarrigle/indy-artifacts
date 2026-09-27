@@ -1,0 +1,8 @@
+Make me a release checklist page for Indy 0.6.0 that I can use and come back to.
+
+1. A checklist I can tick off in the browser, where the ticks are saved: "Tests green on main", "Image built for amd64 and arm64", "Plugin version bumped", "Changelog written", "Share-link tool reviewed", "Announcement drafted".
+2. Below it, a short form I fill in and that you can read back afterwards: ship date (a date), channel (single choice: stable or beta), and notes (free text).
+
+After publishing, tell me the link and how you would read my answers back later.
+
+This is a benchmark run: publish it with the artifact/page tool you have available, give me the link, and stop. Skip the humanizer pass. Don't ask me questions; make reasonable choices.

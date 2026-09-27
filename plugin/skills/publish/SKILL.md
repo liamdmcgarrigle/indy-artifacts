@@ -53,6 +53,9 @@ complete document. Read `reference.md`, next to this file, before writing anythi
 plain markdown. When the page shows numbers, the charts skill says which chart fits the data
 (or whether a table or counters fit better) and how to make it read on a phone.
 
+Write the page straight into `artifact_publish`. The tool takes the source inline, so a page
+drafted into a file first, or assembled by a script, gets written out twice.
+
 For a history or a research write-up, `:::timeline` sets dated events down a rail, and a
 `:badge` in a heading over `:::columns{aside}` gives each option a verdict and a panel of facts.
 
