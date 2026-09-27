@@ -9,7 +9,9 @@ description: Use when the operator says they left comments, notes or edits on an
    `artifact_list` and take the pages for this repository's folder name that have open
    comments. If none do, say so and stop.
 2. For each page, `artifact_comments slug:<slug>` lists the open threads with the source
-   lines each one points at. If the operator edited the page since you last saw it,
+   lines each one points at. A comment on one bar, point, slice or flow of a chart carries
+   `anchor.point` with its series, its x value and the value it showed, so you know exactly
+   which number they mean. If the operator edited the page since you last saw it,
    `artifact_get slug:<slug>` first, so you work on their version.
 3. Do what the comments ask, in the page, in the code, or both. Publish page changes with
    `artifact_update`, passing the version you last read as `expected_version`.

@@ -113,8 +113,19 @@ const BUBBLE_MAX = 22;
 /** More slices than this and the smallest fold into one "Other". */
 const MAX_SLICES = 6;
 
-/** The Chart.js type, data and options a spec draws as. */
-export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layouts): { type: string; data: Any; options: Any; plugins: Any[] } {
+/** One bar, point, slice, cell or flow, in words: which series, which x, and its value. */
+export interface ChartPoint {
+  series: string;
+  x: string;
+  value: string;
+}
+
+/** The Chart.js type, data and options a spec draws as, and how to name any one of its marks. */
+export function chartConfig(
+  spec: ChartSpec,
+  theme: ChartTheme,
+  layouts?: Layouts,
+): { type: string; data: Any; options: Any; plugins: Any[]; describe: (datasetIndex: number, index: number) => ChartPoint | null } {
   const { palette, text, muted, border, surface, font } = theme;
   const isRound = spec.type === "pie" || spec.type === "doughnut";
   const isScatter = spec.type === "scatter";
@@ -148,7 +159,7 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
   let tooltipTitle: ((items: Any[]) => string) | undefined;
 
   if (spec.type === "sankey") {
-    // Flows between named stages. Each stage keeps one color; a flow fades from its source's to its target's.
+    // Flows between named stages. Each stage keeps one color, and each flow is the solid color of the stage it leaves.
     const style = styleOf("left");
     const to = spec.y[0];
     const value = spec.value ?? "value";
@@ -162,8 +173,8 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
         data: flows,
         colorFrom: (c: Any) => nodeColor(c.dataset.data[c.dataIndex]?.from),
         colorTo: (c: Any) => nodeColor(c.dataset.data[c.dataIndex]?.to),
-        colorMode: "gradient",
-        alpha: 0.5,
+        colorMode: "from",
+        alpha: 0.55,
         borderWidth: 0,
         nodeWidth: 12,
         nodePadding: 14,
@@ -172,7 +183,7 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
         font: { family: font, size: 11.5, weight: 500 },
       },
     ];
-    valueText = () => null;
+    valueText = (_di, i) => formatNumber(flows[i].flow, style);
     tooltipTitle = () => "";
     tooltipLabel = (item) => `${item.raw.from} → ${item.raw.to}: ${formatNumber(item.raw.flow, style)}`;
     return finish([]);
@@ -680,6 +691,29 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
   if (spec.labels) plugins.push(valueLabelsPlugin({ theme, horizontal, stacked, round: false, text: valueText }));
   return finish(plugins, scales);
 
+  function describe(di: number, i: number): ChartPoint | null {
+    const d = datasets[di];
+    const raw = (d?.data as Any[] | undefined)?.[i];
+    if (!d || raw === undefined || d.artTrend) return null;
+    const x =
+      spec.type === "sankey"
+        ? `${raw.from} → ${raw.to}`
+        : spec.type === "heatmap"
+          ? `${raw.y} · ${raw.x}`
+          : isScatter
+            ? (raw?.name ?? `${spec.x} ${formatNumber(raw.x, spec.axes?.x ?? {})}`)
+            : labels[i];
+    let value = valueText(di, i);
+    if (!value && tooltipLabel) {
+      // The tooltip's own words, less the series name it starts with.
+      const said = tooltipLabel({ dataset: d, raw, datasetIndex: di, dataIndex: i, label: labels[i] });
+      const name = `${String(d.label ?? "")}: `;
+      value = said.startsWith(name) ? said.slice(name.length) : said;
+    }
+    const series = isRound || spec.type === "sankey" || spec.type === "heatmap" || spec.type === "waterfall" || spec.type === "funnel" ? "" : String(d.label ?? "");
+    return { series, x: String(x ?? ""), value: value ?? "" };
+  }
+
   function finish(extra: Any[], scaleConfig?: Record<string, unknown>) {
     const valueLines = (spec.marks ?? []).some((m) => m.kind !== "band");
     const single = spec.type === "waterfall" || spec.type === "heatmap" || spec.type === "funnel" || spec.type === "sankey";
@@ -734,12 +768,15 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
             boxHeight: 7,
             usePointStyle: true,
             filter: (item: { datasetIndex: number }) => !datasets[item.datasetIndex]?.artTrend,
+            // Series in the order they were written, as in the legend.
+            itemSort: (a: { datasetIndex: number }, b: { datasetIndex: number }) => a.datasetIndex - b.datasetIndex,
             callbacks: { ...(tooltipLabel ? { label: tooltipLabel } : {}), ...(tooltipTitle ? { title: tooltipTitle } : {}) },
           },
         },
         scales: isRound ? undefined : scaleConfig,
       },
       plugins: extra,
+      describe,
     };
   }
 }

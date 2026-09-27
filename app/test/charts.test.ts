@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { BlockError } from "@/lib/pipeline/parse";
 import { parseChartBlock } from "@/lib/pipeline/chart";
 import { renderMarkdown } from "@/lib/pipeline";
+import { validateAnchor } from "@/lib/service/comments";
+import { describeAnchor, pointQuote } from "@/lib/anchors";
 import { chartConfig, chartSummary, formatNumber, marksPlugin, trendLine, withUnit, type ChartTheme } from "../../packages/primitives/src/chart-config";
 
 const theme: ChartTheme = {
@@ -554,5 +556,31 @@ describe("heatmap, box plot, funnel and sankey", () => {
     expect(fails("type: sankey", "data: [{ from: A, to: B, value: 1 }, { from: B, to: C, value: 1 }, { from: C, to: A, value: 1 }]")).toContain("loop back: A → B → C → A");
     expect(fails("type: sankey", "data: [{ from: A, to: A, value: 1 }]")).toContain("to itself");
     expect(fails("type: sankey", "stacked: true", "data: [{ from: A, to: B, value: 1 }]")).toContain("stacked does not apply to sankey");
+  });
+});
+
+describe("naming a point for a comment", () => {
+  it("says which series, which x and what value", () => {
+    const cfg = chartConfig(chart("type: bar", "x: week", "y: [deploys, cfr]", "series: { cfr: { as: line, axis: right } }", "axes: { right: { unit: '%' } }", "data: [{ week: W1, deploys: 14, cfr: 7.1 }]"), theme);
+    expect(cfg.describe(0, 0)).toEqual({ series: "deploys", x: "W1", value: "14" });
+    expect(cfg.describe(1, 0)).toEqual({ series: "cfr", x: "W1", value: "7.1%" });
+    expect(cfg.describe(2, 0)).toBeNull();
+  });
+
+  it("names flows, cells and slices by what they are", () => {
+    const sankey = chartConfig(chart("type: sankey", "data: [{ from: A, to: B, value: 3 }]"), theme);
+    expect(sankey.describe(0, 0)).toEqual({ series: "", x: "A → B", value: "3" });
+    const pie = chartConfig(chart("type: pie", "x: k", "y: n", "data: [{ k: a, n: 1 }, { k: b, n: 3 }]"), theme);
+    expect(pie.describe(0, 1)).toEqual({ series: "", x: "b", value: "75%" });
+  });
+});
+
+describe("a comment on a chart point", () => {
+  it("keeps the point on its anchor and says it plainly", () => {
+    const anchor = validateAnchor({ type: "element", block: "b4", lines: [3, 9], quote: "deploys, W7: 9", point: { series: "deploys", x: "W7", value: "9", extra: 1 } });
+    expect(anchor?.point).toEqual({ series: "deploys", x: "W7", value: "9" });
+    expect(describeAnchor(anchor as never)).toBe('lines 3-9 chart "deploys, W7: 9"');
+    expect(pointQuote({ series: "", x: "Visit → Signup", value: "120" })).toBe("Visit → Signup: 120");
+    expect(validateAnchor({ type: "element", block: "b4", point: { series: 1 } })?.point).toBeUndefined();
   });
 });

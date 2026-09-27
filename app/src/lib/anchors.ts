@@ -26,6 +26,26 @@ export interface Anchor {
   selector?: string;
   x?: number;
   y?: number;
+  /** A comment on one bar, point, slice, cell or flow of a chart: which series, which x, and its value then. */
+  point?: ChartPointRef;
+}
+
+export interface ChartPointRef {
+  series: string;
+  x: string;
+  value?: string;
+}
+
+/** What an <art-chart> answers about its marks. */
+interface ChartElement extends HTMLElement {
+  pointAt?: (clientX: number, clientY: number) => ChartPointRef | null;
+  pixelOf?: (point: { series: string; x: string }) => { x: number; y: number } | null;
+}
+
+/** A chart point in words, the way a comment quotes it: "deploys, W3: 11". */
+export function pointQuote(point: ChartPointRef): string {
+  const where = point.series ? `${point.series}, ${point.x}` : point.x;
+  return point.value ? `${where}: ${point.value}` : where;
 }
 
 export const CONTEXT_CHARS = 24;
@@ -301,6 +321,20 @@ export function anchorFromPick(root: HTMLElement, el: HTMLElement, clientX: numb
     if (point?.type === "point") return point;
   }
   const rect = el.getBoundingClientRect();
+  // On a chart, the bar or point under the pointer, when there is one; otherwise the chart by its title.
+  const chart = el.closest("art-chart") as ChartElement | null;
+  if (chart) {
+    const point = chart.pointAt?.(clientX, clientY) ?? null;
+    const title = chart.querySelector(".art-chart__title")?.textContent?.trim();
+    const box = chart.getBoundingClientRect();
+    return anchorForBlock(block, {
+      selector: pathWithin(block, chart),
+      quote: point ? pointQuote(point) : title || undefined,
+      ...(point ? { point } : {}),
+      x: box.width ? Math.min(Math.max((clientX - box.left) / box.width, 0), 1) : 0.5,
+      y: box.height ? Math.min(Math.max((clientY - box.top) / box.height, 0), 1) : 0.5,
+    });
+  }
   const text = (el.innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim();
   return anchorForBlock(block, {
     selector: pathWithin(block, el),
@@ -376,6 +410,15 @@ export function resolveAnchor(root: HTMLElement, anchor: Anchor): Resolved | nul
   if (anchor.type === "point" && block && typeof anchor.offset === "number") {
     const rect = rectOfRange(block, Math.max(anchor.offset - 1, 0), anchor.offset);
     if (rect) return { rect, exact: false };
+  }
+
+  if (block && anchor.point) {
+    // A chart point is found by name, so the pin follows its bar when the data around it changes.
+    // A block can hold several charts: the stored selector says which one.
+    const picked = anchor.selector?.startsWith(":scope") ? block.querySelector(anchor.selector) : null;
+    const chart = (picked?.closest("art-chart") ?? (block.matches("art-chart") ? block : block.querySelector("art-chart"))) as ChartElement | null;
+    const at = chart?.pixelOf?.(anchor.point);
+    if (chart && at) return { rect: new DOMRect(at.x, at.y, 0, 0), exact: true, box: chart.getBoundingClientRect() };
   }
 
   if (block) {
@@ -492,6 +535,7 @@ export function describeAnchor(anchor: Anchor | null): string {
   const lines = anchor.lines ? `lines ${anchor.lines[0]}-${anchor.lines[1]}` : anchor.block;
   if (anchor.type === "range" && anchor.quote) return `${lines} "${truncate(anchor.quote, 60)}"`;
   if (anchor.type === "point" && anchor.context) return `${lines} near "${truncate(anchor.context, 40)}"`;
+  if (anchor.point) return `${lines} chart "${truncate(pointQuote(anchor.point), 60)}"`;
   return `${lines} (${anchor.block})`;
 }
 

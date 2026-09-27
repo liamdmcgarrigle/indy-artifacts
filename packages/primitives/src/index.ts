@@ -12,7 +12,7 @@
  *      node is moved in the DOM, and it must not duplicate anything.
  */
 
-import { chartConfig, chartSummary, type ChartSpec, type ChartTheme } from "./chart-config";
+import { chartConfig, chartSummary, type ChartPoint, type ChartSpec, type ChartTheme } from "./chart-config";
 
 declare global {
   interface Window {
@@ -479,9 +479,81 @@ async function registerChartType(Chart: { register: (...items: unknown[]) => voi
   }
 }
 
+/** The slice of Chart.js's chart the element reads back. */
+interface DrawnChart {
+  destroy?: () => void;
+  getElementsAtEventForMode: (e: Event, mode: string, options: { intersect: boolean }, useFinal: boolean) => { datasetIndex: number; index: number }[];
+  getDatasetMeta: (i: number) => { data: { x: number; y: number; getCenterPoint?: () => { x: number; y: number } }[] };
+  data: { datasets: unknown[] };
+}
+
+/** A file handed to the browser to save. */
+function download(name: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function fileName(spec: ChartSpec): string {
+  const base = (spec.title ?? "chart").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return base.slice(0, 60) || "chart";
+}
+
+/** Every key the rows use, the chart's x first, as CSV. */
+export function chartCsv(spec: ChartSpec): string {
+  const keys: string[] = [spec.x];
+  for (const row of spec.data) for (const k of Object.keys(row)) if (!keys.includes(k)) keys.push(k);
+  const cell = (v: unknown) => {
+    const s = v === undefined || v === null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [keys.map(cell).join(","), ...spec.data.map((row) => keys.map((k) => cell(row[k])).join(","))].join("\n") + "\n";
+}
+
 class ArtChart extends ArtElement {
   #spec: ChartSpec | null = null;
-  #chart: { destroy?: () => void } | null = null;
+  #chart: DrawnChart | null = null;
+  #describe: ((datasetIndex: number, index: number) => ChartPoint | null) | null = null;
+
+  /** The bar, point, slice, cell or flow under a screen position, in words; null over empty space. */
+  pointAt(clientX: number, clientY: number): ChartPoint | null {
+    const chart = this.#chart;
+    if (!chart || !this.#describe) return null;
+    const canvas = this.querySelector("canvas");
+    if (!canvas) return null;
+    // Chart.js takes a position already inside the canvas this way; a bare MouseEvent that was never dispatched reads wrong.
+    const box = canvas.getBoundingClientRect();
+    const at = { type: "mousemove", native: null, x: clientX - box.left, y: clientY - box.top } as unknown as Event;
+    // On the mark itself first; failing that, the nearest one, so a tap above a short bar still means that bar.
+    const hits = chart.getElementsAtEventForMode(at, "nearest", { intersect: true }, false);
+    const near = hits.length ? hits : chart.getElementsAtEventForMode(at, "nearest", { intersect: false }, false);
+    const hit = near.find((h) => this.#describe!(h.datasetIndex, h.index));
+    return hit ? this.#describe(hit.datasetIndex, hit.index) : null;
+  }
+
+  /** Where a named point is drawn now, in screen coordinates, so a comment's pin can find it again. */
+  pixelOf(point: { series: string; x: string }): { x: number; y: number } | null {
+    const chart = this.#chart;
+    const canvas = this.querySelector("canvas");
+    if (!chart || !this.#describe || !canvas) return null;
+    const box = canvas.getBoundingClientRect();
+    for (let di = 0; di < chart.data.datasets.length; di++) {
+      const meta = chart.getDatasetMeta(di);
+      for (let i = 0; i < meta.data.length; i++) {
+        const named = this.#describe(di, i);
+        if (!named || named.series !== point.series || named.x !== point.x) continue;
+        const el = meta.data[i];
+        const c = el.getCenterPoint ? el.getCenterPoint() : { x: el.x, y: el.y };
+        return { x: box.left + c.x, y: box.top + c.y };
+      }
+    }
+    return null;
+  }
   #drawing = false;
 
   connectedCallback(): void {
@@ -532,7 +604,10 @@ class ArtChart extends ArtElement {
     this.#spec = spec;
     this.classList.add("art-chart");
 
-    if (spec.title) this.appendChild(make("div", "art-chart__title", spec.title));
+    const head = make("div", "art-chart__head");
+    if (spec.title) head.appendChild(make("div", "art-chart__title", spec.title));
+    head.appendChild(this.#menu(spec));
+    this.appendChild(head);
 
     const frame = make("div", "art-chart__canvas");
     const height = Number(spec.height);
@@ -546,19 +621,102 @@ class ArtChart extends ArtElement {
     this.appendChild(this.#table(spec));
   }
 
+  /**
+   * A small menu for reading the chart another way: its numbers as a table,
+   * the drawing as an image, the data as a CSV file.
+   */
+  #menu(spec: ChartSpec): HTMLElement {
+    const wrap = make("div", "art-chart__menu");
+    const button = make("button", "art-chart__more");
+    button.type = "button";
+    button.setAttribute("aria-label", "Chart menu");
+    button.setAttribute("aria-haspopup", "menu");
+    button.setAttribute("aria-expanded", "false");
+    button.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg>';
+    const list = make("div", "art-chart__list");
+    list.setAttribute("role", "menu");
+    list.hidden = true;
+    const close = () => {
+      list.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", outside, true);
+    };
+    const outside = (e: Event) => {
+      if (!wrap.contains(e.target as Node)) close();
+    };
+    const item = (text: string, run: () => void) => {
+      const b = make("button", "art-chart__item", text);
+      b.type = "button";
+      b.setAttribute("role", "menuitem");
+      b.addEventListener("click", () => {
+        close();
+        run();
+      });
+      list.appendChild(b);
+      return b;
+    };
+    const numbers = item("Show the numbers", () => {
+      const box = this.querySelector<HTMLElement>(".art-chart__data, .art-sr-only");
+      if (!box) return;
+      const showing = box.classList.toggle("art-chart__data");
+      box.classList.toggle("art-sr-only", !showing);
+      numbers.textContent = showing ? "Hide the numbers" : "Show the numbers";
+    });
+    item("Download image", () => this.#downloadImage(spec));
+    item("Download data (CSV)", () => download(`${fileName(spec)}.csv`, new Blob([chartCsv(spec)], { type: "text/csv" })));
+    button.addEventListener("click", () => {
+      const opening = list.hidden;
+      list.hidden = !opening;
+      button.setAttribute("aria-expanded", String(opening));
+      if (opening) document.addEventListener("pointerdown", outside, true);
+      else document.removeEventListener("pointerdown", outside, true);
+    });
+    wrap.append(button, list);
+    return wrap;
+  }
+
+  /** The drawing on the chart's own background, with its title over it, as a PNG. */
+  #downloadImage(spec: ChartSpec): void {
+    const canvas = this.querySelector("canvas");
+    if (!canvas) return;
+    const style = getComputedStyle(this);
+    const token = (name: string, fallback: string) => (style.getPropertyValue(name) || "").trim() || fallback;
+    const scale = canvas.width / (canvas.clientWidth || canvas.width);
+    const pad = Math.round(20 * scale);
+    const titleSpace = spec.title ? Math.round(34 * scale) : 0;
+    const out = document.createElement("canvas");
+    out.width = canvas.width + pad * 2;
+    out.height = canvas.height + pad * 2 + titleSpace;
+    const ctx = out.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = token("--art-surface", "#ffffff");
+    ctx.fillRect(0, 0, out.width, out.height);
+    if (spec.title) {
+      ctx.fillStyle = token("--art-text", "#1b1b1a");
+      ctx.font = `600 ${Math.round(15 * scale)}px ${token("--art-font-sans", "system-ui, sans-serif")}`;
+      ctx.textBaseline = "top";
+      ctx.fillText(spec.title, pad, pad);
+    }
+    ctx.drawImage(canvas, pad, pad + titleSpace);
+    out.toBlob((blob) => blob && download(`${fileName(spec)}.png`, blob), "image/png");
+  }
+
   /** The numbers behind the drawing, for screen readers. A table grows to fit its rows whatever its height, so it sits in a box that is clipped. */
   #table(spec: ChartSpec): HTMLElement {
     const box = make("div", "art-sr-only");
     const table = box.appendChild(make("table"));
     if (spec.title) table.appendChild(make("caption", undefined, spec.title));
+    // Every key the rows use, so a sankey's amounts or a heatmap's values are there too.
+    const keys: string[] = [spec.x, ...spec.y];
+    for (const row of spec.data) for (const k of Object.keys(row)) if (!keys.includes(k)) keys.push(k);
     const head = make("tr");
-    for (const key of [spec.x, ...spec.y]) head.appendChild(make("th", undefined, key));
+    for (const key of keys) head.appendChild(make("th", undefined, key));
     table.appendChild(make("thead")).appendChild(head);
     const body = make("tbody");
     for (const row of spec.data.slice(0, 500)) {
       const tr = make("tr");
       tr.appendChild(make("th", undefined, String(row[spec.x] ?? "")));
-      for (const key of spec.y) tr.appendChild(make("td", undefined, String(row[key] ?? "")));
+      for (const key of keys.slice(1)) tr.appendChild(make("td", undefined, String(row[key] ?? "")));
       body.appendChild(tr);
     }
     table.appendChild(body);
@@ -586,12 +744,18 @@ class ArtChart extends ArtElement {
       const { default: Chart, layouts } = await import("chart.js/auto");
       await registerChartType(Chart, spec.type);
       const config = chartConfig(spec, theme, layouts);
+      this.#describe = config.describe;
       if (!canvas.isConnected) return;
-      this.#chart = new Chart(canvas, config as never) as unknown as { destroy?: () => void };
+      this.#chart = new Chart(canvas, config as never) as unknown as DrawnChart;
     } catch (err) {
       // A chart that cannot be drawn (bad spec, no canvas, no chart.js) leaves
       // the empty frame in place rather than taking the page down with it.
       console.warn("art-chart: could not draw", err);
+      // A page left open across an update asks for drawing code that has since
+      // been replaced; say so rather than showing an empty box.
+      if (/dynamically imported module|Importing a module script failed|error loading dynamically/i.test(String((err as Error)?.message ?? err))) {
+        canvas.parentElement?.replaceChildren(make("p", "art-chart__stale", "Indy was updated while this page was open. Reload to see this chart."));
+      }
     }
   }
 }
