@@ -12,7 +12,7 @@
  *      node is moved in the DOM, and it must not duplicate anything.
  */
 
-import { chartConfig, chartSummary, type ChartPoint, type ChartSpec, type ChartTheme } from "./chart-config";
+import { chartConfig, chartCsv, chartSummary, type ChartPoint, type ChartSpec, type ChartTheme } from "./chart-config";
 
 declare global {
   interface Window {
@@ -504,17 +504,6 @@ function fileName(spec: ChartSpec): string {
   return base.slice(0, 60) || "chart";
 }
 
-/** Every key the rows use, the chart's x first, as CSV. */
-export function chartCsv(spec: ChartSpec): string {
-  const keys: string[] = [spec.x];
-  for (const row of spec.data) for (const k of Object.keys(row)) if (!keys.includes(k)) keys.push(k);
-  const cell = (v: unknown) => {
-    const s = v === undefined || v === null ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return [keys.map(cell).join(","), ...spec.data.map((row) => keys.map((k) => cell(row[k])).join(","))].join("\n") + "\n";
-}
-
 class ArtChart extends ArtElement {
   #spec: ChartSpec | null = null;
   #chart: DrawnChart | null = null;
@@ -555,6 +544,8 @@ class ArtChart extends ArtElement {
     return null;
   }
   #drawing = false;
+  /** The scheme changed while a drawing was under way: draw again when it lands. */
+  #again = false;
 
   connectedCallback(): void {
     super.connectedCallback();
@@ -574,6 +565,10 @@ class ArtChart extends ArtElement {
     // The page swaps its variables in the same tick; read them on the next frame.
     requestAnimationFrame(() => {
       if (!this.isConnected) return;
+      if (this.#drawing) {
+        this.#again = true;
+        return;
+      }
       this.#destroy();
       this.#redraw();
     });
@@ -595,6 +590,11 @@ class ArtChart extends ArtElement {
     this.#drawing = true;
     void this.#draw(canvas, this.#spec).finally(() => {
       this.#drawing = false;
+      if (this.#again && this.isConnected) {
+        this.#again = false;
+        this.#destroy();
+        this.#redraw();
+      }
     });
   }
 

@@ -126,7 +126,7 @@ function numberStyle(o: Record<string, unknown>, what: string): { format?: Chart
     decimals: optionalNumber(o.decimals, `${what} decimals`),
     unit: optionalText(o.unit),
   };
-  if (style.currency && !/^[A-Z]{3}$/.test(style.currency)) throw new BlockError(`${what} currency must be a three-letter code such as USD or EUR`);
+  if (style.currency !== undefined && !/^[A-Z]{3}$/.test(style.currency)) throw new BlockError(`${what} currency must be a three-letter code such as USD or EUR`);
   if (style.decimals !== undefined && (style.decimals < 0 || style.decimals > 6 || !Number.isInteger(style.decimals)))
     throw new BlockError(`${what} decimals must be a whole number from 0 to 6`);
   return Object.fromEntries(Object.entries(style).filter(([, v]) => v !== undefined));
@@ -222,16 +222,32 @@ function parseLaidOut(
     }
     // Flows run one way; a loop has no left-to-right layout.
     const next = new Map<string, string[]>();
-    for (const row of data) next.set(String(row[from]), [...(next.get(String(row[from])) ?? []), String(row[to])]);
+    for (const row of data) {
+      const list = next.get(String(row[from]));
+      if (list) list.push(String(row[to]));
+      else next.set(String(row[from]), [String(row[to])]);
+    }
+    // Depth first with an explicit stack, so a long chain cannot overflow the call stack.
     const state = new Map<string, "open" | "done">();
-    const visit = (node: string, path: string[]): void => {
-      if (state.get(node) === "done") return;
-      if (state.get(node) === "open") throw new BlockError(`sankey flows loop back: ${[...path.slice(path.indexOf(node)), node].join(" → ")}. Flows must run one way`);
-      state.set(node, "open");
-      for (const n of next.get(node) ?? []) visit(n, [...path, node]);
-      state.set(node, "done");
-    };
-    for (const node of next.keys()) visit(node, []);
+    for (const root of next.keys()) {
+      if (state.has(root)) continue;
+      const path: string[] = [root];
+      const todo: string[][] = [[...(next.get(root) ?? [])]];
+      state.set(root, "open");
+      while (path.length) {
+        const n = todo[todo.length - 1].pop();
+        if (n === undefined) {
+          state.set(path.pop()!, "done");
+          todo.pop();
+          continue;
+        }
+        if (state.get(n) === "done") continue;
+        if (state.get(n) === "open") throw new BlockError(`sankey flows loop back: ${[...path.slice(path.indexOf(n)), n].join(" → ")}. Flows must run one way`);
+        state.set(n, "open");
+        path.push(n);
+        todo.push([...(next.get(n) ?? [])]);
+      }
+    }
     return { ...base, type, x: from, y: [to], value, height: heightOf(360) };
   }
 
@@ -390,6 +406,7 @@ export function parseChartBlock(body: string, warn: (message: string) => void = 
         entry.as = as;
       }
       if (s.axis !== undefined) {
+        if (scatter) throw new BlockError("series axis does not apply to scatter charts; points use the x and left axes");
         const side = SIDE_ALIASES[String(s.axis).toLowerCase()];
         if (!side) throw new BlockError(`${what} axis must be left or right, got "${String(s.axis)}"`);
         entry.axis = side;
@@ -464,7 +481,8 @@ export function parseChartBlock(body: string, warn: (message: string) => void = 
       // y (or value) is always the value axis, whichever way the bars point.
       const valueRaw = m.y ?? m.value;
       if (valueRaw !== undefined) {
-        const value = optionalNumber(valueRaw, `${what} y`)!;
+        const value = optionalNumber(valueRaw, `${what} y`);
+        if (value === undefined) throw new BlockError(`${what} y needs a number`);
         const side = m.axis === undefined ? "left" : SIDE_ALIASES[String(m.axis).toLowerCase()];
         if (!side) throw new BlockError(`${what} axis must be left or right`);
         return { kind: "value", value, axis: side, ...extra } as ChartMark;

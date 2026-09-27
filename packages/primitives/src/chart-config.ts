@@ -76,12 +76,22 @@ export function trendLine(points: { x: number; y: number }[]): { x: number; y: n
   if (sxx === 0) return null;
   const slope = points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / sxx;
   const xs = points.map((p) => p.x);
-  const lo = Math.min(...xs);
-  const hi = Math.max(...xs);
+  const [lo, hi] = extent(xs);
   return [
     { x: lo, y: my + slope * (lo - mx) },
     { x: hi, y: my + slope * (hi - mx) },
   ];
+}
+
+/** The smallest and largest value, without spreading a long list into arguments (which overflows the stack). */
+export function extent(values: number[]): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  return [lo, hi];
 }
 
 /** Equal ranges with round edges (5, 10, 25, 50...) covering lo to hi, about `wanted` of them. */
@@ -90,7 +100,9 @@ export function niceBins(lo: number, hi: number, wanted: number): { lo: number; 
   const raw = (hi - lo) / wanted;
   const power = 10 ** Math.floor(Math.log10(raw));
   const width = [1, 2, 2.5, 5, 10].map((m) => m * power).find((w) => w >= raw) ?? 10 * power;
-  const start = Math.floor(lo / width) * width;
+  // The nudge keeps float error (6.8 / 0.2 = 33.99...) from putting the start above lo.
+  let start = Math.floor(lo / width + 1e-9) * width;
+  if (start > lo) start -= width;
   // The top value goes in the last range rather than opening one past it.
   const n = Math.max(1, Math.ceil((hi - start) / width));
   return { lo: start, width, n };
@@ -164,9 +176,9 @@ export function chartConfig(
     const to = spec.y[0];
     const value = spec.value ?? "value";
     const flows = spec.data.map((row) => ({ from: String(row[spec.x]), to: String(row[to]), flow: toNumber(row[value]) }));
-    const nodes: string[] = [];
-    for (const f of flows) for (const n of [f.from, f.to]) if (!nodes.includes(n)) nodes.push(n);
-    const nodeColor = (name: string) => palette[nodes.indexOf(name) % (palette.length - 1 || 1)];
+    const nodes = [...new Set(flows.flatMap((f) => [f.from, f.to]))];
+    const slot = new Map(nodes.map((n, i) => [n, i]));
+    const nodeColor = (name: string) => palette[(slot.get(name) ?? 0) % (palette.length - 1 || 1)];
     datasets = [
       {
         label: value,
@@ -194,16 +206,12 @@ export function chartConfig(
     const style = styleOf("left");
     const rowKey = spec.y[0];
     const value = spec.value ?? "value";
-    const xs: string[] = [];
-    const ys: string[] = [];
-    for (const row of spec.data) {
-      if (!xs.includes(String(row[spec.x]))) xs.push(String(row[spec.x]));
-      if (!ys.includes(String(row[rowKey]))) ys.push(String(row[rowKey]));
-    }
+    const xs = [...new Set(spec.data.map((row) => String(row[spec.x])))];
+    const ys = [...new Set(spec.data.map((row) => String(row[rowKey])))];
     const cells = spec.data.map((row) => ({ x: String(row[spec.x]), y: String(row[rowKey]), v: toValue(row[value]) }));
     const known = cells.map((c) => c.v).filter((v): v is number => v !== null);
-    const lo = Math.min(...known);
-    const span = Math.max(...known) - lo || 1;
+    const [lo, hi] = extent(known);
+    const span = hi - lo || 1;
     const share = (v: number | null) => (v === null ? 0 : (v - lo) / span);
     const color = palette[0];
     datasets = [
@@ -276,8 +284,7 @@ export function chartConfig(
 
   if (spec.type === "box") {
     // Quartiles and whiskers per x value, from the raw values or the five numbers given.
-    labels = [];
-    for (const row of spec.data) if (!labels.includes(String(row[spec.x]))) labels.push(String(row[spec.x]));
+    labels = [...new Set(spec.data.map((row) => String(row[spec.x])))];
     const style = styleOf("left");
     const keys = spec.stats ? ["box"] : spec.y;
     datasets = keys.map((key, i) => {
@@ -470,9 +477,9 @@ export function chartConfig(
     // Values counted into equal ranges; the bars touch because the ranges do.
     const values = spec.data.map((row) => toNumber(row[spec.x]));
     const wanted = spec.bins ?? Math.min(20, Math.max(5, Math.ceil(Math.log2(values.length)) + 1));
-    const { lo, width, n } = niceBins(Math.min(...values), Math.max(...values), wanted);
+    const { lo, width, n } = niceBins(...extent(values), wanted);
     const counts = Array.from({ length: n }, () => 0);
-    for (const v of values) counts[Math.min(n - 1, Math.floor((v - lo) / width))]++;
+    for (const v of values) counts[Math.max(0, Math.min(n - 1, Math.floor((v - lo) / width)))]++;
     const xStyle: NumberStyle = { ...styleOf("left"), ...(spec.axes?.x ?? {}) };
     const edges = counts.map((_, i) => [lo + i * width, lo + (i + 1) * width]);
     labels = edges.map(([a, b]) => `${formatNumber(a, { ...xStyle, unit: undefined })}–${formatNumber(b, xStyle)}`);
@@ -799,4 +806,17 @@ export function chartSummary(spec: ChartSpec): string {
   const what = spec.y.join(", ");
   const head = spec.title ? `${spec.title}. ` : "";
   return `${head}${kind[0].toUpperCase()}${kind.slice(1)} chart of ${what} by ${spec.x}, ${spec.data.length} ${spec.data.length === 1 ? "point" : "points"}. The data follows as a table.`;
+}
+
+/** Every key the rows use, the chart's x first, as CSV. */
+export function chartCsv(spec: ChartSpec): string {
+  const keys: string[] = [spec.x];
+  for (const row of spec.data) for (const k of Object.keys(row)) if (!keys.includes(k)) keys.push(k);
+  const cell = (v: unknown) => {
+    let s = v === undefined || v === null ? "" : String(v);
+    // Text a spreadsheet would run as a formula is opened as text instead; numbers stay numbers.
+    if (typeof v !== "number" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [keys.map(cell).join(","), ...spec.data.map((row) => keys.map((k) => cell(row[k])).join(","))].join("\n") + "\n";
 }

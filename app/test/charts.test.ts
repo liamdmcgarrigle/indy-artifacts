@@ -4,7 +4,7 @@ import { parseChartBlock } from "@/lib/pipeline/chart";
 import { renderMarkdown } from "@/lib/pipeline";
 import { validateAnchor } from "@/lib/service/comments";
 import { describeAnchor, pointQuote } from "@/lib/anchors";
-import { chartConfig, chartSummary, formatNumber, marksPlugin, trendLine, withUnit, type ChartTheme } from "../../packages/primitives/src/chart-config";
+import { chartConfig, chartCsv, chartSummary, formatNumber, niceBins, marksPlugin, trendLine, withUnit, type ChartTheme } from "../../packages/primitives/src/chart-config";
 
 const theme: ChartTheme = {
   palette: ["#111111", "#222222", "#333333"],
@@ -582,5 +582,40 @@ describe("a comment on a chart point", () => {
     expect(describeAnchor(anchor as never)).toBe('lines 3-9 chart "deploys, W7: 9"');
     expect(pointQuote({ series: "", x: "Visit → Signup", value: "120" })).toBe("Visit → Signup: 120");
     expect(validateAnchor({ type: "element", block: "b4", point: { series: 1 } })?.point).toBeUndefined();
+  });
+});
+
+describe("edge cases from review", () => {
+  it("never starts the bins above the smallest value", () => {
+    for (const [lo, hi, n] of [[6.8, 9.2, 12], [0.3, 0.9, 6], [1.1, 7.7, 30]] as const) {
+      expect(niceBins(lo, hi, n).lo).toBeLessThanOrEqual(lo);
+    }
+    const spec = chart("type: histogram", "x: v", "bins: 12", "data: [6.8, 7.1, 7.9, 8.4, 9.2]");
+    const counts = chartConfig(spec, theme).data.datasets[0].data as number[];
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(5);
+  });
+
+  it("counts a very long list without overflowing the stack", () => {
+    const values = Array.from({ length: 300_000 }, (_, i) => i % 97);
+    const spec = { type: "histogram", x: "v", y: [], data: values.map((v) => ({ v })) } as unknown as Parameters<typeof chartConfig>[0];
+    const counts = chartConfig(spec, theme).data.datasets[0].data as number[];
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(300_000);
+  });
+
+  it("refuses what would draw nothing or draw wrong", () => {
+    expect(() => chart("type: bar", "format: \"currency:\"", "x: m", "y: a", "data: [{ m: Jan, a: 1 }]")).toThrow(/three-letter/);
+    expect(() => chart("type: scatter", "x: a", "y: b", "series: { b: { axis: right } }", "data: [{ a: 1, b: 2 }]")).toThrow(/axis does not apply to scatter/);
+    expect(() => chart("type: bar", "x: m", "y: a", 'marks: [{ y: "" }]', "data: [{ m: Jan, a: 1 }]")).toThrow(/needs a number/);
+  });
+
+  it("checks a long sankey chain for loops without recursing", () => {
+    const rows = Array.from({ length: 20_000 }, (_, i) => `  - { from: n${i}, to: n${i + 1}, value: 1 }`);
+    expect(() => chart("type: sankey", "data:", ...rows)).not.toThrow();
+    expect(() => chart("type: sankey", "data:", "  - { from: a, to: b, value: 1 }", "  - { from: b, to: c, value: 1 }", "  - { from: c, to: a, value: 1 }")).toThrow(/loop back: a → b → c → a/);
+  });
+
+  it("writes CSV cells a spreadsheet will not run as formulas", () => {
+    const csv = chartCsv({ type: "bar", x: "name", y: ["n"], data: [{ name: "=HYPERLINK(1)", n: -3 }, { name: "a\rb", n: 1 }] } as unknown as Parameters<typeof chartCsv>[0]);
+    expect(csv).toBe(`name,n\n'=HYPERLINK(1),-3\n"a\rb",1\n`);
   });
 });
