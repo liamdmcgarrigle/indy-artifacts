@@ -16,6 +16,7 @@ import type { AppSettings } from "@/lib/service/settings";
 import type { Usage } from "@/lib/service/storage";
 import { Card, Head, Row, send, type Say } from "./parts";
 import { ThemesSection, type ThemesState } from "./ThemesSection";
+import { StorybooksSection, type StorybooksState } from "./StorybooksSection";
 
 interface Token {
   id: string;
@@ -38,7 +39,7 @@ interface Share {
   expiresAt: string | null;
 }
 
-type Section = "account" | "agents" | "themes" | "email" | "shares" | "data";
+type Section = "account" | "agents" | "themes" | "storybooks" | "email" | "shares" | "data";
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -62,6 +63,7 @@ export function SettingsView(props: {
   usage: Usage;
   email: { on: boolean; from: string };
   themes: ThemesState;
+  storybooks: StorybooksState;
 }) {
   const [section, setSection] = useState<Section>("account");
   const [tokens, setTokens] = useState(props.tokens);
@@ -69,13 +71,14 @@ export function SettingsView(props: {
   const [usage, setUsage] = useState(props.usage);
   const [settings, setSettings] = useState(props.settings);
   const [themes, setThemes] = useState(props.themes);
+  const [storybooks, setStorybooks] = useState(props.storybooks);
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
 
   // The section is in the address, so a link can open it and Back returns to it.
   useEffect(() => {
     const read = () => {
       const s = new URLSearchParams(window.location.search).get("s") as Section | null;
-      if (s && ["account", "agents", "themes", "email", "shares", "data"].includes(s)) setSection(s);
+      if (s && ["account", "agents", "themes", "storybooks", "email", "shares", "data"].includes(s)) setSection(s);
     };
     read();
     window.addEventListener("popstate", read);
@@ -104,6 +107,7 @@ export function SettingsView(props: {
     { id: "account", name: "Account" },
     { id: "agents", name: "Agents", hint: String(tokens.length) },
     { id: "themes", name: "Themes", hint: String(themes.themes.length) },
+    { id: "storybooks", name: "Storybooks", hint: String(storybooks.storybooks.length) },
     { id: "email", name: "Email", hint: props.email.on ? "on" : "off" },
     { id: "shares", name: "Shared links", hint: String(shares.length) },
     { id: "data", name: "Data", hint: bytes(usage.total) },
@@ -143,6 +147,7 @@ export function SettingsView(props: {
           {section === "account" ? <AccountSection user={props.user} email={props.email.on} say={say} /> : null}
           {section === "agents" ? <AgentsSection tokens={tokens} setTokens={setTokens} say={say} /> : null}
           {section === "themes" ? <ThemesSection state={themes} setState={setThemes} say={say} /> : null}
+          {section === "storybooks" ? <StorybooksSection state={storybooks} setState={setStorybooks} say={say} /> : null}
           {section === "email" ? <EmailSection email={props.email} /> : null}
           {section === "shares" ? <SharesSection shares={shares} setShares={setShares} say={say} /> : null}
           {section === "data" ? (

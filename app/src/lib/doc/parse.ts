@@ -34,7 +34,7 @@ const CONTAINERS: Record<string, { node: string; parent?: string; children?: str
   option: { node: "option", parent: "choice" },
 };
 
-const EMBED_LANGS = new Set(["html", "mermaid"]);
+const EMBED_LANGS = new Set(["html", "mermaid", "story"]);
 
 interface Ctx {
   source: string;

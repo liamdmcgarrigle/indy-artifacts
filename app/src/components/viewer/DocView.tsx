@@ -5,6 +5,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor, JSONContent } from "@tiptap/core";
 import dynamic from "next/dynamic";
 import { viewExtensions } from "@/lib/doc/views";
+import { primitivesUrl } from "@/lib/primitives";
 import type * as EditViews from "@/components/editor/edit-views";
 
 // Editing code loads when editing starts; reading a page never fetches it.
@@ -31,7 +32,7 @@ function usePrimitives(): boolean {
       const script = document.createElement("script");
       script.id = "art-primitives";
       script.type = "module";
-      script.src = "/primitives/primitives.js";
+      script.src = primitivesUrl("primitives.js");
       document.head.appendChild(script);
     }
     let live = true;

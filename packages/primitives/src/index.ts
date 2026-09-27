@@ -153,6 +153,7 @@ class ArtColumns extends ArtElement {
     this.classList.add("art-columns");
     const n = Math.min(Math.max(Math.trunc(Number(attr(this, "n"))) || 2, 2), 4);
     this.style.setProperty("--art-cols", String(n));
+    this.style.setProperty("--art-cols-narrow", String(Math.min(n, 2)));
   }
 }
 
@@ -561,16 +562,138 @@ class ArtChart extends ArtElement {
 const EMBED_MIN = 24;
 const EMBED_MAX = 4000;
 
+/**
+ * A story drawn at a device size never takes the whole screen: a phone reader
+ * always keeps some page above, below and beside it to scroll by, since a
+ * finger on the story scrolls the story.
+ */
+function storyMaxHeight(): number {
+  // The layout viewport, not innerHeight: on a phone innerHeight grows and
+  // shrinks as the address bar slides away while scrolling, and a story
+  // sized from it would resize under the reader's finger.
+  const tall = document.documentElement.clientHeight || window.innerHeight || 800;
+  return Math.round(tall * (window.innerWidth < 700 ? 0.78 : 0.72));
+}
+
+/**
+ * A story that sizes to its content (a long list of cards, say) is shown up
+ * to about this height, then faded out with a button to see the rest. The
+ * frame inside stays full height, so nothing scrolls inside it.
+ */
+function storyClipHeight(): number {
+  const tall = document.documentElement.clientHeight || window.innerHeight || 800;
+  return Math.max(360, Math.round(tall * 0.7));
+}
+
 class ArtEmbed extends ArtElement {
   #frame: HTMLIFrameElement | null = null;
+  #box: HTMLDivElement | null = null;
+  #resize: ResizeObserver | null = null;
+  /** A story drawn at a fixed width is scaled to fit a narrower column. */
+  #width = 0;
+  #height = 0;
+  #reported = 0;
+
   #onMessage = (event: MessageEvent): void => {
     if (!this.#frame || event.source !== this.#frame.contentWindow) return;
     const data = event.data as { type?: string; px?: number } | null;
     if (!data || data.type !== "art:height") return;
     const px = Number(data.px);
     if (!Number.isFinite(px)) return;
-    this.#frame.style.height = `${Math.min(Math.max(px, EMBED_MIN), EMBED_MAX)}px`;
+    this.#reported = Math.min(Math.max(px, EMBED_MIN), EMBED_MAX);
+    this.#layout();
   };
+
+  // The address bar coming and going on a phone changes the height by a
+  // little, and re-laying out then makes the frames jump as the page
+  // scrolls. A change of width, or a real change of height (a desktop window
+  // resized), still re-lays out.
+  #lastWidth = 0;
+  #lastHeight = 0;
+  #onResize = (): void => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    if (width === this.#lastWidth && Math.abs(height - this.#lastHeight) < 160) return;
+    this.#lastWidth = width;
+    this.#lastHeight = height;
+    this.#layout();
+  };
+
+  /** A story follows the page's scheme through its globals, so it reloads. */
+  #onScheme = (event: Event): void => {
+    const scheme = (event as CustomEvent).detail === "dark" ? "dark" : "light";
+    if (this.#frame && this.dataset.kind === "story") {
+      const next = this.#src(scheme);
+      if (this.#frame.dataset.src !== next) {
+        this.#frame.dataset.src = next;
+        this.classList.remove("is-loaded");
+        this.#frame.src = next;
+      }
+    }
+  };
+
+  #src(scheme: string): string {
+    const base = window.__ARTIFACT_EMBED_BASE ?? "";
+    return `${base}/${this.dataset.embed}?scheme=${encodeURIComponent(scheme)}`;
+  }
+
+  #layout(): void {
+    const frame = this.#frame;
+    const box = this.#box;
+    if (!frame) return;
+    const height = this.#height || this.#reported || 120;
+    if (!this.#width || !box) {
+      frame.style.height = `${height}px`;
+      this.#clip(height);
+      return;
+    }
+    // The element's own side padding is the inset around a device, not room for it.
+    const style = getComputedStyle(this);
+    const inset = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    const available = this.clientWidth ? this.clientWidth - inset : this.#width;
+    const scale = Math.min(1, available / this.#width, this.#height ? storyMaxHeight() / this.#height : 1);
+    frame.style.width = `${this.#width}px`;
+    frame.style.height = `${height}px`;
+    frame.style.transform = scale < 1 ? `scale(${scale})` : "";
+    box.style.width = `${Math.round(this.#width * scale)}px`;
+    box.style.height = `${Math.round(height * scale)}px`;
+  }
+
+  #expanded = false;
+  #more: HTMLButtonElement | null = null;
+
+  /** Clips a tall story that sizes itself, with a button to show all of it. */
+  #clip(height: number): void {
+    if (this.dataset.kind !== "story" || this.#height) return;
+    const limit = storyClipHeight();
+    // Not worth hiding a sliver: clip only what is well past the limit.
+    const tall = height > limit + 120;
+    if (!tall) {
+      this.style.maxHeight = "";
+      this.classList.remove("art-embed--clipped", "art-embed--open");
+      this.#more?.remove();
+      this.#more = null;
+      return;
+    }
+    if (!this.#more) {
+      const more = make("button", "art-embed__more") as HTMLButtonElement;
+      more.type = "button";
+      more.addEventListener("click", (event) => {
+        // In a choice option, a click anywhere picks the option; this one does not.
+        event.stopPropagation();
+        this.#expanded = !this.#expanded;
+        this.#layout();
+        if (!this.#expanded) this.scrollIntoView({ block: "nearest" });
+      });
+      this.appendChild(more);
+      this.#more = more;
+    }
+    this.#more.textContent = this.#expanded ? "Show less" : "Show all";
+    this.#more.setAttribute("aria-expanded", String(this.#expanded));
+    this.classList.add("art-embed--clipped");
+    this.classList.toggle("art-embed--open", this.#expanded);
+    this.style.maxHeight = this.#expanded ? "" : `${limit}px`;
+  }
 
   protected render(): void {
     const id = this.dataset.embed;
@@ -579,13 +702,15 @@ class ArtEmbed extends ArtElement {
 
     const kind = this.dataset.kind || "embed";
     const scheme = document.documentElement.dataset.scheme || "light";
-    const base = window.__ARTIFACT_EMBED_BASE ?? "";
+    this.#width = Number(this.dataset.width) || 0;
+    this.#height = Number(this.dataset.height) || 0;
 
     const frame = make("iframe");
-    frame.src = `${base}/${id}?scheme=${encodeURIComponent(scheme)}`;
+    frame.src = this.#src(scheme);
+    frame.dataset.src = frame.src;
     frame.setAttribute("sandbox", "allow-scripts allow-forms");
     frame.setAttribute("loading", "lazy");
-    frame.title = kind;
+    frame.title = kind === "story" ? `Story: ${this.dataset.title || id}` : kind;
     frame.style.width = "100%";
     frame.style.height = "120px";
     frame.style.border = "0";
@@ -595,15 +720,52 @@ class ArtEmbed extends ArtElement {
     // listener.
     frame.addEventListener("load", () => {
       frame.contentWindow?.postMessage({ type: "art:measure" }, "*");
+      this.classList.add("is-loaded");
     });
 
     this.#frame = frame;
-    this.appendChild(frame);
+    if (this.#width) {
+      // The box takes the scaled size; the frame inside keeps the story's own.
+      const box = make("div", "art-embed__box");
+      this.classList.add("art-embed--device");
+      box.style.overflow = "hidden";
+      box.style.margin = "0 auto";
+      frame.style.transformOrigin = "0 0";
+      box.appendChild(frame);
+      this.#box = box;
+      this.appendChild(box);
+      if (window.ResizeObserver) this.#resize = new ResizeObserver(() => this.#layout());
+    } else {
+      this.#box = null;
+      this.appendChild(frame);
+    }
+    if (kind === "story") {
+      this.classList.add("art-embed--story");
+      // Shown until the story's page has loaded; a story can take a moment.
+      const note = make("div", "art-embed__loading", "Loading story…");
+      note.setAttribute("aria-hidden", "true");
+      this.appendChild(note);
+    }
+    this.#layout();
+  }
+
+  // Listeners go on each time the element is attached, not only the first:
+  // the editor moves blocks by taking them out and putting them back.
+  connectedCallback(): void {
+    super.connectedCallback();
     window.addEventListener("message", this.#onMessage);
+    window.addEventListener("art:scheme", this.#onScheme);
+    this.#lastWidth = window.innerWidth;
+    this.#lastHeight = window.innerHeight;
+    window.addEventListener("resize", this.#onResize);
+    this.#resize?.observe(this);
   }
 
   disconnectedCallback(): void {
     window.removeEventListener("message", this.#onMessage);
+    window.removeEventListener("art:scheme", this.#onScheme);
+    window.removeEventListener("resize", this.#onResize);
+    this.#resize?.disconnect();
   }
 }
 

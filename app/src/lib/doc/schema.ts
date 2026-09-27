@@ -18,6 +18,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { BlockError, parseChartBlock, parseTableBlock } from "@/lib/pipeline/parse";
+import { parseStoryBlock, StoryBlockError } from "@/lib/storybook/spec";
 
 /**
  * The document schema, shared by the server (markdown in and out) and the
@@ -82,7 +83,7 @@ export interface OriginAttrs {
 // ---------------------------------------------------------------- containers
 
 /** A directive block with free content, rendered as its <art-*> element. */
-function container(name: string, tag: string, content = "block+", keys: string[] = []) {
+function container(name: string, tag: string, content = "block+", keys: string[] = [], flags: string[] = []) {
   return Node.create({
     name,
     group: name === "col" || name === "tab" || name === "option" ? undefined : "block",
@@ -98,6 +99,8 @@ function container(name: string, tag: string, content = "block+", keys: string[]
       const a = (node.attrs.attributes ?? {}) as Record<string, string>;
       const out: Record<string, string> = {};
       for (const key of keys) if (a[key] !== undefined && a[key] !== "") out[key] = String(a[key]);
+      // A switch is written bare ({compact}), which reads as an empty value.
+      for (const key of flags) if (a[key] !== undefined && a[key] !== "false") out[key] = "true";
       return [tag, out, 0];
     },
   });
@@ -106,7 +109,7 @@ function container(name: string, tag: string, content = "block+", keys: string[]
 export const Callout = container("callout", "art-callout", "block+", ["tone", "title"]);
 export const Card = container("card", "art-card", "block+", ["title", "subtitle"]);
 export const Details = container("details", "art-details", "block+", ["summary", "open"]);
-export const Columns = container("columns", "art-columns", "col+", ["n"]);
+export const Columns = container("columns", "art-columns", "col+", ["n"], ["compact"]);
 export const Col = container("col", "art-col", "block+");
 export const Tabs = container("tabs", "art-tabs", "tab+");
 export const Tab = container("tab", "art-tab", "block+", ["label"]);
@@ -211,10 +214,19 @@ export const DataTable = fenced("dataTable", (code) => {
   }
 });
 
-export const Embed = fenced("embed", (_code, attrs) => [
-  "art-embed",
-  { "data-embed": String(attrs.embedId ?? ""), "data-kind": String(attrs.kind ?? "html") },
-]);
+export const Embed = fenced("embed", (code, attrs) => {
+  const base = { "data-embed": String(attrs.embedId ?? ""), "data-kind": String(attrs.kind ?? "html") };
+  if (attrs.kind !== "story") return ["art-embed", base];
+  try {
+    const spec = parseStoryBlock(code);
+    const out: Record<string, string> = { ...base, "data-title": spec.title ?? spec.id };
+    if (spec.width) out["data-width"] = String(spec.width);
+    if (spec.height) out["data-height"] = String(spec.height);
+    return ["art-embed", out];
+  } catch (err) {
+    return ["art-error", {}, err instanceof StoryBlockError ? err.message : `story block failed: ${(err as Error).message}`];
+  }
+});
 
 /**
  * Markdown the schema does not model: kept as written, shown as the pipeline

@@ -323,6 +323,24 @@ export function checkCapability(ctx: ServiceContext, cap: string, slug: string, 
   return safeEqual(hmac(secret(ctx), `${id}/${version}|${exp}`), cap.slice(dot + 1));
 }
 
+/**
+ * The same, for one uploaded Storybook build: its frames load dozens of files
+ * by relative path, so the capability sits in the path under /sb. Whoever may
+ * see a page that shows a story may load that build.
+ */
+export function storybookCapability(ctx: ServiceContext, buildId: string, ttlMs = CAPABILITY_TTL_MS): string {
+  const exp = Math.ceil((Date.now() + ttlMs) / CAPABILITY_BUCKET_MS) * (CAPABILITY_BUCKET_MS / 1000);
+  return `${exp}.${hmac(secret(ctx), `storybook|${buildId}|${exp}`)}`;
+}
+
+export function checkStorybookCapability(ctx: ServiceContext, cap: string, buildId: string): boolean {
+  const dot = cap.indexOf(".");
+  if (dot < 0) return false;
+  const exp = Number(cap.slice(0, dot));
+  if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return false;
+  return safeEqual(hmac(secret(ctx), `storybook|${buildId}|${exp}`), cap.slice(dot + 1));
+}
+
 // ---------------------------------------------------------------- first run
 
 /** The lines the server prints while an install has no owner. */

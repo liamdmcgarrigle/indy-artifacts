@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NodeViewWrapper, type ReactNodeViewProps } from "@tiptap/react";
 import { Code2 } from "lucide-react";
+import { parseStoryBlock } from "@/lib/storybook/spec";
 
 /** The block as it looks, from HTML the page already has. */
 function Html({ html }: { html: string }) {
@@ -10,19 +11,33 @@ function Html({ html }: { html: string }) {
 }
 
 /** An element built by hand, so an <art-embed> upgrades and loads its frame. */
-function Frame({ id, kind }: { id: string; kind: string }) {
+function Frame({ id, kind, size }: { id: string; kind: string; size: string }) {
   const host = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = document.createElement("art-embed");
     el.setAttribute("data-embed", id);
     el.setAttribute("data-kind", kind);
+    const [width, height] = size.split("x");
+    if (width) el.setAttribute("data-width", width);
+    if (height) el.setAttribute("data-height", height);
     host.current?.replaceChildren(el);
-  }, [id, kind]);
+  }, [id, kind, size]);
   return <div ref={host} className="source-edit__view" contentEditable={false} />;
 }
 
+/** A story's fixed frame size, "402x874", or "" when it fits its content. */
+function frameSize(kind: string, code: string): string {
+  if (kind !== "story") return "";
+  try {
+    const spec = parseStoryBlock(code);
+    return `${spec.width ?? ""}x${spec.height ?? ""}`;
+  } catch {
+    return "";
+  }
+}
+
 /**
- * A live frame (html or mermaid). Its code is code, so it is edited as code,
+ * A live frame (html, mermaid or a story). Its code is code, so it is edited as code,
  * under the preview; the preview catches up when the edit is saved.
  */
 export function EmbedEdit({ node, updateAttributes }: ReactNodeViewProps) {
@@ -31,7 +46,7 @@ export function EmbedEdit({ node, updateAttributes }: ReactNodeViewProps) {
   const kind = String(node.attrs.kind ?? "html");
   return (
     <NodeViewWrapper className="source-edit">
-      {node.attrs.embedId ? <Frame id={String(node.attrs.embedId)} kind={kind} /> : <p className="source-edit__note">New {kind} block: it shows once saved.</p>}
+      {node.attrs.embedId ? <Frame id={String(node.attrs.embedId)} kind={kind} size={frameSize(kind, code)} /> : <p className="source-edit__note">New {kind} block: it shows once saved.</p>}
       <button type="button" className="source-edit__toggle" contentEditable={false} onClick={() => setOpen((v) => !v)}>
         <Code2 className="size-3.5" /> {open ? `Hide the ${kind}` : `Edit the ${kind}`}
       </button>

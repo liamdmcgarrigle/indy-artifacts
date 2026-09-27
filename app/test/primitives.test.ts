@@ -372,6 +372,64 @@ describe("art-embed", () => {
     expect(frame.style.height).toBe("4000px");
   });
 
+  it("draws a fixed-size story at its own size, scaled down to fit", async () => {
+    const host = await mount('<art-embed data-embed="e2" data-kind="story" data-width="400" data-height="800" data-title="Card"></art-embed>');
+    const el = (host.matches("art-embed") ? host : host.querySelector("art-embed")) as HTMLElement;
+    const frame = host.querySelector("iframe")!;
+    const box = host.querySelector(".art-embed__box") as HTMLElement;
+    expect(frame.title).toBe("Story: Card");
+    expect(frame.style.width).toBe("400px");
+    expect(frame.style.height).toBe("800px");
+    // Never taller than 72% of the window (78% on a phone): 768 * 0.72 = 553.
+    expect(box.style.height).toBe("553px");
+    expect(host.querySelector(".art-embed__loading")?.textContent).toBe("Loading story…");
+
+    Object.defineProperty(el, "clientWidth", { value: 200, configurable: true });
+    const post = (data: unknown) => {
+      const event = new MessageEvent("message", { data });
+      Object.defineProperty(event, "source", { value: frame.contentWindow });
+      window.dispatchEvent(event);
+    };
+    // A fixed height wins over what the frame reports.
+    post({ type: "art:height", px: 300 });
+    expect(frame.style.transform).toBe("scale(0.5)");
+    expect(box.style.width).toBe("200px");
+    expect(box.style.height).toBe("400px");
+  });
+
+  it("shows part of a very tall story, with a button for the rest", async () => {
+    const host = await mount('<art-embed data-embed="e4" data-kind="story"></art-embed>');
+    const el = (host.matches("art-embed") ? host : host.querySelector("art-embed")) as HTMLElement;
+    const frame = host.querySelector("iframe")!;
+    const post = (px: number) => {
+      const event = new MessageEvent("message", { data: { type: "art:height", px } });
+      Object.defineProperty(event, "source", { value: frame.contentWindow });
+      window.dispatchEvent(event);
+    };
+    post(2000);
+    // The frame stays full height; the element clips it.
+    expect(frame.style.height).toBe("2000px");
+    const limit = Math.max(360, Math.round((document.documentElement.clientHeight || window.innerHeight) * 0.7));
+    expect(el.style.maxHeight).toBe(`${limit}px`);
+    const more = el.querySelector(".art-embed__more") as HTMLButtonElement;
+    expect(more.textContent).toBe("Show all");
+    more.click();
+    expect(el.style.maxHeight).toBe("");
+    expect(more.textContent).toBe("Show less");
+    // A story that fits is not clipped.
+    post(300);
+    expect(el.querySelector(".art-embed__more")).toBeNull();
+    expect(el.style.maxHeight).toBe("");
+  });
+
+  it("reloads a story when the page's scheme changes", async () => {
+    const host = await mount('<art-embed data-embed="e3" data-kind="story"></art-embed>');
+    const frame = host.querySelector("iframe")!;
+    expect(frame.getAttribute("src")).toBe("/e3?scheme=light");
+    window.dispatchEvent(new CustomEvent("art:scheme", { detail: "dark" }));
+    expect(frame.getAttribute("src")).toBe("/e3?scheme=dark");
+  });
+
   it("stops listening once removed", async () => {
     const host = await mount('<art-embed data-embed="e2" data-kind="html"></art-embed>');
     const frame = host.querySelector("iframe")!;

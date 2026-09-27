@@ -271,7 +271,7 @@ data:
 
 The full set is `:::card`, `:::callout`, `:::kpis`, `:::columns` with `:::col`, `:::tabs` with
 `:::tab`, `:::details`, the form blocks `::field` and `:::choice` with `:::option`, and the fences
-`chart`, `table`, `mermaid` and `html`. The reference agents learn from is
+`chart`, `table`, `mermaid`, `html` and `story`. The reference agents learn from is
 `plugin/skills/publish/reference.md`, the same text MCP serves as `indy://reference`.
 
 ### Themes
@@ -295,6 +295,37 @@ want it back.
 Indy serves its own fonts, all under the Open Font License, so pages make no requests to a
 font CDN.
 
+### Storybooks
+
+If a project has a Storybook, a page can show its stories drawn by the project's real,
+compiled components: screens at their device size, a component with different props, or a
+form asking which of two designs to ship. Nothing is copied into the page.
+
+The agent builds the Storybook where the code is and uploads the build. Indy may run on
+another machine, so this goes over HTTP: the `artifact_storybook_upload` tool hands the agent
+a single-use address, and the agent sends the build to it with `tar` and `curl`. A page then
+names stories with a `story` fence:
+
+````markdown
+```story
+id: screens-friends--requests
+width: 402
+height: 874
+```
+````
+
+Each version of a page keeps the build it was published with, so a design review keeps showing
+what was reviewed after the components move on. Files are stored once by content, so uploading
+a new build costs only what changed. Indy keeps the three newest builds of each Storybook,
+plus any build a page version still shows. Settings › Storybooks lists what is stored, lets you
+search a Storybook for story ids, and deletes one.
+
+A Storybook can say which of its globals match Indy's light and dark schemes, so stories switch
+with the page, and which remote hosts its stories may load images, fonts and styles from.
+
+For CI, `POST /api/storybooks/<name>/builds` with an agent token and the gzipped tar as the body
+does the same as the upload tool.
+
 ## Security
 
 There is one account. Each agent gets its own token, and you can revoke one without touching the
@@ -305,6 +336,13 @@ Anything an agent wrote that can run goes in an `<iframe sandbox="allow-scripts"
 also gets a Content Security Policy that blocks network access. Markdown is sanitized before it
 reaches the page. Compiled apps may import react, react-dom, svelte, chart.js, d3, lucide-react and
 their own files; any other import fails the build, and the error goes back to the agent.
+
+An uploaded Storybook runs in the same kind of frame, under a policy that lets it load only
+files from its own build, plus images, fonts and styles from hosts you allowed for it. It
+cannot call Indy's API or any other site. Every file of a build is served with that sandbox,
+so an SVG or HTML file opened directly runs nothing on Indy's origin. Showing one story on a
+page lets anyone who can open the page load that whole build, including stories not on the
+page, so keep that in mind before sharing a page from a private project.
 
 A visitor on a share link sees only that page and the comments made through that link. Their
 comments and answers reach an agent only after you forward them, and they arrive marked untrusted so

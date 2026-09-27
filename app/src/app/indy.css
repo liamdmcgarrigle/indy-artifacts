@@ -428,6 +428,12 @@ kbd.kbd {
   .art-choice__options {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* compact: options stay side by side on a phone, two across, so four
+     screens are a grid to compare rather than a long scroll. */
+  .art-choice__options--compact {
+    grid-template-columns: repeat(var(--cols-narrow, 2), minmax(0, 1fr));
+    gap: 8px;
+  }
 }
 .art-opt {
   position: relative;
@@ -495,6 +501,17 @@ kbd.kbd {
   background: transparent;
 }
 .art-opt__body art-embed iframe {
+  border-radius: 0;
+}
+/* A screen in an option keeps a little of the card around it, and the card
+   ends soon after it. */
+.art-opt__body pre:has(> art-embed.art-embed--device) {
+  margin-bottom: 2px;
+}
+.art-opt__body art-embed.art-embed--device {
+  padding: 2px 10px 8px;
+}
+.art-opt__body art-embed.art-embed--device .art-embed__box iframe {
   border-radius: 0;
 }
 .art-opt__body > div > p:only-child:empty {
