@@ -1,0 +1,621 @@
+[
+ {
+  "cfg": "indy",
+  "task": "bigform",
+  "rep": "1",
+  "turns": 8,
+  "new_input": 52591,
+  "cache_read": 224119,
+  "output": 13630,
+  "cost": 0.7381038000000001,
+  "secs": 95.247,
+  "error": false,
+  "page_chars": 24160,
+  "tools": [
+   "Skill",
+   "Bash",
+   "Bash",
+   "ToolSearch",
+   "Bash",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "bigform",
+  "rep": "2",
+  "turns": 7,
+  "new_input": 52773,
+  "cache_read": 174278,
+  "output": 13847,
+  "cost": 0.7339395999999999,
+  "secs": 96.619,
+  "error": false,
+  "page_chars": 24496,
+  "tools": [
+   "Skill",
+   "Bash",
+   "Bash",
+   "ToolSearch",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "bigform",
+  "rep": "3",
+  "turns": 9,
+  "new_input": 59398,
+  "cache_read": 179897,
+  "output": 14213,
+  "cost": 0.7953834,
+  "secs": 101.242,
+  "error": false,
+  "page_chars": 24864,
+  "tools": [
+   "Skill",
+   "Bash",
+   "Bash",
+   "Skill",
+   "ToolSearch",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "bigpage",
+  "rep": "1",
+  "turns": 7,
+  "new_input": 51931,
+  "cache_read": 172386,
+  "output": 13337,
+  "cost": 0.7166252,
+  "secs": 93.627,
+  "error": false,
+  "page_chars": 23629,
+  "tools": [
+   "Bash",
+   "Skill",
+   "Bash",
+   "ToolSearch",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "bigpage",
+  "rep": "2",
+  "turns": 7,
+  "new_input": 51813,
+  "cache_read": 172752,
+  "output": 13361,
+  "cost": 0.7162344,
+  "secs": 94.011,
+  "error": false,
+  "page_chars": 22668,
+  "tools": [
+   "Skill",
+   "Bash",
+   "Bash",
+   "ToolSearch",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "bigpage",
+  "rep": "3",
+  "turns": 7,
+  "new_input": 51926,
+  "cache_read": 172583,
+  "output": 13620,
+  "cost": 0.7222845999999999,
+  "secs": 96.737,
+  "error": false,
+  "page_chars": 23012,
+  "tools": [
+   "Skill",
+   "Bash",
+   "Bash",
+   "ToolSearch",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "checklist",
+  "rep": "1",
+  "turns": 7,
+  "new_input": 2246,
+  "cache_read": 156427,
+  "output": 1483,
+  "cost": 0.07887340000000001,
+  "secs": 25.151,
+  "error": false,
+  "page_chars": 701,
+  "tools": [
+   "Skill",
+   "ToolSearch",
+   "Bash",
+   "Bash",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "checklist",
+  "rep": "2",
+  "turns": 6,
+  "new_input": 7529,
+  "cache_read": 118959,
+  "output": 1404,
+  "cost": 0.1120718,
+  "secs": 14.42,
+  "error": false,
+  "page_chars": 595,
+  "tools": [
+   "Skill",
+   "ToolSearch",
+   "Bash",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "checklist",
+  "rep": "3",
+  "turns": 7,
+  "new_input": 7814,
+  "cache_read": 152176,
+  "output": 1551,
+  "cost": 0.12392720000000002,
+  "secs": 16.445,
+  "error": false,
+  "page_chars": 749,
+  "tools": [
+   "Skill",
+   "ToolSearch",
+   "Bash",
+   "Bash",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "report",
+  "rep": "1",
+  "turns": 6,
+  "new_input": 29247,
+  "cache_read": 108576,
+  "output": 2175,
+  "cost": 0.29915919999999996,
+  "secs": 19.526,
+  "error": false,
+  "page_chars": 2218,
+  "tools": [
+   "Skill",
+   "Bash",
+   "ToolSearch",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "report",
+  "rep": "2",
+  "turns": 6,
+  "new_input": 29340,
+  "cache_read": 147035,
+  "output": 2321,
+  "cost": 0.310507,
+  "secs": 22.12,
+  "error": false,
+  "page_chars": 2165,
+  "tools": [
+   "Skill",
+   "Bash",
+   "ToolSearch",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "report",
+  "rep": "3",
+  "turns": 6,
+  "new_input": 29368,
+  "cache_read": 110447,
+  "output": 2102,
+  "cost": 0.2990414,
+  "secs": 19.398,
+  "error": false,
+  "page_chars": 2120,
+  "tools": [
+   "Skill",
+   "ToolSearch",
+   "Bash",
+   "artifact_publish"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "revise",
+  "rep": "1",
+  "turns": 4,
+  "new_input": 34195,
+  "cache_read": 278569,
+  "output": 3921,
+  "cost": 0.40762979999999993,
+  "secs": 15.449,
+  "error": false,
+  "page_chars": 1944,
+  "tools": [
+   "ToolSearch",
+   "artifact_get",
+   "artifact_update"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "revise",
+  "rep": "2",
+  "turns": 4,
+  "new_input": 34284,
+  "cache_read": 317486,
+  "output": 4061,
+  "cost": 0.4189172,
+  "secs": 15.387,
+  "error": false,
+  "page_chars": 1952,
+  "tools": [
+   "ToolSearch",
+   "artifact_get",
+   "artifact_update"
+  ]
+ },
+ {
+  "cfg": "indy",
+  "task": "revise",
+  "rep": "3",
+  "turns": 4,
+  "new_input": 34349,
+  "cache_read": 280996,
+  "output": 3864,
+  "cost": 0.40820720000000005,
+  "secs": 15.491,
+  "error": false,
+  "page_chars": 1969,
+  "tools": [
+   "ToolSearch",
+   "artifact_get",
+   "artifact_update"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "bigform",
+  "rep": "1",
+  "turns": 13,
+  "new_input": 114624,
+  "cache_read": 696942,
+  "output": 38324,
+  "cost": 1.8227884,
+  "secs": 509.623,
+  "error": false,
+  "page_chars": 61289,
+  "tools": [
+   "Bash",
+   "Artifact",
+   "Skill",
+   "Skill",
+   "Bash",
+   "Write",
+   "Bash",
+   "Bash",
+   "Bash",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "bigform",
+  "rep": "2",
+  "turns": 11,
+  "new_input": 110712,
+  "cache_read": 601538,
+  "output": 38691,
+  "cost": 1.7797516,
+  "secs": 321.654,
+  "error": false,
+  "page_chars": 65135,
+  "tools": [
+   "Bash",
+   "Artifact",
+   "Skill",
+   "Bash",
+   "Bash",
+   "Bash",
+   "Write",
+   "Bash",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "bigform",
+  "rep": "3",
+  "turns": 11,
+  "new_input": 105069,
+  "cache_read": 592700,
+  "output": 32110,
+  "cost": 1.60122,
+  "secs": 253.554,
+  "error": false,
+  "page_chars": 56405,
+  "tools": [
+   "Bash",
+   "Artifact",
+   "Skill",
+   "Bash",
+   "Bash",
+   "Bash",
+   "Write",
+   "Artifact",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "bigpage",
+  "rep": "1",
+  "turns": 16,
+  "new_input": 89898,
+  "cache_read": 976565,
+  "output": 45592,
+  "cost": 1.8262409999999998,
+  "secs": 391.114,
+  "error": false,
+  "page_chars": 60845,
+  "tools": [
+   "Bash",
+   "Artifact",
+   "Skill",
+   "Artifact",
+   "Bash",
+   "Write",
+   "Bash",
+   "Bash",
+   "Bash",
+   "Bash",
+   "Bash",
+   "Bash",
+   "Bash",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "bigpage",
+  "rep": "2",
+  "turns": 11,
+  "new_input": 74078,
+  "cache_read": 417268,
+  "output": 34718,
+  "cost": 1.3703816000000002,
+  "secs": 283.065,
+  "error": false,
+  "page_chars": 54156,
+  "tools": [
+   "Bash",
+   "Artifact",
+   "Skill",
+   "Skill",
+   "Bash",
+   "Write",
+   "Edit",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "bigpage",
+  "rep": "3",
+  "turns": 9,
+  "new_input": 75435,
+  "cache_read": 418076,
+  "output": 36528,
+  "cost": 1.4175992000000002,
+  "secs": 292.391,
+  "error": false,
+  "page_chars": 54560,
+  "tools": [
+   "Bash",
+   "Artifact",
+   "Skill",
+   "Bash",
+   "Write",
+   "Bash",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "checklist",
+  "rep": "1",
+  "turns": 9,
+  "new_input": 51337,
+  "cache_read": 389914,
+  "output": 5786,
+  "cost": 0.6043428000000001,
+  "secs": 55.6,
+  "error": false,
+  "page_chars": 9175,
+  "tools": [
+   "Artifact",
+   "Skill",
+   "Read",
+   "Write",
+   "Artifact",
+   "ToolSearch",
+   "ArtifactData"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "checklist",
+  "rep": "2",
+  "turns": 9,
+  "new_input": 52387,
+  "cache_read": 393037,
+  "output": 6847,
+  "cost": 0.6345874000000001,
+  "secs": 63.462,
+  "error": false,
+  "page_chars": 11328,
+  "tools": [
+   "Artifact",
+   "Skill",
+   "Read",
+   "Write",
+   "Artifact",
+   "ToolSearch",
+   "ArtifactData"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "checklist",
+  "rep": "3",
+  "turns": 9,
+  "new_input": 51820,
+  "cache_read": 391306,
+  "output": 6243,
+  "cost": 0.6176252,
+  "secs": 58.79,
+  "error": false,
+  "page_chars": 10151,
+  "tools": [
+   "Artifact",
+   "Skill",
+   "Read",
+   "Write",
+   "Artifact",
+   "ToolSearch",
+   "ArtifactData"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "report",
+  "rep": "1",
+  "turns": 8,
+  "new_input": 39469,
+  "cache_read": 278994,
+  "output": 8134,
+  "cost": 0.5341828000000001,
+  "secs": 69.636,
+  "error": false,
+  "page_chars": 11660,
+  "tools": [
+   "Artifact",
+   "Skill",
+   "Bash",
+   "Write",
+   "Bash",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "report",
+  "rep": "2",
+  "turns": 7,
+  "new_input": 38376,
+  "cache_read": 265467,
+  "output": 7242,
+  "cost": 0.5048933999999999,
+  "secs": 62.894,
+  "error": false,
+  "page_chars": 11385,
+  "tools": [
+   "Artifact",
+   "Skill",
+   "Bash",
+   "Write",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "report",
+  "rep": "3",
+  "turns": 7,
+  "new_input": 38590,
+  "cache_read": 219315,
+  "output": 7595,
+  "cost": 0.5044430000000001,
+  "secs": 65.943,
+  "error": false,
+  "page_chars": 12085,
+  "tools": [
+   "Artifact",
+   "Skill",
+   "Bash",
+   "Write",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "revise",
+  "rep": "1",
+  "turns": 5,
+  "new_input": 45538,
+  "cache_read": 595658,
+  "output": 10811,
+  "cost": 0.6995676000000001,
+  "secs": 28.842,
+  "error": false,
+  "page_chars": 0,
+  "tools": [
+   "Bash",
+   "Bash",
+   "Bash",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "revise",
+  "rep": "2",
+  "turns": 3,
+  "new_input": 40834,
+  "cache_read": 446159,
+  "output": 8605,
+  "cost": 0.5879317999999999,
+  "secs": 14.798,
+  "error": false,
+  "page_chars": 0,
+  "tools": [
+   "Bash",
+   "Artifact"
+  ]
+ },
+ {
+  "cfg": "native",
+  "task": "revise",
+  "rep": "3",
+  "turns": 3,
+  "new_input": 41528,
+  "cache_read": 401195,
+  "output": 9285,
+  "cost": 0.598099,
+  "secs": 17.704,
+  "error": false,
+  "page_chars": 0,
+  "tools": [
+   "Bash",
+   "Artifact"
+  ]
+ }
+]
