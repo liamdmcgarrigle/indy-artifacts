@@ -504,6 +504,22 @@ function fileName(spec: ChartSpec): string {
   return base.slice(0, 60) || "chart";
 }
 
+/**
+ * Chart.js sizes its axes by measuring label text once, when it draws. A web font
+ * still loading at that moment is measured in the fallback font and then drawn
+ * wider, which clips the start of long labels ("roduct page"). A canvas never asks
+ * for a font by itself, so load the weights the chart uses first, but never wait
+ * long: a slow font is drawn in the fallback first, and `late` settles when it
+ * arrives so the chart can be measured again.
+ */
+function fontsFor(family: string): { ready: Promise<boolean>; late: Promise<unknown> } {
+  const fonts = typeof document === "undefined" ? undefined : document.fonts;
+  if (!fonts?.load) return { ready: Promise.resolve(true), late: Promise.resolve() };
+  const late = Promise.all(["400", "500", "600", "700"].map((weight) => fonts.load(`${weight} 12px ${family}`).catch(() => null)));
+  const ready = Promise.race([late.then(() => true), new Promise<boolean>((done) => setTimeout(() => done(false), 1500))]);
+  return { ready, late };
+}
+
 class ArtChart extends ArtElement {
   #spec: ChartSpec | null = null;
   #chart: DrawnChart | null = null;
@@ -743,6 +759,15 @@ class ArtChart extends ArtElement {
       };
       const { default: Chart, layouts } = await import("chart.js/auto");
       await registerChartType(Chart, spec.type);
+      const fonts = fontsFor(theme.font);
+      if (!(await fonts.ready)) {
+        // Drawn in the fallback: draw again, measured in the real font, once it lands.
+        void fonts.late.then(() => {
+          if (!this.isConnected || !this.#chart) return;
+          this.#destroy();
+          this.#redraw();
+        });
+      }
       const config = chartConfig(spec, theme, layouts);
       this.#describe = config.describe;
       if (!canvas.isConnected) return;

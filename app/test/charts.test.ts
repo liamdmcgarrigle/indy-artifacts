@@ -530,7 +530,7 @@ describe("heatmap, box plot, funnel and sankey", () => {
     const five = chart("type: box", "horizontal: true", "x: service", "data: [{ service: api, min: 20, q1: 40, median: 55, q3: 80, max: 190 }]");
     expect(five).toMatchObject({ stats: true, horizontal: true, y: ["min", "q1", "median", "q3", "max"] });
     const cfg = chartConfig(five, theme);
-    expect(cfg.data.datasets[0].data).toEqual([{ min: 20, q1: 40, median: 55, q3: 80, max: 190 }]);
+    expect(cfg.data.datasets[0].data).toEqual([{ min: 20, q1: 40, median: 55, q3: 80, max: 190, whiskerMin: 20, whiskerMax: 190 }]);
     expect(cfg.options.indexAxis).toBe("y");
   });
 
@@ -617,5 +617,13 @@ describe("edge cases from review", () => {
   it("writes CSV cells a spreadsheet will not run as formulas", () => {
     const csv = chartCsv({ type: "bar", x: "name", y: ["n"], data: [{ name: "=HYPERLINK(1)", n: -3 }, { name: "a\rb", n: 1 }] } as unknown as Parameters<typeof chartCsv>[0]);
     expect(csv).toBe(`name,n\n'=HYPERLINK(1),-3\n"a\rb",1\n`);
+  });
+});
+
+describe("box plots from the five numbers", () => {
+  it("draw the whiskers at the given min and max, not capped at 1.5 IQR", () => {
+    const spec = chart("type: box", "x: region", "data:", "  - { region: West, min: 2, q1: 3, median: 4, q3: 5, max: 9 }");
+    const [box] = chartConfig(spec, theme).data.datasets[0].data as { whiskerMin: number; whiskerMax: number }[];
+    expect(box).toMatchObject({ whiskerMin: 2, whiskerMax: 9 });
   });
 });
