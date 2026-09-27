@@ -33,16 +33,6 @@ artifact_publish
 Pass `project` and `branch` whenever you are in a repository. The library groups pages by
 project and filters by branch, so a page without them is harder to find.
 
-## A theme that matches the project
-
-Pages take their look from their project's theme. The first time you publish for a
-project, check `artifact_themes`. If the project has no theme and has a look of its own
-(brand colours, a Tailwind config, CSS variables, a design-token file, fonts), read those
-and call `artifact_theme_set` with the closest values and `projects: ["<project>"]`, then
-tell the operator in one line that you did, and that they can adjust it in Settings >
-Themes. If the project has no visual identity, leave it on the default. Don't set a theme
-on individual pages, and don't change a theme the operator already set up unless they ask.
-
 Markdown covers nearly everything: cards, number tiles, callouts, tabs, columns, charts,
 tables, mermaid diagrams and form questions are all short directives and fences. Use `react`
 or `svelte` only when the page needs real interaction, and `html` when you already have a
@@ -57,6 +47,16 @@ Then tell the operator:
 
 - the URL, in full, on its own line;
 - in one line, what is on the page, so they know whether to look now.
+
+## A theme that matches the project
+
+Pages take their look from their project's theme. The first time you publish for a
+project, check `artifact_themes`. If the project has no theme and has a look of its own
+(brand colours, a Tailwind config, CSS variables, a design-token file, fonts), read those
+and call `artifact_theme_set` with the closest values and `projects: ["<project>"]`, then
+tell the operator in one line that you did, and that they can adjust it in Settings >
+Themes. If the project has no visual identity, leave it on the default. Don't set a theme
+on individual pages, and don't change a theme the operator already set up unless they ask.
 
 ## Images and other files
 
