@@ -151,6 +151,11 @@ function fanOut<T extends { top: number; left: number }>(pins: T[]): T[] {
   return placed;
 }
 
+/** autoFocus without the scroll: the box is placed where the reader already is. */
+function focusInPlace(el: HTMLElement | null): void {
+  el?.focus({ preventScroll: true });
+}
+
 const NAME_KEY = "art-author-name";
 const POP_W = 312;
 const POP_GAP = 16;
@@ -1370,8 +1375,10 @@ export function ArtifactView(props: ArtifactViewProps) {
               </div>
             ) : null}
 
-            {draft ? (
-              <div className="pop" style={{ top: draftSpot?.popTop ?? 8, left: draftSpot?.popLeft ?? 8 }}>
+            {/* Not until the spot is measured: at the top of the page, focusing
+                the box would scroll the reader there. */}
+            {draft && draftSpot ? (
+              <div className="pop" style={{ top: draftSpot.popTop, left: draftSpot.popLeft }}>
                 <div className="composer">
                   <div className="pop__bar">
                     <span className="pop__quote" title={describeAnchor(draft.anchor)}>
@@ -1382,7 +1389,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                     </button>
                   </div>
                   <textarea
-                    autoFocus
+                    ref={focusInPlace}
                     value={draft.body}
                     placeholder="What should change?"
                     onChange={(e) => setDraft({ ...draft, body: e.target.value })}

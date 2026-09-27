@@ -110,6 +110,12 @@
   margin-top: 0;
 }
 
+/* A chart, table or embed straight under a heading sits where a paragraph
+   would, instead of a block's full margin away from the words that name it. */
+.art-content :is(h1, h2, h3) + pre > :is(art-chart, art-table, art-embed):first-child {
+  margin-top: 0;
+}
+
 /* Text -------------------------------------------------------------------- */
 
 .art-content p {
@@ -630,7 +636,9 @@ art-details {
   font-weight: 600;
   color: var(--art-text);
   cursor: pointer;
-  list-style-position: outside;
+  /* Inside, so the marker sits within the box's padding, lined up with the
+     body's text, rather than hanging off the summary onto the border. */
+  list-style-position: inside;
 }
 
 .art-details__summary::marker {

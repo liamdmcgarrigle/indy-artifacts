@@ -128,6 +128,14 @@ describe("embed documents", () => {
     expect(html).toContain("window.evil=1");
   });
 
+  it("insets a raw html block from the frame's edge, and only an html block", async () => {
+    const { FRAGMENT_STYLE } = await import("@/lib/embed/document");
+    const html = await (await get("embed-md", 1, "e1")).text();
+    expect(html).toContain(FRAGMENT_STYLE);
+    const diagram = await (await get("embed-md", 1, "e0")).text();
+    expect(diagram).not.toContain(FRAGMENT_STYLE);
+  });
+
   it("keeps a whole-page html artifact but adds the theme and bridge", async () => {
     const html = await (await get("embed-html", 1, "page")).text();
     expect(html).toContain("<h1>Page</h1>");

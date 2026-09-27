@@ -199,9 +199,19 @@ export function mermaidDocument(source: string, options: EmbedOptions): string {
   );
 }
 
+/* An html block sits in a bordered box on the page, so its content is inset
+   from the edge the way a card's or a details block's is. The first and last
+   child shed their outer margins so the inset is the same on every side. */
+export const FRAGMENT_STYLE = `
+<style>
+  #root { padding: var(--art-space-3, 12px) var(--art-space-4, 16px); }
+  #root > :first-child { margin-top: 0; }
+  #root > :last-child { margin-bottom: 0; }
+</style>`;
+
 /** A raw HTML fragment from a ```html fence. */
 export function htmlFragmentDocument(fragment: string, options: EmbedOptions): string {
-  return shell(options, `<div id="root">${fragment}</div>`, "");
+  return shell(options, `<div id="root">${fragment}</div>`, "", FRAGMENT_STYLE);
 }
 
 /** A whole-page html artifact: the agent's own document, with our CSP and bridge added. */
