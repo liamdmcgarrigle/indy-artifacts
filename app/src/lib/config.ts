@@ -52,8 +52,6 @@ export interface Config {
   emailFrom: string;
   /** Loopback address of the document server, for the app's own calls to it. */
   collabUrl: string;
-  /** Where the theme CSS files are. */
-  themesDir: string;
   /** Extra node_modules directories a compiled artifact may import from. */
   buildModules: string[];
   /** Indy's shadcn components (components/ui, lib/utils), which artifacts import as "@/...". */
@@ -103,7 +101,6 @@ export function readConfig(): Config {
     // which is exactly the owner's second step; a real domain widens that.
     emailFrom: env("INDY_EMAIL_FROM") ?? "Indy <onboarding@resend.dev>",
     collabUrl: env("INDY_COLLAB_URL", "ARTIFACTS_COLLAB_URL") ?? `http://127.0.0.1:${env("COLLAB_PORT") ?? "5175"}`,
-    themesDir: env("INDY_THEMES", "ARTIFACTS_THEMES") ?? resolve(process.cwd(), "..", "themes"),
     buildModules: (env("INDY_BUILD_MODULES", "ARTIFACTS_BUILD_MODULES") ?? "")
       .split(":")
       .map((p) => p.trim())

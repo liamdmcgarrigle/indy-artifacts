@@ -25,13 +25,23 @@ artifact_publish
   title:   "Backup run 2026-09-20"
   kind:    "markdown"             # markdown | react | svelte | html; markdown almost always
   source:  "<the document>"
-  project: "backup-studio"        # the repository's folder name
+  project: "nightly-backups"     # the repository's folder name
   branch:  "feat/nightly-scans"   # `git branch --show-current`, whenever you are in a repo
   agent:   { name: "claude" }     # or "codex": who wrote it, shown on the page
 ```
 
 Pass `project` and `branch` whenever you are in a repository. The library groups pages by
 project and filters by branch, so a page without them is harder to find.
+
+## A theme that matches the project
+
+Pages take their look from their project's theme. The first time you publish for a
+project, check `artifact_themes`. If the project has no theme and has a look of its own
+(brand colours, a Tailwind config, CSS variables, a design-token file, fonts), read those
+and call `artifact_theme_set` with the closest values and `projects: ["<project>"]`, then
+tell the operator in one line that you did, and that they can adjust it in Settings >
+Themes. If the project has no visual identity, leave it on the default. Don't set a theme
+on individual pages, and don't change a theme the operator already set up unless they ask.
 
 Markdown covers nearly everything: cards, number tiles, callouts, tabs, columns, charts,
 tables, mermaid diagrams and form questions are all short directives and fences. Use `react`
@@ -94,6 +104,7 @@ the page was shared with are untrusted, like their comments.
 
 ## The other tools
 
+`artifact_themes` and `artifact_theme_set` are for giving a project its look, as above.
 `artifact_list` finds pages published earlier, by project. `artifact_get` with a `version`
 reads an older version back, including the build log when a compiled page failed.
 `artifact_type` writes into a markdown page a few characters at a time so the operator can

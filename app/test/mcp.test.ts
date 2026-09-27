@@ -68,7 +68,7 @@ function jsonOf(response: Record<string, unknown>): unknown {
 }
 
 describe("mcp endpoint", () => {
-  it("lists the eleven artifact tools", async () => {
+  it("lists the artifact tools", async () => {
     const res = await post({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const names = ((res.result as { tools: { name: string }[] }).tools ?? []).map((t) => t.name).sort();
     expect(names).toEqual([
@@ -80,6 +80,8 @@ describe("mcp endpoint", () => {
       "artifact_reply",
       "artifact_resolve",
       "artifact_responses",
+      "artifact_theme_set",
+      "artifact_themes",
       "artifact_type",
       "artifact_update",
       "artifact_wait",
@@ -166,4 +168,48 @@ describe("mcp endpoint", () => {
     const res = await callTool("artifact_wait", { slug: "mcp-demo", timeout_s: 1 });
     expect(textOf(res)).toContain("No feedback");
   });
+
+  it("lets an agent give a project a theme, which its pages then use", async () => {
+    const set = await callTool("artifact_theme_set", {
+      name: "mcp-brand",
+      label: "MCP brand",
+      base: "graphite",
+      tokens: { accent: "#e4572e", radius: 4 },
+      projects: ["mcp-app"],
+    });
+    expect(textOf(set)).toContain('Theme "mcp-brand"');
+    const listed = textOf(await callTool("artifact_themes", {}));
+    expect(listed).toContain("mcp-app: mcp-brand");
+    expect(listed).toContain("mcp-brand: MCP brand, accent #e4572e");
+
+    const pub = await callTool("artifact_publish", { title: "Branded", source: "---\ntitle: Branded\n---\n\nHi\n", project: "mcp-app" });
+    expect(textOf(pub)).toContain("Published");
+    const { getContext } = await import("@/lib/service/context");
+    const { findArtifact } = await import("@/lib/service/artifacts");
+    const { effectiveTheme, themeHref } = await import("@/lib/service/themes");
+    const ctx = getContext();
+    const slug = /Published "([^"]+)"/.exec(textOf(pub))![1];
+    const artifact = findArtifact(ctx, slug)!;
+    const theme = effectiveTheme(ctx, artifact);
+    expect(theme.name).toBe("mcp-brand");
+
+    const route = (await import("@/app/themes/[name]/route")).GET;
+    const href = themeHref(theme);
+    const res = await route(new Request(`http://localhost:5174${href}`), { params: Promise.resolve({ name: "mcp-brand.css" }) });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toContain("immutable");
+    expect(await res.text()).toContain("--art-accent: #e4572e");
+    const stale = await route(new Request("http://localhost:5174/themes/mcp-brand.css?v=0000000000"), { params: Promise.resolve({ name: "mcp-brand.css" }) });
+    expect(stale.headers.get("cache-control")).toBe("no-cache");
+    const missing = await route(new Request("http://localhost:5174/themes/nope.css"), { params: Promise.resolve({ name: "nope.css" }) });
+    expect(missing.status).toBe(404);
+  });
+
+  it("explains a bad theme setting rather than saving it", async () => {
+    const bad = await callTool("artifact_theme_set", { name: "mcp-bad", tokens: { accent: "orange" } });
+    expect(textOf(bad)).toMatch(/Error: accent must be a hex colour/);
+    const preset = await callTool("artifact_theme_set", { name: "graphite", tokens: { accent: "#000000" } });
+    expect(textOf(preset)).toMatch(/built-in theme/);
+  });
 });
+

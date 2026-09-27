@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { getContext } from "@/lib/service/context";
+import { effectiveTheme, themeHref } from "@/lib/service/themes";
 
 export default function NotFound() {
   return (
     <>
-      <link rel="stylesheet" href="/themes/default.css" />
+      <link rel="stylesheet" href={themeHref(effectiveTheme(getContext(), {}))} />
       <main className="index">
         <h1>Not here</h1>
         <p className="index__lede">That artifact, version or block does not exist.</p>

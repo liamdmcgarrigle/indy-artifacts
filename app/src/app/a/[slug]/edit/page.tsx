@@ -1,3 +1,4 @@
+import { effectiveTheme, themeHref } from "@/lib/service/themes";
 import { pageOwner } from "@/lib/auth/page";
 import { notFound, redirect } from "next/navigation";
 import { Editor } from "@/components/Editor";
@@ -21,7 +22,7 @@ export default async function EditPage({ params }: { params: Promise<{ slug: str
       <Editor
         slug={artifact.slug}
         title={artifact.title}
-        theme={artifact.theme}
+        themeHref={themeHref(effectiveTheme(ctx, artifact))}
         kind={artifact.kind}
         version={version.number}
         source={version.source}

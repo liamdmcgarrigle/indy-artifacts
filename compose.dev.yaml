@@ -30,7 +30,6 @@ services:
       INDY_DEV_ORIGINS: ${INDY_DEV_ORIGINS:-}
       INDY_DATA: /work/data
       INDY_TMP: /work/data/tmp
-      INDY_THEMES: /work/themes
       NEXT_TELEMETRY_DISABLED: "1"
     volumes:
       - .:/work

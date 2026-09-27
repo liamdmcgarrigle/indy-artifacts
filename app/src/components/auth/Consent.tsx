@@ -22,8 +22,8 @@ export function Consent({ clientName, destination, params }: { clientName: strin
       <div className="flex flex-col gap-2">
         <h1 className="m-0 text-xl font-semibold tracking-[-0.01em]">Connect {clientName}?</h1>
         <p className="m-0 text-sm leading-relaxed text-fg-3">
-          It will be able to publish and update pages, read them, and read and answer your comments, as you. It can&rsquo;t
-          change your account, your settings or who a page is shared with.
+          It will be able to publish and update pages, set their themes, read them, and read and answer your comments, as
+          you. It can&rsquo;t change your account, your other settings or who a page is shared with.
         </p>
       </div>
       <div className="flex flex-col gap-1.5">

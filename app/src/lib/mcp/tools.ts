@@ -1,3 +1,6 @@
+import { listProjects, listThemes, requireTheme, saveTheme, setProjectTheme, themeExists } from "../service/themes";
+import { getSettings } from "../service/settings";
+import { COLOR_KEYS, FONTS, TOKEN_HELP } from "../themes/tokens";
 import { config } from "../config";
 import { internalKey } from "../auth/access";
 import { z } from "zod";
@@ -59,7 +62,11 @@ export const PUBLISH_SHAPE = {
   title: z.string().max(LIMITS.titleChars).optional().describe("required unless markdown frontmatter sets it"),
   kind: z.enum(KINDS as [Kind, ...Kind[]]).optional().describe("markdown (default), react, svelte or html"),
   slug: z.string().optional().describe("optional stable url segment; derived from the title when omitted"),
-  theme: z.enum(["default", "picaflick", "backup-studio"]).optional(),
+  theme: z
+    .string()
+    .max(40)
+    .optional()
+    .describe("a theme name from artifact_themes; usually leave it out so the page follows its project's theme"),
   project: z.string().max(80).optional().describe("the repository or product this is about, usually the git repo's folder name"),
   series: z.string().max(80).optional().describe("for recurring pages (nightly runs, weekly reports): the same name each time groups them"),
   branch: z.string().max(120).optional().describe("the git branch you are working on (git branch --show-current); pass it whenever you are in a repository"),
@@ -446,6 +453,81 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
             after = lastId;
             await sleep(1000);
           }
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifact_themes",
+      config: {
+        title: "List themes",
+        description:
+          "Indy: the themes pages can use, each with its settings, which project uses which, and the default. A page follows its project's theme unless it names one, so set a project's theme once (artifact_theme_set) rather than on every page.",
+        inputSchema: z.object({}),
+      },
+      run: async () => {
+        try {
+          const themes = listThemes(ctx);
+          const projects = listProjects(ctx);
+          const defaultTheme = getSettings(ctx).defaultTheme;
+          const lines = [
+            `Default theme: ${defaultTheme}`,
+            "Themes:",
+            ...themes.map((t) => `  ${t.name}${t.preset ? " (built in)" : ""}: ${t.label}, accent ${t.tokens.accent}, ${FONTS[t.tokens.fontSans]?.label ?? t.tokens.fontSans}`),
+            "Projects:",
+            ...(projects.length ? projects.map((p) => `  ${p.name}: ${p.theme ?? `(none, so ${defaultTheme})`}, ${p.pages} pages`) : ["  (none yet)"]),
+            `Settings a theme takes: ${Object.entries(TOKEN_HELP).map(([k, v]) => `${k} (${v})`).join("; ")}.`,
+            `Fonts: ${Object.keys(FONTS).join(", ")}.`,
+          ];
+          return ok(lines.join("\n"), { defaultTheme, themes, projects, fonts: Object.keys(FONTS) });
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifact_theme_set",
+      config: {
+        title: "Create or change a theme",
+        description:
+          "Indy: create or change a theme, and optionally make it a project's theme so every page in that project uses it. To match a project, read its design tokens (Tailwind config, CSS variables, brand colours, fonts) and pass the closest values; anything left out comes from `base`. Colours are hex. The dark scheme is derived from the light colours unless `dark` sets them. Built-in themes cannot be changed; save a copy under a new name with base set to them. Passing only `name` and `projects` assigns an existing theme.",
+        inputSchema: z.object({
+          name: z.string().describe("lowercase letters, digits and dashes, usually the project's name"),
+          label: z.string().max(60).optional().describe("the name shown in Settings"),
+          base: z.string().optional().describe("a theme to start from when creating one: paper, graphite or indy, or one of yours; refused for a theme that exists"),
+          tokens: z
+            .record(z.string(), z.union([z.string(), z.number()]))
+            .optional()
+            .describe(`any of: ${Object.keys(TOKEN_HELP).join(", ")}`),
+          dark: z
+            .record(z.string(), z.union([z.string(), z.null()]))
+            .optional()
+            .describe(`dark-scheme colours, where the derived ones are not right: ${COLOR_KEYS.join(", ")}; null removes one`),
+          projects: z.array(z.string()).max(20).optional().describe("projects to use this theme from now on"),
+        }),
+      },
+      run: async (args) => {
+        try {
+          const name = String(args.name ?? "").trim();
+          const projects = (args.projects as string[] | undefined) ?? [];
+          const changing = args.tokens !== undefined || args.dark !== undefined || args.label !== undefined || args.base !== undefined;
+          const theme =
+            changing || !themeExists(ctx, name)
+              ? saveTheme(ctx, {
+                  name,
+                  label: args.label as string | undefined,
+                  base: args.base as string | undefined,
+                  tokens: args.tokens as Record<string, unknown> | undefined,
+                  dark: args.dark as Record<string, unknown> | undefined,
+                })
+              : requireTheme(ctx, name);
+          for (const project of projects) setProjectTheme(ctx, project, theme.name);
+          const where = projects.length ? ` Projects now using it: ${projects.join(", ")}.` : "";
+          return ok(
+            `Theme "${theme.name}" (${theme.label}) saved.${where} Pages pick it up on their next load. The owner can fine-tune it in Settings > Themes.`,
+            { theme, projects },
+          );
         } catch (err) {
           return fail(err);
         }

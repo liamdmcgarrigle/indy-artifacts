@@ -70,5 +70,3 @@ export interface PipelineContext {
 }
 
 export const CHART_TYPES = ["bar", "line", "area", "pie", "doughnut", "scatter"] as const;
-export const THEMES = ["default", "picaflick", "backup-studio"] as const;
-export const DEFAULT_THEME = "default";

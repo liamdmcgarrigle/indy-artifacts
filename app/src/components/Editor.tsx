@@ -8,7 +8,7 @@ import { SchemeToggle } from "./SchemeToggle";
 export interface EditorProps {
   slug: string;
   title: string;
-  theme: string;
+  themeHref: string;
   kind: string;
   version: number;
   source: string | null;
@@ -239,7 +239,7 @@ export function Editor(props: EditorProps) {
 
   return (
     <>
-      <link rel="stylesheet" href={`/themes/${props.theme}.css`} />
+      <link rel="stylesheet" href={props.themeHref} />
       <header className="top">
         <Link className="top__home" href="/" onClick={(e) => !confirmLeave(dirty) && e.preventDefault()}>
           <span className="top__dot" /> Indy

@@ -61,10 +61,10 @@ describe("publish", () => {
 
   it("takes theme, project and tags from frontmatter", async () => {
     const res = await publishArtifact(ctx, {
-      source: `---\ntitle: T\ntheme: picaflick\nproject: picaflick\ntags: [a, b]\n---\n\nbody\n`,
+      source: `---\ntitle: T\ntheme: graphite\nproject: picaflick\ntags: [a, b]\n---\n\nbody\n`,
     });
     const a = requireArtifact(ctx, res.slug);
-    expect(a.theme).toBe("picaflick");
+    expect(a.theme).toBe("graphite");
     expect(a.project).toBe("picaflick");
     expect(a.tags).toEqual(["a", "b"]);
   });

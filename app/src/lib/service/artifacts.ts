@@ -4,7 +4,8 @@ import { customAlphabet } from "nanoid";
 import { createTwoFilesPatch } from "diff";
 import { bind, withTx } from "../db/index";
 import { readFrontmatter, normalizeFrontmatter, renderMarkdown } from "../pipeline/index";
-import { DEFAULT_THEME, THEMES } from "../pipeline/types";
+import { checkThemeName, themeExists } from "./themes";
+import { LEGACY_THEMES } from "../themes/tokens";
 import { buildArtifact } from "../build/index";
 import { artifactUrl, assetDir, buildDir, type ServiceContext } from "./context";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
@@ -247,7 +248,14 @@ interface Meta {
   tags: string[];
 }
 
-function resolveMeta(kind: Kind, input: PublishInput, source: string | null, existing?: Artifact): Meta {
+function resolveMeta(
+  ctx: ServiceContext,
+  kind: Kind,
+  input: PublishInput,
+  source: string | null,
+  existing?: Artifact,
+  previousSource?: string | null,
+): Meta {
   const fm = kind === "markdown" && source ? readFrontmatter(source) : null;
   const fmTitle = fm && typeof fm.title === "string" && fm.title.trim() ? fm.title.trim() : undefined;
 
@@ -256,9 +264,21 @@ function resolveMeta(kind: Kind, input: PublishInput, source: string | null, exi
     throw new ValidationError('"title" is required (in frontmatter for markdown, or as a "title" argument)');
   if (title.length > LIMITS.titleChars) throw new ValidationError(`title is over ${LIMITS.titleChars} characters`);
 
-  const themeRaw =
-    (fm && typeof fm.theme === "string" ? fm.theme : undefined) ?? input.theme ?? existing?.theme ?? DEFAULT_THEME;
-  const theme = (THEMES as readonly string[]).includes(themeRaw) ? themeRaw : DEFAULT_THEME;
+  // A theme passed in is checked, and a wrong name says which ones exist.
+  // Frontmatter counts only where it changed from the previous version: pages
+  // from an older Indy carry "theme: default", which would otherwise pin them
+  // on every edit, and taking the line out takes the theme away. An unknown or
+  // old name there means no theme of its own; so does a theme since deleted.
+  const themeIn = (f: Record<string, unknown> | null) => (f && typeof f.theme === "string" ? f.theme.trim() : "");
+  const fmTheme = themeIn(fm);
+  const prevFmTheme = previousSource && kind === "markdown" ? themeIn(readFrontmatter(previousSource)) : "";
+  const usable = (name: string) => (name && !LEGACY_THEMES.includes(name) && themeExists(ctx, name) ? name : "");
+  const theme =
+    input.theme !== undefined
+      ? checkThemeName(ctx, input.theme)
+      : kind === "markdown" && (!existing || fmTheme !== prevFmTheme)
+        ? usable(fmTheme)
+        : usable(existing?.theme ?? "");
 
   const fmProject = fm && typeof fm.project === "string" ? fm.project.trim() : undefined;
   const fmSeries = fm && typeof fm.series === "string" ? fm.series.trim() : undefined;
@@ -436,7 +456,7 @@ export async function publishArtifact(ctx: ServiceContext, input: PublishInput):
   const kind = (input.kind ?? "markdown") as Kind;
   if (!KINDS.includes(kind)) throw new ValidationError(`kind must be one of ${KINDS.join(", ")}`);
   const content = validateContent(kind, input);
-  const meta = resolveMeta(kind, input, content.source);
+  const meta = resolveMeta(ctx, kind, input, content.source);
   const slug = uniqueSlug(ctx, input.slug, meta.title);
 
   const stamp = now();
@@ -513,7 +533,7 @@ async function updateNow(ctx: ServiceContext, slug: string, input: UpdateInput):
 
   const previous = requireVersion(ctx, artifact);
   const content = validateContent(artifact.kind, input, previous);
-  const meta = resolveMeta(artifact.kind, input, content.source, artifact);
+  const meta = resolveMeta(ctx, artifact.kind, input, content.source, artifact, previous.source);
   return writeVersion(
     ctx,
     artifact,
@@ -549,7 +569,7 @@ async function humanVersionNow(ctx: ServiceContext, slug: string, input: HumanEd
     );
   const previous = requireVersion(ctx, artifact);
   const content = validateContent(artifact.kind, input, previous);
-  const meta = resolveMeta(artifact.kind, { title: artifact.title }, content.source, artifact);
+  const meta = resolveMeta(ctx, artifact.kind, { title: artifact.title }, content.source, artifact, previous.source);
   return writeVersion(
     ctx,
     artifact,

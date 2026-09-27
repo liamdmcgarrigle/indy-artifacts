@@ -30,6 +30,7 @@ export async function PATCH(request: Request) {
       compressImages: input.compress_images,
       imageMaxEdge: input.image_max_edge,
       imageQuality: input.image_quality,
+      defaultTheme: input.default_theme,
     });
     return json(await state());
   } catch (err) {

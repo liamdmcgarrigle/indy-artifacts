@@ -44,7 +44,8 @@ export function escapeHtml(value: string): string {
 }
 
 export interface EmbedOptions {
-  theme: string;
+  /** The page theme's stylesheet, versioned: themeHref() in lib/service/themes. */
+  themeHref: string;
   scheme: "light" | "dark";
   title: string;
 }
@@ -55,7 +56,7 @@ function head(options: EmbedOptions, extra = ""): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="darkreader-lock">
 <title>${escapeHtml(options.title)}</title>
-<link rel="stylesheet" href="/themes/${encodeURIComponent(options.theme)}.css">
+<link rel="stylesheet" href="${escapeHtml(options.themeHref)}">
 <link rel="stylesheet" href="/primitives/primitives.css">
 <style>
   html, body { margin: 0; padding: 0; background: transparent; }

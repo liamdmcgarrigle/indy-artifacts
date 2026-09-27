@@ -34,7 +34,7 @@ async function photo(width: number, height: number): Promise<Buffer> {
 describe("settings", () => {
   it("has sensible defaults and keeps what is saved", () => {
     expect(getSettings(ctx)).toEqual(DEFAULT_SETTINGS);
-    expect(DEFAULT_SETTINGS).toEqual({ storageLimitMb: 5120, compressImages: true, imageMaxEdge: 2560, imageQuality: 80 });
+    expect(DEFAULT_SETTINGS).toEqual({ storageLimitMb: 5120, compressImages: true, imageMaxEdge: 2560, imageQuality: 80, defaultTheme: "paper" });
     updateSettings(ctx, { storageLimitMb: 0, imageQuality: 60 });
     expect(getSettings(ctx)).toMatchObject({ storageLimitMb: 0, imageQuality: 60, compressImages: true });
   });

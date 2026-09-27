@@ -1,5 +1,6 @@
 import type { ServiceContext } from "./context";
 import { ValidationError } from "./errors";
+import { requireTheme } from "./themes";
 
 /**
  * The owner's settings that live in the database rather than the environment:
@@ -14,6 +15,8 @@ export interface AppSettings {
   imageMaxEdge: number;
   /** Encoder quality for JPEG and WebP, and the palette budget for PNG, 1 to 100. */
   imageQuality: number;
+  /** The theme a page gets when neither it nor its project names one. */
+  defaultTheme: string;
 }
 
 /**
@@ -26,6 +29,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   compressImages: true,
   imageMaxEdge: 2560,
   imageQuality: 80,
+  defaultTheme: "paper",
 };
 
 const KEY = "app_settings";
@@ -34,7 +38,10 @@ export function getSettings(ctx: ServiceContext): AppSettings {
   const row = ctx.db.prepare("SELECT value FROM settings WHERE key = ?").get(KEY) as { value?: string } | undefined;
   if (!row?.value) return { ...DEFAULT_SETTINGS };
   try {
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(row.value) as Partial<AppSettings>) };
+    const saved = { ...DEFAULT_SETTINGS, ...(JSON.parse(row.value) as Partial<AppSettings>) };
+    // "default" was the Paper preset's name before it was renamed.
+    if (saved.defaultTheme === "default") saved.defaultTheme = DEFAULT_SETTINGS.defaultTheme;
+    return saved;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -59,6 +66,7 @@ export function updateSettings(ctx: ServiceContext, patch: Partial<Record<keyof 
   }
   if (patch.imageMaxEdge !== undefined) next.imageMaxEdge = whole(patch.imageMaxEdge, "the largest image side", 320, 8192);
   if (patch.imageQuality !== undefined) next.imageQuality = whole(patch.imageQuality, "image quality", 30, 100);
+  if (patch.defaultTheme !== undefined) next.defaultTheme = requireTheme(ctx, String(patch.defaultTheme)).name;
   ctx.db
     .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     .run(KEY, JSON.stringify(next));
