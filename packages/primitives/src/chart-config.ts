@@ -84,6 +84,18 @@ export function trendLine(points: { x: number; y: number }[]): { x: number; y: n
   ];
 }
 
+/** Equal ranges with round edges (5, 10, 25, 50...) covering lo to hi, about `wanted` of them. */
+export function niceBins(lo: number, hi: number, wanted: number): { lo: number; width: number; n: number } {
+  if (hi <= lo) return { lo: Math.floor(lo), width: 1, n: 1 };
+  const raw = (hi - lo) / wanted;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const width = [1, 2, 2.5, 5, 10].map((m) => m * power).find((w) => w >= raw) ?? 10 * power;
+  const start = Math.floor(lo / width) * width;
+  // The top value goes in the last range rather than opening one past it.
+  const n = Math.max(1, Math.ceil((hi - start) / width));
+  return { lo: start, width, n };
+}
+
 /** Largest radius a bubble gets, in pixels. Area, not radius, follows the value. */
 const BUBBLE_MAX = 22;
 
@@ -157,6 +169,44 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
     return finish(plugins);
   }
 
+  if (spec.type === "radar") {
+    // One ring per y key, spokes for the x values.
+    const style = styleOf("left");
+    datasets = spec.y.map((key, i) => {
+      const color = colorOf(key, i);
+      return {
+        label: key,
+        data: spec.data.map((row) => toValue(row[key])),
+        borderColor: color,
+        backgroundColor: translucent(color, 0.18),
+        borderWidth: 2,
+        borderDash: spec.series?.[key]?.dash ? [6, 4] : undefined,
+        pointRadius: 2.5,
+        pointHoverRadius: 4,
+        pointBackgroundColor: color,
+        hidden: spec.series?.[key]?.hidden === true ? true : undefined,
+        fill: true,
+      };
+    });
+    const axis = spec.axes?.left ?? {};
+    const r: Record<string, unknown> = {
+      beginAtZero: true,
+      angleLines: { color: border },
+      grid: { color: border },
+      pointLabels: { color: muted, font: { family: font, size: 11.5, weight: 500 } },
+      ticks: { color: muted, backdropColor: "transparent", font: { family: font, size: 10 }, maxTicksLimit: 5, callback: (v: unknown) => formatNumber(Number(v), style) },
+    };
+    if (axis.min !== undefined) r.min = axis.min;
+    if (axis.max !== undefined) r.max = axis.max;
+    valueText = (di, i) => {
+      const v = (datasets[di].data as (number | null)[])[i];
+      return v === null ? null : formatNumber(v, style);
+    };
+    tooltipLabel = (item) => `${item.dataset.label}: ${formatNumber(item.raw, style)}`;
+    const extra: Any[] = spec.labels ? [valueLabelsPlugin({ theme, horizontal: false, stacked: false, round: false, text: valueText })] : [];
+    return finish(extra, { r });
+  }
+
   if (isScatter) {
     // One set per group (or per y key), each point carrying what its tooltip says.
     const groups: { name: string; key: string; rows: Record<string, unknown>[] }[] = [];
@@ -225,6 +275,95 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
       const bits = [`${spec.x} ${formatNumber(p.x, xStyle)}`, `${yName} ${formatNumber(p.y, yStyle)}`];
       if (isBubble) bits.push(`${spec.size} ${formatNumber(p.size, {})}`);
       return `${spec.group ? `${item.dataset.label}: ` : ""}${bits.join(", ")}`;
+    };
+  } else if (spec.type === "histogram") {
+    // Values counted into equal ranges; the bars touch because the ranges do.
+    const values = spec.data.map((row) => toNumber(row[spec.x]));
+    const wanted = spec.bins ?? Math.min(20, Math.max(5, Math.ceil(Math.log2(values.length)) + 1));
+    const { lo, width, n } = niceBins(Math.min(...values), Math.max(...values), wanted);
+    const counts = Array.from({ length: n }, () => 0);
+    for (const v of values) counts[Math.min(n - 1, Math.floor((v - lo) / width))]++;
+    const xStyle: NumberStyle = { ...styleOf("left"), ...(spec.axes?.x ?? {}) };
+    const edges = counts.map((_, i) => [lo + i * width, lo + (i + 1) * width]);
+    labels = edges.map(([a, b]) => `${formatNumber(a, { ...xStyle, unit: undefined })}–${formatNumber(b, xStyle)}`);
+    const color = palette[0];
+    datasets = [
+      {
+        label: "count",
+        data: counts,
+        backgroundColor: color,
+        hoverBackgroundColor: color,
+        borderWidth: 0,
+        borderRadius: 2,
+        categoryPercentage: 1,
+        barPercentage: 0.96,
+      },
+    ];
+    valueText = (_di, i) => (counts[i] ? String(counts[i]) : null);
+    tooltipLabel = (item) => `${item.raw} ${item.raw === 1 ? "value" : "values"}`;
+  } else if (spec.type === "waterfall") {
+    // Each step floats from the running total before it to the one after; totals stand on zero.
+    const key = spec.y[0];
+    const style = styleOf("left");
+    let running = 0;
+    const steps = spec.data.map((row) => {
+      if (row.total === true) {
+        // A total with a value sets the running total there; without one it shows it.
+        const set = toValue(row[key]);
+        if (set !== null) running = set;
+        return { from: 0, to: running, delta: running, total: true };
+      }
+      const delta = toNumber(row[key]);
+      const from = running;
+      running += delta;
+      return { from, to: running, delta, total: false };
+    });
+    const colors = steps.map((st) => (st.total ? palette[0] : st.delta >= 0 ? (theme.tones.good ?? palette[1]) : (theme.tones.bad ?? palette[3])));
+    datasets = [
+      {
+        label: key,
+        data: steps.map((st) => [st.from, st.to]),
+        backgroundColor: colors,
+        hoverBackgroundColor: colors,
+        borderWidth: 0,
+        borderRadius: 4,
+        borderSkipped: false,
+        maxBarThickness: 52,
+        categoryPercentage: 0.74,
+        barPercentage: 0.86,
+      },
+    ];
+    const signed = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "") + formatNumber(Math.abs(v), style);
+    valueText = (_di, i) => (steps[i].total ? formatNumber(steps[i].to, style) : signed(steps[i].delta));
+    tooltipLabel = (item) => {
+      const st = steps[item.dataIndex];
+      return st.total ? `Total: ${formatNumber(st.to, style)}` : `${signed(st.delta)}, now ${formatNumber(st.to, style)}`;
+    };
+  } else if (spec.range) {
+    // Each bar spans from its first y key to its second.
+    const [low, high] = spec.y;
+    const style = styleOf("left");
+    const color = colorOf(low, 0);
+    const spans = spec.data.map((row) => [toNumber(row[low]), toNumber(row[high])]);
+    datasets = [
+      {
+        label: `${low} to ${high}`,
+        data: spans,
+        backgroundColor: color,
+        hoverBackgroundColor: color,
+        borderWidth: 0,
+        borderRadius: 4,
+        borderSkipped: false,
+        maxBarThickness: 40,
+        categoryPercentage: 0.74,
+        barPercentage: 0.86,
+        ...(horizontal ? { xAxisID: ids.left } : { yAxisID: ids.left }),
+      },
+    ];
+    valueText = () => null;
+    tooltipLabel = (item) => {
+      const [a, b] = spans[item.dataIndex];
+      return `${formatNumber(a, style)} to ${formatNumber(b, style)}`;
     };
   } else {
     // Bars, lines and areas along categories.
@@ -306,13 +445,15 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
 
   const valueScale = (side: Side) => {
     const axis = spec.axes?.[side];
-    const style = percent && side === "left" ? { format: "percent" as const, decimals: 0 } : styleOf(side);
+    const style: NumberStyle =
+      spec.type === "histogram" ? { decimals: 0 } : percent && side === "left" ? { format: "percent", decimals: 0 } : styleOf(side);
     const values = markValues(side);
     const scale: Record<string, unknown> = {
       type: axis?.log ? "logarithmic" : "linear",
       axis: horizontal ? "x" : "y",
       stacked: stacked && side === "left",
-      beginAtZero: !axis?.log,
+      // A range or a waterfall can start anywhere; everything else is measured from zero.
+      beginAtZero: !axis?.log && !spec.range,
       ticks: { color: muted, font: tickFont, padding: 8, maxTicksLimit: 6, callback: (value: unknown) => formatNumber(Number(value), style) },
       grid: side === "left" ? { color: border, lineWidth: 1, drawTicks: false } : { display: false, drawOnChartArea: false },
       border: { display: false, dash: [3, 4] },
@@ -362,9 +503,9 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
 
   function finish(extra: Any[], scaleConfig?: Record<string, unknown>) {
     const valueLines = (spec.marks ?? []).some((m) => m.kind !== "band");
-    const legendShown = spec.legend !== "none" && (isRound || datasets.filter((d) => !d.artTrend).length > 1);
+    const legendShown = spec.legend !== "none" && spec.type !== "waterfall" && (isRound || datasets.filter((d) => !d.artTrend).length > 1);
     return {
-      type: isBubble ? "bubble" : spec.type === "area" ? "line" : spec.type,
+      type: isBubble ? "bubble" : spec.type === "area" ? "line" : spec.type === "histogram" || spec.type === "waterfall" ? "bar" : spec.type,
       data: { labels: isScatter ? undefined : labels, datasets },
       options: {
         responsive: true,
@@ -422,7 +563,19 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
 
 /** What a screen reader hears for the canvas: the chart's kind and what it plots. */
 export function chartSummary(spec: ChartSpec): string {
-  const kind = spec.horizontal ? "horizontal bar" : spec.type === "scatter" && spec.size ? "bubble" : spec.percent ? "100% stacked bar" : spec.type;
+  const kind = spec.range
+    ? "range bar"
+    : spec.horizontal
+      ? "horizontal bar"
+      : spec.type === "scatter" && spec.size
+        ? "bubble"
+        : spec.percent
+          ? "100% stacked bar"
+          : spec.type;
+  if (spec.type === "histogram") {
+    const head = spec.title ? `${spec.title}. ` : "";
+    return `${head}Histogram of ${spec.x}, ${spec.data.length} values. The values follow as a table.`;
+  }
   const what = spec.y.join(", ");
   const head = spec.title ? `${spec.title}. ` : "";
   return `${head}${kind[0].toUpperCase()}${kind.slice(1)} chart of ${what} by ${spec.x}, ${spec.data.length} ${spec.data.length === 1 ? "point" : "points"}. The data follows as a table.`;

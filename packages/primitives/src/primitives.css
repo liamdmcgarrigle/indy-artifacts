@@ -1354,6 +1354,34 @@ art-columns[aside] > art-col:last-child p {
   color: var(--art-text-faint);
 }
 
+/* The recent values behind a counter, in its tone. */
+.art-kpi__trend {
+  display: block;
+  width: 100%;
+  max-width: 160px;
+  height: 28px;
+  margin-top: 8px;
+  overflow: visible;
+  color: var(--art-chart-1);
+}
+
+.art-kpi__trend polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.art-kpi__trend circle {
+  fill: currentColor;
+}
+
+.art-kpi--good .art-kpi__trend { color: var(--art-good); }
+.art-kpi--warn .art-kpi__trend { color: var(--art-warn); }
+.art-kpi--bad .art-kpi__trend { color: var(--art-bad); }
+.art-kpi--info .art-kpi__trend { color: var(--art-info); }
+
 /* A column aligned right in the markdown (`---:`) holds figures: they line up
    in the mono face. The editor writes the same alignment as a style. */
 .art-content :is(th, td)[align="right"] {

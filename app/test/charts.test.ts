@@ -442,3 +442,63 @@ describe("pie and doughnut", () => {
     expect(fails("type: pie", "center: total", "x: part", "y: n", ...many)).toContain("center applies to doughnut charts");
   });
 });
+
+describe("radar, histogram, waterfall and range bars", () => {
+  it("draws a radar with a ring per series", () => {
+    const cfg = chartConfig(chart("type: radar", "x: skill", "y: [ana, ben]", "data: [{ skill: SQL, ana: 4, ben: 2 }, { skill: Go, ana: 3, ben: 5 }, { skill: UX, ana: 2, ben: 4 }]"), theme);
+    expect(cfg.type).toBe("radar");
+    expect(cfg.data.labels).toEqual(["SQL", "Go", "UX"]);
+    expect(cfg.data.datasets.map((d: { fill: boolean }) => d.fill)).toEqual([true, true]);
+    expect(cfg.options.scales.r.beginAtZero).toBe(true);
+    expect(fails("type: radar", "x: skill", "y: ana", "marks: [{ y: 3 }]", "data: [{ skill: SQL, ana: 4 }]")).toContain("radar charts take no marks");
+  });
+
+  it("counts values into touching ranges, from rows or a plain list", () => {
+    const spec = chart("type: histogram", "bins: 4", "unit: ms", "data: [10, 12, 18, 25, 26, 27, 40]");
+    expect(spec).toMatchObject({ type: "histogram", x: "value", y: [], bins: 4 });
+    const cfg = chartConfig(spec, theme);
+    expect(cfg.type).toBe("bar");
+    // 10 to 40 in about four ranges rounds to 10 wide: 10–20, 20–30 and 30–40, the top value in the last.
+    expect(cfg.data.datasets[0].data).toEqual([3, 3, 1]);
+    expect(cfg.data.labels[0]).toBe("10–20 ms");
+    expect(cfg.data.datasets[0].categoryPercentage).toBe(1);
+    expect(cfg.options.plugins.tooltip.callbacks.label({ raw: 1 })).toBe("1 value");
+    expect(fails("type: histogram", "x: ms", "y: n", "data: [{ ms: 1, n: 2 }]")).toContain("leave out y");
+    expect(fails("type: histogram", "x: ms", "data: [{ ms: fast }]")).toContain("needs numbers in ms");
+    expect(chartSummary(spec)).toBe("Histogram of value, 7 values. The values follow as a table.");
+  });
+
+  it("lets a waterfall start from a total with a value", () => {
+    const cfg = chartConfig(chart("type: waterfall", "x: step", "y: amount", "data: [{ step: June, amount: 100, total: true }, { step: New, amount: 20 }, { step: July, total: true }]"), theme);
+    expect(cfg.data.datasets[0].data).toEqual([[0, 100], [100, 120], [0, 120]]);
+  });
+
+  it("floats waterfall steps from the running total, with totals on zero", () => {
+    const spec = chart("type: waterfall", "x: step", "y: amount", "format: compact", "data: [{ step: Start, amount: 100 }, { step: Price, amount: 30 }, { step: Churn, amount: -45 }, { step: End, total: true }]");
+    const cfg = chartConfig(spec, theme);
+    expect(cfg.data.datasets[0].data).toEqual([[0, 100], [100, 130], [130, 85], [0, 85]]);
+    expect(cfg.data.datasets[0].backgroundColor).toEqual(["#00aa00", "#00aa00", "#aa0000", "#111111"]);
+    const label = cfg.options.plugins.tooltip.callbacks.label;
+    expect(label({ dataIndex: 2 })).toBe("−45, now 85");
+    expect(label({ dataIndex: 3 })).toBe("Total: 85");
+    expect(cfg.options.plugins.legend.display).toBe(false);
+    expect(fails("type: waterfall", "x: step", "y: [a, b]", "data: [{ step: A, a: 1, b: 2 }]")).toContain("takes one y key");
+  });
+
+  it("spans range bars from one key to the other, off zero", () => {
+    const spec = chart("type: barh", "range: true", "x: task", "y: [start, end]", "data: [{ task: Design, start: 1, end: 4 }, { task: Build, start: 3, end: 9 }]");
+    const cfg = chartConfig(spec, theme);
+    expect(cfg.data.datasets[0].data).toEqual([[1, 4], [3, 9]]);
+    expect(cfg.options.scales.x.beginAtZero).toBe(false);
+    expect(cfg.options.plugins.tooltip.callbacks.label({ dataIndex: 1 })).toBe("3 to 9");
+    expect(fails("type: bar", "range: true", "x: task", "y: start", "data: [{ task: A, start: 1 }]")).toContain("takes two y keys");
+  });
+});
+
+describe("counter sparklines", () => {
+  it("reads trend values onto the counter", () => {
+    const r = renderMarkdown(':::kpis\n- Signups: 412 {tone=good trend="3, 5, 4, 8"}\n- Churn: 2% {trend="1,x"}\n:::');
+    expect(r.html).toContain('<art-kpi label="Signups" value="412" tone="good" trend="3,5,4,8">');
+    expect(r.html).toContain('<art-kpi label="Churn" value="2%">');
+  });
+});

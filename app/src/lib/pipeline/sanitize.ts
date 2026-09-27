@@ -30,7 +30,7 @@ export const schema = {
     "*": [...(defaultSchema.attributes?.["*"] ?? []), ...GLOBAL],
     "art-card": [...GLOBAL, "title", "subtitle"],
     "art-callout": [...GLOBAL, "tone", "title"],
-    "art-kpi": [...GLOBAL, "label", "value", "tone", "delta", "note"],
+    "art-kpi": [...GLOBAL, "label", "value", "tone", "delta", "note", "trend"],
     "art-columns": [...GLOBAL, "n", "compact", "aside"],
     "art-timeline": [...GLOBAL, "legend"],
     "art-event": [...GLOBAL, "date", "title", "kind", "source"],

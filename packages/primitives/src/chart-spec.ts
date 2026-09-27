@@ -4,7 +4,7 @@
  * (app/src/lib/pipeline/chart.ts) is the only thing that writes one.
  */
 
-export type ChartType = "bar" | "line" | "area" | "pie" | "doughnut" | "scatter";
+export type ChartType = "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "radar" | "histogram" | "waterfall";
 
 /** How numbers read: 1,234 / 1.2k / 12% (from 0.12) / $1,234. */
 export type ChartFormat = "number" | "compact" | "percent" | "currency";
@@ -79,4 +79,8 @@ export interface ChartSpec extends NumberStyle {
   trend?: "linear";
   /** Pie and doughnut: the words under the total in the middle of a doughnut. */
   center?: string;
+  /** Histogram: how many equal ranges the values fall into. */
+  bins?: number;
+  /** Bar: each bar runs from its first y key to its second. */
+  range?: boolean;
 }

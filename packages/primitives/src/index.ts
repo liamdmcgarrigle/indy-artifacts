@@ -147,7 +147,39 @@ class ArtKpi extends ArtElement {
     this.appendChild(make("div", "art-kpi__label", attr(this, "label")));
     const note = attr(this, "note");
     if (note) this.appendChild(make("div", "art-kpi__note", note));
+    const trend = sparkline(attr(this, "trend"));
+    if (trend) this.appendChild(trend);
   }
+}
+
+/** Recent values as a small line under a counter, last point marked. SVG, so it needs no chart library. */
+function sparkline(raw: string): SVGSVGElement | null {
+  const values = raw.split(",").map(Number).filter(Number.isFinite);
+  if (values.length < 2) return null;
+  const W = 120;
+  const H = 28;
+  const pad = 3;
+  const lo = Math.min(...values);
+  const span = Math.max(...values) - lo || 1;
+  const points = values.map((v, i) => [pad + (i * (W - pad * 2)) / (values.length - 1), H - pad - ((v - lo) * (H - pad * 2)) / span]);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("class", "art-kpi__trend");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `Trend: ${values.join(", ")}`);
+  const line = document.createElementNS(ns, "polyline");
+  line.setAttribute("points", points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "));
+  line.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.appendChild(line);
+  const [lx, ly] = points[points.length - 1];
+  const dot = document.createElementNS(ns, "circle");
+  dot.setAttribute("cx", lx.toFixed(1));
+  dot.setAttribute("cy", ly.toFixed(1));
+  dot.setAttribute("r", "2.5");
+  svg.appendChild(dot);
+  return svg;
 }
 
 /* --------------------------------------------------------- columns, column */
@@ -497,9 +529,10 @@ class ArtChart extends ArtElement {
     this.appendChild(this.#table(spec));
   }
 
-  /** The numbers behind the drawing, for screen readers. */
-  #table(spec: ChartSpec): HTMLTableElement {
-    const table = make("table", "art-sr-only");
+  /** The numbers behind the drawing, for screen readers. A table grows to fit its rows whatever its height, so it sits in a box that is clipped. */
+  #table(spec: ChartSpec): HTMLElement {
+    const box = make("div", "art-sr-only");
+    const table = box.appendChild(make("table"));
     if (spec.title) table.appendChild(make("caption", undefined, spec.title));
     const head = make("tr");
     for (const key of [spec.x, ...spec.y]) head.appendChild(make("th", undefined, key));
@@ -512,7 +545,7 @@ class ArtChart extends ArtElement {
       body.appendChild(tr);
     }
     table.appendChild(body);
-    return table;
+    return box;
   }
 
   async #draw(canvas: HTMLCanvasElement, spec: ChartSpec): Promise<void> {

@@ -65,6 +65,7 @@ function kpiLine(k: KpiItem): string {
   const options: string[] = [];
   if (k.tone) options.push(`tone=${k.tone}`);
   if (k.note) options.push(`note="${k.note.replace(/"/g, "'")}"`);
+  if (k.trend) options.push(`trend="${k.trend}"`);
   if (options.length) line += ` {${options.join(" ")}}`;
   return line;
 }

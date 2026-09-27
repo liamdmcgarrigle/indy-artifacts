@@ -25,7 +25,7 @@ const SERIES_TONES = new Set(["good", "warn", "bad", "info", "muted"]);
 const KEYS = [
   "type", "title", "x", "y", "data", "stacked", "unit", "height", "orientation", "horizontal", "series", "axes",
   "marks", "format", "currency", "decimals", "labels", "legend", "sort", "curve", "group", "label", "size", "line",
-  "trend", "center",
+  "trend", "center", "bins", "range",
 ];
 
 /** Keys agents reach for that mean something Indy spells differently. */
@@ -181,10 +181,13 @@ export function parseChartBlock(body: string, warn: (message: string) => void = 
   const alias = TYPE_ALIASES[written];
   const type = alias?.type ?? written;
   if (!(CHART_TYPES as readonly string[]).includes(type))
-    throw new BlockError(`chart type must be one of ${[...CHART_TYPES, "bubble"].join(", ")}, got "${written || "nothing"}"`);
+    throw new BlockError(`chart type must be one of ${[...CHART_TYPES, "bubble"].join(", ")}, got "${written || "nothing"}"${written.includes("sankey") || ["heatmap", "boxplot", "box", "funnel", "matrix"].includes(written) ? ". That type is coming; draw it another way for now" : ""}`);
 
   if (!Array.isArray(o.data) || o.data.length === 0) throw new BlockError("chart needs a non-empty data list");
-  let data = o.data.map((row, i) => {
+  // A histogram can take its values as a plain list.
+  const plain = (v: unknown) => typeof v === "number" || (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)));
+  const rows: unknown[] = type === "histogram" && o.data.every(plain) ? o.data.map((v) => ({ [String(o.x ?? "value")]: Number(v) })) : o.data;
+  let data = rows.map((row, i) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) throw new BlockError(`chart data item ${i + 1} must be a mapping`);
     return row as Record<string, unknown>;
   });
@@ -196,17 +199,43 @@ export function parseChartBlock(body: string, warn: (message: string) => void = 
 
   // Keys that say how to read a point rather than what to plot.
   const pointKeys = [o.group, o.label, o.size].filter((k) => typeof k === "string") as string[];
+  // A waterfall row marks a running total with total: true.
+  if (type === "waterfall") pointKeys.push("total");
   let y: string[];
-  if (Array.isArray(o.y)) y = o.y.map(String);
+  if (type === "histogram") {
+    if (o.y !== undefined) throw new BlockError("a histogram counts the values of its x key itself; leave out y");
+    y = [];
+  } else if (Array.isArray(o.y)) y = o.y.map(String);
   else if (typeof o.y === "string") y = [o.y];
   else y = keys.filter((k) => k !== x && !pointKeys.includes(k));
-  if (y.length === 0) throw new BlockError("chart needs at least one y key");
+  if (y.length === 0 && type !== "histogram") throw new BlockError("chart needs at least one y key");
 
-  const missing = [x, ...y, ...pointKeys].filter((k) => !keys.includes(k));
+  const missing = [x, ...y, ...pointKeys.filter((k) => k !== "total")].filter((k) => !keys.includes(k));
   if (missing.length) throw new BlockError(`chart keys not present in data: ${missing.join(", ")}. The rows have ${keys.join(", ")}`);
 
   const round = type === "pie" || type === "doughnut";
   const scatter = type === "scatter";
+  // These three draw their own layout: no second axis, no stacking, no lines mixed in.
+  const own = type === "radar" || type === "histogram" || type === "waterfall";
+  for (const key of ["series", "stacked", "horizontal", "orientation"] as const)
+    if (own && o[key] !== undefined && !(key === "series" && type === "radar")) throw new BlockError(`${key} does not apply to ${type} charts`);
+  if (type === "radar" && (o.marks !== undefined || o.axes !== undefined)) throw new BlockError("radar charts take no marks or axes");
+  if (type === "waterfall" && y.length !== 1) throw new BlockError("a waterfall takes one y key: the change at each step");
+  if (type === "histogram") {
+    const bad = data.find((row) => !Number.isFinite(Number(row[x])));
+    if (bad) throw new BlockError(`a histogram needs numbers in ${x}, got "${String(bad[x])}"`);
+  }
+  let bins: number | undefined;
+  if (o.bins !== undefined) {
+    if (type !== "histogram") throw new BlockError("bins applies to histograms");
+    bins = optionalNumber(o.bins, "chart bins");
+    if (!bins || !Number.isInteger(bins) || bins < 2 || bins > 50) throw new BlockError("chart bins must be a whole number from 2 to 50");
+  }
+  if (o.range !== undefined) {
+    if (type !== "bar" || o.range !== true) throw new BlockError("range: true applies to bar charts");
+    if (y.length !== 2) throw new BlockError("a range bar chart takes two y keys, where each bar starts and where it ends");
+    if (o.stacked !== undefined || o.series !== undefined) throw new BlockError("range bars cannot stack or mix in lines");
+  }
 
   const orientation = oneOf(o.orientation, ["horizontal", "vertical"] as const, "chart orientation");
   const horizontal = alias?.horizontal === true || o.horizontal === true || orientation === "horizontal";
@@ -333,12 +362,14 @@ export function parseChartBlock(body: string, warn: (message: string) => void = 
 
   const sort = oneOf(o.sort, ["none", "asc", "desc"] as const, "chart sort");
   if (sort && sort !== "none") {
+    if (type === "histogram" || type === "waterfall" || type === "radar") throw new BlockError(`sort does not apply to ${type} charts; the order is part of what they show`);
     if (scatter) throw new BlockError("sort does not apply to scatter charts; their x values already set the order");
     const total = (row: Record<string, unknown>) => y.reduce((sum, k) => sum + (Number(row[k]) || 0), 0);
     data = [...data].sort((a, b) => (sort === "asc" ? total(a) - total(b) : total(b) - total(a)));
   }
 
-  const height = Number(o.height ?? 280);
+  // A radar's spokes and labels need more room than a row of bars.
+  const height = Number(o.height ?? (type === "radar" ? 360 : 280));
   const spec: ChartSpec = {
     type: type as ChartSpec["type"],
     title: optionalText(o.title),
@@ -368,5 +399,7 @@ export function parseChartBlock(body: string, warn: (message: string) => void = 
   if (o.line === true) spec.line = true;
   if (trend) spec.trend = trend;
   if (o.center !== undefined) spec.center = String(o.center);
+  if (bins) spec.bins = bins;
+  if (o.range === true) spec.range = true;
   return spec;
 }

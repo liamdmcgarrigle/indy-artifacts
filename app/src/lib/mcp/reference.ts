@@ -90,7 +90,7 @@ The 90-day policy is holding 104 days of snapshots. Nothing is at risk yet.
 
 The body is a bullet list of \`Label: value\`. A bullet may carry a \`{tone=...}\` and end
 with a delta in parentheses. Add \`note="..."\` inside the braces for a small line under the
-label, such as where the figure came from.
+label, such as where the figure came from, and \`trend="3,5,4,8"\` for a sparkline.
 
 \`\`\`md
 :::kpis
@@ -223,7 +223,8 @@ firmer rule above it.
 
 ### \`\`\`\` \`\`\`chart \`\`\`\`
 
-YAML. \`type\` is \`bar\`, \`line\`, \`area\`, \`pie\`, \`doughnut\`, \`scatter\` or \`bubble\`. \`x\` is one key,
+YAML. \`type\` is \`bar\`, \`line\`, \`area\`, \`pie\`, \`doughnut\`, \`scatter\`, \`bubble\`, \`radar\`,
+\`histogram\` or \`waterfall\`. \`x\` is one key,
 \`y\` is a key or a list of keys, \`data\` is a list of objects. Two or more \`y\` keys on a bar
 chart draw grouped bars side by side; add \`stacked: true\` to stack them instead. Optional:
 \`title\`, \`unit\` (added to values: \`%\` sits against the number, \`min\` after a space),
@@ -346,6 +347,40 @@ data:
 **Pie and doughnut.** One \`y\` key; each row is a slice. More than six rows fold the smallest
 into "Other". A doughnut shows its total in the middle, with \`center: <words>\` under it.
 Tooltips give each slice's share.
+
+**Radar.** \`type: radar\`: each \`x\` value is a spoke and each \`y\` key a ring. Use it to
+compare a few profiles (two or three) across five to eight measures on the same scale.
+
+**Histogram.** \`type: histogram\` counts the values of \`x\` into equal ranges; leave out \`y\`.
+\`bins\` sets how many (default by the number of values). \`data\` can be a plain list of numbers:
+\`data: [212, 340, 198, 1210, 405]\`.
+
+**Waterfall.** \`type: waterfall\` with one \`y\` key: each row is a change, drawn from the running
+total before it, green up and red down. A row with \`total: true\` stands on zero: with a
+value it sets the running total (a starting balance), without one it shows it.
+
+\`\`\`\`md
+\`\`\`chart
+type: waterfall
+title: Monthly recurring revenue, June to July
+x: step
+y: change
+format: currency
+labels: true
+data:
+  - { step: June, change: 48000, total: true }
+  - { step: New, change: 9500 }
+  - { step: Expansion, change: 3200 }
+  - { step: Churn, change: -6100 }
+  - { step: July, total: true }
+\`\`\`
+\`\`\`\`
+
+**Range bars.** \`range: true\` on a bar chart with two \`y\` keys draws each bar from the first to
+the second: price bands, time windows, or a simple schedule with \`horizontal: true\`.
+
+**Counter sparklines.** A counter line in \`:::kpis\` takes \`trend="3,5,4,8"\`, oldest first, and
+draws it as a small line in the counter's tone: \`- Signups: 412 {tone=good trend="310,344,380,412"}\`.
 
 A key the chart does not read comes back in the publish result as a warning, with the key it
 most likely meant.

@@ -40,7 +40,7 @@ function kpiChildren(node: AnyNode, ctx: PipelineContext) {
     const parsed = parseKpiLine(mdToString(item));
     if (!parsed) return;
     const stray = `${parsed.label} ${parsed.value}`.match(STRAY_OPTIONS);
-    if (stray) warn(ctx, item, `${strayOptions(stray[0], "in this counter")}. A counter takes tone and note only: - Label: value (delta) {tone=good note="..."}`);
+    if (stray) warn(ctx, item, `${strayOptions(stray[0], "in this counter")}. A counter takes tone, note and trend only: - Label: value (delta) {tone=good note="..." trend="3,5,4,8"}`);
     items.push({
       type: "element",
       tagName: "art-kpi",
@@ -50,6 +50,7 @@ function kpiChildren(node: AnyNode, ctx: PipelineContext) {
         tone: parsed.tone,
         delta: parsed.delta,
         note: parsed.note,
+        trend: parsed.trend,
       },
       children: [],
     });

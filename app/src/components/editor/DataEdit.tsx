@@ -143,7 +143,8 @@ function chartYaml(spec: ChartSpec, original: Record<string, unknown>): string {
   if (spec.horizontal) out.horizontal = true;
   if (spec.title) out.title = spec.title;
   out.x = spec.x;
-  out.y = spec.y.length === 1 ? spec.y[0] : spec.y;
+  // A histogram counts its x values and has no y.
+  if (spec.y.length) out.y = spec.y.length === 1 ? spec.y[0] : spec.y;
   if (spec.stacked) out.stacked = spec.percent ? "percent" : true;
   if (spec.unit) out.unit = spec.unit;
   if (original.height !== undefined) out.height = spec.height;
@@ -175,10 +176,12 @@ function fitToType(raw: Record<string, unknown>, picked: string): Record<string,
   const next = { ...raw };
   if (picked !== "scatter") for (const key of ["group", "label", "size", "line", "trend"]) delete next[key];
   if (picked !== "doughnut") delete next.center;
-  if (picked === "pie" || picked === "doughnut" || picked === "scatter") delete next.sort;
+  if (["pie", "doughnut", "scatter", "histogram", "waterfall", "radar"].includes(picked)) delete next.sort;
   if (picked !== "line" && picked !== "area") delete next.curve;
-  if (picked === "pie" || picked === "doughnut") {
-    delete next.series;
+  if (picked !== "bar" && picked !== "barh") delete next.range;
+  if (picked !== "histogram") delete next.bins;
+  if (picked === "pie" || picked === "doughnut" || picked === "histogram" || picked === "waterfall" || picked === "radar") {
+    if (picked !== "radar") delete next.series;
     delete next.axes;
     delete next.marks;
     return next;
@@ -233,8 +236,9 @@ export function ChartEdit({ node, updateAttributes }: ReactNodeViewProps) {
                 : {
                     type: picked as ChartSpec["type"],
                     horizontal: false,
-                    // Pies and scatters have nothing to stack.
-                    ...(["pie", "doughnut", "scatter"].includes(picked) ? { stacked: false, percent: false } : {}),
+                    // Pies, scatters and the charts that lay themselves out have nothing to stack.
+                    ...(["pie", "doughnut", "scatter", "radar", "histogram", "waterfall"].includes(picked) ? { stacked: false, percent: false } : {}),
+                    ...(picked === "histogram" ? { y: [] } : {}),
                   },
               fitToType(raw, picked),
             );
