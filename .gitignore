@@ -4,6 +4,8 @@ dist/
 data/
 *.tsbuildinfo
 .env
+.env.local
+app/.env.local
 .DS_Store
 app/test/.corpus/
 compose.override.yaml

@@ -186,17 +186,42 @@ iframe with no same-origin access and no network. A CDN script, a web font or a 
 call will not load; the frame gets the theme CSS and nothing else. Anything a page needs
 has to be in the source you send or vendored in the server.
 
-For `react` and `svelte` the only importable packages are `react`, `react-dom`,
+For `react` and `svelte` the importable packages are `react`, `react-dom`,
 `react-dom/client`, `svelte`, `svelte/store`, `chart.js`, `chart.js/auto`, `d3`,
-`lucide-react` and relative files inside your own `files` map. Any other import fails the
-build and the error names it. The entry is `App.tsx` (default-exported component) or
-`App.svelte`; the server mounts it for you, so do not write your own `createRoot` or
-`mount` call.
+`lucide-react`, the shadcn set (`radix-ui` and `@radix-ui/*`, `class-variance-authority`,
+`clsx`, `tailwind-merge`, `cmdk`, `sonner`, `react-day-picker`, `date-fns`) and relative
+files inside your own `files` map. Any other import fails the build and the error names
+it. The entry is `App.tsx` (default-exported component) or `App.svelte`; the server
+mounts it for you, so do not write your own `createRoot` or `mount` call.
 
 ```
 files: {
   "App.tsx": "import Report from './Report'\nexport default function App() { return <Report /> }",
   "Report.tsx": "export default function Report() { return <h1>Backup run</h1> }"
+}
+```
+
+### Tailwind and shadcn/ui
+
+Tailwind v4 works the usual way: a CSS file that starts with `@import "tailwindcss";`,
+imported from your code. Only the classes your files use end up in the page. Imports of
+your own CSS files work too; `@plugin`, `@config` and other packages' stylesheets do not.
+tw-animate-css comes with it, for the `animate-in` and `fade-in` classes.
+
+The shadcn components are already there. Import them the way a shadcn project would, from
+`@/components/ui/<name>`, with `cn` from `@/lib/utils`: accordion, alert, alert-dialog,
+avatar, badge, button, calendar, card, checkbox, collapsible, command, dialog,
+dropdown-menu, hover-card, input, label, popover, progress, radio-group, scroll-area,
+select, separator, sheet, skeleton, slider, sonner, switch, table, tabs, textarea, toggle,
+toggle-group and tooltip. A file of that name in your `files` map is used instead of
+Indy's, so you can bring your own. The shadcn colour names (`bg-background`,
+`text-muted-foreground`, `bg-primary`, `border-border` and the rest) follow the page's
+theme, and `dark:` follows the reader's light or dark setting, so you don't define them.
+
+```
+files: {
+  "App.tsx": "import './app.css'\nimport { Button } from '@/components/ui/button'\nexport default function App() { return <div className=\"p-6\"><Button>Run again</Button></div> }",
+  "app.css": "@import \"tailwindcss\";"
 }
 ```
 

@@ -488,6 +488,9 @@ export function ArtifactView(props: ArtifactViewProps) {
         .forEach((f) => f.contentWindow?.postMessage({ type: "art:scheme", scheme }, "*"));
     }
     window.addEventListener("art:scheme", onScheme);
+    // A frame that finished loading before hydration fired its load event
+    // before the handler that sends the scheme existed, so tell it now.
+    onScheme(new CustomEvent("art:scheme", { detail: document.documentElement.getAttribute("data-scheme") ?? "light" }));
     return () => window.removeEventListener("art:scheme", onScheme);
   }, []);
 
@@ -1238,7 +1241,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                 <iframe
                   ref={pageFrameRef}
                   src={`${props.embedBase}/page`}
-                  sandbox="allow-scripts"
+                  sandbox="allow-scripts allow-forms"
                   title={props.title}
                   style={{ height: frameHeight }}
                   onLoad={(e) => {

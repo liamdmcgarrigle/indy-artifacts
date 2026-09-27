@@ -67,7 +67,7 @@ describe("embed documents", () => {
     const csp = res.headers.get("content-security-policy") ?? "";
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("connect-src 'none'");
-    expect(csp).toContain("sandbox allow-scripts");
+    expect(csp).toContain("sandbox allow-scripts allow-forms");
     const html = await res.text();
     expect(html).toContain('http-equiv="Content-Security-Policy"');
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
