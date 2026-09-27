@@ -38,44 +38,15 @@ export interface RenderResult {
   blockHtml: Record<number, string>;
 }
 
-/** How one y key is drawn when it differs from the chart's type. */
-export interface ChartSeries {
-  as?: "bar" | "line" | "area";
-  axis?: "left" | "right";
-}
-
-/** A value axis (left, right) or the category axis (x). */
-export interface ChartAxis {
-  title?: string;
-  unit?: string;
-  min?: number;
-  max?: number;
-}
-
-/**
- * Something drawn on the chart that is not data: a line at a value (a budget,
- * a target), a line at one category, or a shaded range of categories.
- */
-export type ChartMark =
-  | { kind: "value"; value: number; axis: "left" | "right"; label?: string; tone?: string }
-  | { kind: "at"; at: string | number; label?: string; tone?: string }
-  | { kind: "band"; from: string | number; to: string | number; label?: string; tone?: string };
-
-export interface ChartSpec {
-  type: "bar" | "line" | "area" | "pie" | "doughnut" | "scatter";
-  title?: string;
-  x: string;
-  y: string[];
-  data: Record<string, unknown>[];
-  stacked: boolean;
-  unit?: string;
-  height: number;
-  /** Bars run sideways, categories down the left. */
-  horizontal?: boolean;
-  series?: Record<string, ChartSeries>;
-  axes?: { x?: ChartAxis; left?: ChartAxis; right?: ChartAxis };
-  marks?: ChartMark[];
-}
+export type {
+  ChartAxis,
+  ChartFormat,
+  ChartMark,
+  ChartSeries,
+  ChartSpec,
+  ChartType,
+  Curve,
+} from "../../../../packages/primitives/src/chart-spec";
 
 export interface TableSpec {
   columns: string[];

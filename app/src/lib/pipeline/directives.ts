@@ -1,6 +1,7 @@
 import { SKIP, visit } from "unist-util-visit";
 import { toString as mdToString } from "mdast-util-to-string";
-import { badgeClass, BlockError, isBadge, parseChartBlock, parseKpiLine, parseTableBlock, STRAY_OPTIONS } from "./parse";
+import { badgeClass, BlockError, isBadge, parseKpiLine, parseTableBlock, STRAY_OPTIONS } from "./parse";
+import { parseChartBlock } from "./chart";
 import type { PipelineContext } from "./types";
 import { parseStoryBlock, storyWarnings, StoryBlockError } from "../storybook/spec";
 
@@ -165,7 +166,7 @@ function handleCode(node: AnyNode, ctx: PipelineContext, blockHint: string | nul
 
   try {
     if (lang === "chart") {
-      const spec = parseChartBlock(node.value ?? "");
+      const spec = parseChartBlock(node.value ?? "", (message) => warn(ctx, node, message));
       setElement(node, "art-chart", { dataChart: JSON.stringify(spec) }, []);
     } else {
       const spec = parseTableBlock(node.value ?? "");

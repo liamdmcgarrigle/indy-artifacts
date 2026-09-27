@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NodeViewWrapper, type ReactNodeViewProps } from "@tiptap/react";
 import { parse as parseYaml, stringify } from "yaml";
 import { Plus, X } from "lucide-react";
-import { BlockError, parseChartBlock, parseTableBlock } from "@/lib/pipeline/parse";
+import { BlockError, parseTableBlock } from "@/lib/pipeline/parse";
+import { parseChartBlock } from "@/lib/pipeline/chart";
 import { CHART_TYPES, type ChartSpec, type TableSpec } from "@/lib/pipeline/types";
 import { cn } from "@/lib/utils";
 
@@ -143,7 +144,7 @@ function chartYaml(spec: ChartSpec, original: Record<string, unknown>): string {
   if (spec.title) out.title = spec.title;
   out.x = spec.x;
   out.y = spec.y.length === 1 ? spec.y[0] : spec.y;
-  if (spec.stacked) out.stacked = true;
+  if (spec.stacked) out.stacked = spec.percent ? "percent" : true;
   if (spec.unit) out.unit = spec.unit;
   if (original.height !== undefined) out.height = spec.height;
   for (const [key, value] of Object.entries(original)) if (!CHART_KEYS.has(key)) out[key] = value;
@@ -172,6 +173,10 @@ function renameSeries(raw: Record<string, unknown>, from: string[], to: string[]
 /** What a new type cannot draw goes: pies have no axes, and sideways or scatter charts no lines mixed in. */
 function fitToType(raw: Record<string, unknown>, picked: string): Record<string, unknown> {
   const next = { ...raw };
+  if (picked !== "scatter") for (const key of ["group", "label", "size", "line", "trend"]) delete next[key];
+  if (picked !== "doughnut") delete next.center;
+  if (picked === "pie" || picked === "doughnut" || picked === "scatter") delete next.sort;
+  if (picked !== "line" && picked !== "area") delete next.curve;
   if (picked === "pie" || picked === "doughnut") {
     delete next.series;
     delete next.axes;
@@ -223,7 +228,14 @@ export function ChartEdit({ node, updateAttributes }: ReactNodeViewProps) {
           onChange={(e) => {
             const picked = e.target.value;
             write(
-              picked === "barh" ? { type: "bar", horizontal: true } : { type: picked as ChartSpec["type"], horizontal: false },
+              picked === "barh"
+                ? { type: "bar", horizontal: true }
+                : {
+                    type: picked as ChartSpec["type"],
+                    horizontal: false,
+                    // Pies and scatters have nothing to stack.
+                    ...(["pie", "doughnut", "scatter"].includes(picked) ? { stacked: false, percent: false } : {}),
+                  },
               fitToType(raw, picked),
             );
           }}

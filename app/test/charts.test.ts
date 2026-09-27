@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { BlockError, parseChartBlock } from "@/lib/pipeline/parse";
-import { chartConfig, chartSummary, marksPlugin, withUnit, type ChartTheme } from "../../packages/primitives/src/chart-config";
+import { BlockError } from "@/lib/pipeline/parse";
+import { parseChartBlock } from "@/lib/pipeline/chart";
+import { renderMarkdown } from "@/lib/pipeline";
+import { chartConfig, chartSummary, formatNumber, marksPlugin, trendLine, withUnit, type ChartTheme } from "../../packages/primitives/src/chart-config";
 
 const theme: ChartTheme = {
   palette: ["#111111", "#222222", "#333333"],
@@ -207,8 +209,8 @@ describe("bars and a line on two axes", () => {
     expect(cfg.options.scales.y2.ticks.callback(5)).toBe("5%");
     expect(cfg.options.scales.y.ticks.callback(5)).toBe("5");
     const label = cfg.options.plugins.tooltip.callbacks.label;
-    expect(label({ dataset: { label: "cfr" }, formattedValue: "5.6", datasetIndex: 1 })).toBe("cfr: 5.6%");
-    expect(label({ dataset: { label: "deploys" }, formattedValue: "18", datasetIndex: 0 })).toBe("deploys: 18");
+    expect(label({ dataset: { label: "cfr" }, raw: 5.6, datasetIndex: 1, dataIndex: 1 })).toBe("cfr: 5.6%");
+    expect(label({ dataset: { label: "deploys" }, raw: 18, datasetIndex: 0, dataIndex: 1 })).toBe("deploys: 18");
   });
 
   it("lists the legend in the order the keys were written", () => {
@@ -227,7 +229,7 @@ describe("bars and a line on two axes", () => {
 
   it("refuses series options that cannot apply", () => {
     expect(fails("type: bar", "x: week", "y: deploys", "series: { cfr: { as: line } }", ...weeks)).toContain('"cfr" is not one of the y keys');
-    expect(fails("type: bar", "x: week", "y: [deploys, cfr]", "series: { cfr: { as: pie } }", ...weeks)).toContain("as must be bar, line or area");
+    expect(fails("type: bar", "x: week", "y: [deploys, cfr]", "series: { cfr: { as: pie } }", ...weeks)).toContain("as must be bar, line, area");
     expect(fails("type: bar", "x: week", "y: [deploys, cfr]", "series: { cfr: { axis: top } }", ...weeks)).toContain("axis must be left or right");
     expect(fails("type: barh", "x: week", "y: [deploys, cfr]", "series: { cfr: { as: line } }", ...weeks)).toContain("cannot mix in lines");
     expect(fails("type: bar", "x: week", "y: deploys", "axes: { top: {} }", ...weeks)).toContain("chart axes are x, left and right");
@@ -252,5 +254,191 @@ describe("units and summaries", () => {
     expect(cfg.options.indexAxis).toBe("x");
     expect(cfg.plugins).toEqual([]);
     expect(Object.keys(cfg.options.scales)).toEqual(["x", "y"]);
+  });
+});
+
+describe("number formats", () => {
+  it("reads values the way the chart says", () => {
+    expect(formatNumber(1234.5)).toBe("1,234.5");
+    expect(formatNumber(1234567, { format: "compact" })).toBe("1.2M");
+    expect(formatNumber(0.125, { format: "percent" })).toBe("12.5%");
+    expect(formatNumber(1234, { format: "currency" })).toBe("$1,234");
+    expect(formatNumber(0.82, { format: "currency", currency: "EUR" })).toBe("€0.82");
+    expect(formatNumber(3, { decimals: 1, unit: "ms" })).toBe("3.0 ms");
+  });
+
+  it("reads currency:EUR and checks the code", () => {
+    expect(chart("type: bar", "format: currency:eur", ...services, "x: service", "y: errors").currency).toBe("EUR");
+    expect(fails("type: bar", "format: currency", "currency: dollars", ...services)).toContain("three-letter code");
+    expect(fails("type: bar", "format: money", ...services)).toContain("format must be number, compact, percent, currency");
+  });
+
+  it("refuses a percent format over values that are percentages already", () => {
+    const message = fails("type: bar", "format: percent", "x: team", "y: rate", "data: [{ team: A, rate: 45 }]");
+    expect(message).toContain('use unit: "%" instead');
+    expect(chart("type: bar", "format: percent", "x: team", "y: rate", "data: [{ team: A, rate: 0.45 }]").format).toBe("percent");
+  });
+
+  it("formats ticks and tooltips with each axis's own style", () => {
+    const cfg = chartConfig(
+      chart("type: bar", "x: week", "y: [revenue, margin]", "format: compact", "series: { margin: { as: line, axis: right } }", "axes: { right: { format: percent } }", "data: [{ week: W1, revenue: 125000, margin: 0.31 }]"),
+      theme,
+    );
+    expect(cfg.options.scales.y.ticks.callback(125000)).toBe("125K");
+    expect(cfg.options.scales.y2.ticks.callback(0.3)).toBe("30%");
+    const label = cfg.options.plugins.tooltip.callbacks.label;
+    expect(label({ dataset: { label: "margin" }, raw: 0.31, datasetIndex: 1, dataIndex: 0 })).toBe("margin: 31%");
+  });
+});
+
+describe("keys a chart does not read", () => {
+  const warned = (...lines: string[]) => {
+    const out: string[] = [];
+    parseChartBlock(lines.join("\n"), (m) => out.push(m));
+    return out;
+  };
+
+  it("names the key it meant", () => {
+    expect(warned("type: bar", "stack: true", ...services)).toEqual(['chart does not read "stack"; did you mean stacked: true?']);
+    expect(warned("type: bar", "titel: Errors", ...services)).toEqual(['chart does not read "titel"; did you mean title?']);
+    expect(warned("type: bar", "ylabel: Errors", ...services)[0]).toContain("axes: { left: { title: ... } }");
+    expect(warned("type: bar", "series: { errors: { colour: good } }", ...services)[0]).toContain('did you mean color?');
+  });
+
+  it("lists what it reads when nothing is close", () => {
+    expect(warned("type: bar", "zzzzzz: 1", ...services)[0]).toContain("It reads type, title");
+  });
+
+  it("comes back from the page with the block's line", () => {
+    const r = renderMarkdown(["intro", "", "```chart", "type: bar", "stack: true", ...services, "```"].join("\n"));
+    expect(r.warnings).toEqual([{ line: 3, message: 'chart does not read "stack"; did you mean stacked: true?' }]);
+  });
+});
+
+describe("stacks, curves and series styles", () => {
+  const weeks = "data: [{ week: W1, a: 30, b: 10 }, { week: W2, a: 5, b: 15 }]";
+
+  it("stacks to 100% as shares, and keeps the counts for the tooltip", () => {
+    const spec = chart("type: bar", "stacked: percent", "x: week", "y: [a, b]", weeks);
+    expect(spec).toMatchObject({ stacked: true, percent: true });
+    const cfg = chartConfig(spec, theme);
+    expect(cfg.data.datasets[0].data).toEqual([0.75, 0.25]);
+    expect(cfg.options.scales.y.max).toBe(1);
+    expect(cfg.options.scales.y.ticks.callback(0.5)).toBe("50%");
+    expect(cfg.options.plugins.tooltip.callbacks.label({ dataset: { label: "a" }, raw: 0.75, datasetIndex: 0, dataIndex: 0 })).toBe("a: 75% (30)");
+  });
+
+  it("stacks areas on each other", () => {
+    const cfg = chartConfig(chart("type: area", "stacked: true", "x: week", "y: [a, b]", weeks), theme);
+    expect(cfg.data.datasets.map((d: { fill: unknown }) => d.fill)).toEqual(["origin", "-1"]);
+  });
+
+  it("draws curves smooth, straight or stepped", () => {
+    const at = (curve: string) => chartConfig(chart("type: line", `curve: ${curve}`, "x: week", "y: a", weeks), theme).data.datasets[0];
+    expect(at("smooth")).toMatchObject({ tension: 0.32, stepped: false });
+    expect(at("straight")).toMatchObject({ tension: 0, stepped: false });
+    expect(at("step")).toMatchObject({ tension: 0, stepped: "middle" });
+    expect(fails("type: bar", "curve: smooth", "x: week", "y: a", weeks)).toContain("curve applies to line and area charts");
+  });
+
+  it("colors, dashes and hides series", () => {
+    const cfg = chartConfig(
+      chart("type: bar", "x: week", "y: [a, b]", "series: { a: { color: 3, dash: true }, b: { color: bad, hidden: true } }", weeks),
+      theme,
+    );
+    const [a, b] = cfg.data.datasets;
+    expect(a).toMatchObject({ borderColor: "#333333", borderDash: [6, 4], borderWidth: 1.5 });
+    expect(a.backgroundColor).toBe("#33333347");
+    expect(b).toMatchObject({ backgroundColor: "#aa0000", hidden: true });
+    expect(fails("type: bar", "x: week", "y: a", "series: { a: { color: pink } }", weeks)).toContain("palette slot from 1 to 6");
+  });
+
+  it("leaves a missing value out instead of drawing a zero", () => {
+    const cfg = chartConfig(chart("type: bar", "x: week", "y: [a, b]", "data: [{ week: W1, a: 3 }, { week: W2, a: 4, b: 5 }, { week: W3, a: 1, b: '' }]"), theme);
+    expect(cfg.data.datasets[1].data).toEqual([null, 5, null]);
+    expect(cfg.data.datasets[1].skipNull).toBe(true);
+  });
+
+  it("sorts rows by their total", () => {
+    const spec = chart("type: bar", "sort: desc", "x: week", "y: [a, b]", weeks);
+    expect(spec.data.map((r) => r.week)).toEqual(["W1", "W2"]);
+    expect(chart("type: bar", "sort: asc", "x: week", "y: [a, b]", weeks).data.map((r) => r.week)).toEqual(["W2", "W1"]);
+  });
+
+  it("writes values on the data, with room above the bars", () => {
+    const cfg = chartConfig(chart("type: bar", "labels: true", "x: week", "y: a", weeks), theme);
+    expect(cfg.plugins.map((p: { id: string }) => p.id)).toEqual(["artValueLabels"]);
+    expect(cfg.options.scales.y.grace).toBe("8%");
+  });
+
+  it("moves or hides the legend", () => {
+    expect(chartConfig(chart("type: bar", "legend: bottom", "x: week", "y: [a, b]", weeks), theme).options.plugins.legend.position).toBe("bottom");
+    expect(chartConfig(chart("type: bar", "legend: none", "x: week", "y: [a, b]", weeks), theme).options.plugins.legend.display).toBe(false);
+  });
+
+  it("draws a log axis without a zero", () => {
+    const cfg = chartConfig(chart("type: line", "x: week", "y: a", "axes: { left: { log: true } }", weeks), theme);
+    expect(cfg.options.scales.y).toMatchObject({ type: "logarithmic", beginAtZero: false });
+  });
+});
+
+describe("scatter and bubble", () => {
+  const points = [
+    "data:",
+    "  - { model: A1, brand: Acme, price: 10, rating: 3, sales: 100 }",
+    "  - { model: A2, brand: Acme, price: 30, rating: 4, sales: 400 }",
+    "  - { model: B1, brand: Bolt, price: 20, rating: 2, sales: 25 }",
+  ];
+
+  it("splits points into groups and names each one", () => {
+    const cfg = chartConfig(chart("type: scatter", "x: price", "y: rating", "group: brand", "label: model", ...points), theme);
+    expect(cfg.data.datasets.map((d: { label: string }) => d.label)).toEqual(["Acme", "Bolt"]);
+    expect(cfg.data.datasets[0].data[1]).toEqual({ x: 30, y: 4, name: "A2" });
+    expect(cfg.options.interaction).toEqual({ mode: "nearest", intersect: true });
+    const { label, title } = cfg.options.plugins.tooltip.callbacks;
+    expect(title([{ raw: { name: "A2" } }])).toBe("A2");
+    expect(label({ raw: { x: 30, y: 4 }, dataset: { label: "Acme" } })).toBe("Acme: price 30, rating 4");
+  });
+
+  it("sizes bubbles by area, so twice the value is not twice as wide", () => {
+    const spec = chart("type: bubble", "x: price", "y: rating", "size: sales", ...points);
+    expect(spec).toMatchObject({ type: "scatter", size: "sales" });
+    const cfg = chartConfig(spec, theme);
+    expect(cfg.type).toBe("bubble");
+    const radii = cfg.data.datasets[0].data.map((p: { r: number }) => p.r);
+    // 400 is the largest; 100 is a quarter of it, so half the radius.
+    expect(radii).toEqual([11, 22, 5.5]);
+    expect(fails("type: bubble", "x: price", "y: rating", ...points)).toContain("a bubble chart needs size");
+  });
+
+  it("joins points in x order and fits a trend line per group", () => {
+    const cfg = chartConfig(chart("type: scatter", "x: price", "y: rating", "group: brand", "line: true", "trend: linear", ...points), theme);
+    const [acme, acmeTrend] = cfg.data.datasets;
+    expect(acme.showLine).toBe(true);
+    expect(acmeTrend).toMatchObject({ type: "line", label: "Acme trend", artTrend: true, data: [{ x: 10, y: 3 }, { x: 30, y: 4 }] });
+    expect(cfg.options.plugins.legend.labels.filter({ datasetIndex: 1 })).toBe(false);
+    expect(trendLine([{ x: 1, y: 1 }])).toBeNull();
+  });
+
+  it("keeps scatter options off other charts", () => {
+    expect(fails("type: bar", "x: price", "y: rating", "group: brand", ...points)).toContain("group applies to scatter and bubble charts");
+    expect(fails("type: scatter", "x: price", "y: [rating, sales]", "group: brand", ...points)).toContain("give a single y key with group");
+  });
+});
+
+describe("pie and doughnut", () => {
+  const many = ["data:", ...["a", "b", "c", "d", "e", "f", "g", "h"].map((k, i) => `  - { part: ${k}, n: ${80 - i * 10} }`)];
+
+  it("folds the smallest slices into Other past six", () => {
+    const cfg = chartConfig(chart("type: pie", "x: part", "y: n", ...many), theme);
+    expect(cfg.data.labels).toEqual(["a", "b", "c", "d", "e", "Other"]);
+    expect(cfg.data.datasets[0].data).toEqual([80, 70, 60, 50, 40, 60]);
+  });
+
+  it("puts the total in a doughnut and shares in the tooltip", () => {
+    const cfg = chartConfig(chart("type: doughnut", "center: requests", "x: part", "y: n", "data: [{ part: a, n: 300 }, { part: b, n: 100 }]"), theme);
+    expect(cfg.plugins.map((p: { id: string }) => p.id)).toEqual(["artCenter"]);
+    expect(cfg.options.plugins.tooltip.callbacks.label({ label: "a", raw: 300 })).toBe("a: 300 (75%)");
+    expect(fails("type: pie", "center: total", "x: part", "y: n", ...many)).toContain("center applies to doughnut charts");
   });
 });

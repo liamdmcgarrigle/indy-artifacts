@@ -3,49 +3,11 @@
  * and the theme's colors. Kept apart from the element and free of the DOM, so
  * what a spec draws can be tested without a canvas.
  */
+import type { ChartAxis, ChartSpec, Curve, NumberStyle } from "./chart-spec";
+import { centerPlugin, marksPlugin, scaleIds, valueLabelsPlugin, type Any, type ChartTheme, type Layouts } from "./chart-draw";
 
-export interface ChartSeries {
-  as?: "bar" | "line" | "area";
-  axis?: "left" | "right";
-}
-
-export interface ChartAxis {
-  title?: string;
-  unit?: string;
-  min?: number;
-  max?: number;
-}
-
-export type ChartMark =
-  | { kind: "value"; value: number; axis: "left" | "right"; label?: string; tone?: string }
-  | { kind: "at"; at: string | number; label?: string; tone?: string }
-  | { kind: "band"; from: string | number; to: string | number; label?: string; tone?: string };
-
-export interface ChartSpec {
-  type: string;
-  title?: string;
-  x: string;
-  y: string[];
-  data: Record<string, unknown>[];
-  stacked?: boolean;
-  unit?: string;
-  height?: number;
-  horizontal?: boolean;
-  series?: Record<string, ChartSeries>;
-  axes?: { x?: ChartAxis; left?: ChartAxis; right?: ChartAxis };
-  marks?: ChartMark[];
-}
-
-export interface ChartTheme {
-  palette: string[];
-  text: string;
-  muted: string;
-  border: string;
-  surface: string;
-  font: string;
-  /** good, warn, bad, info: for marks with a tone. */
-  tones: Record<string, string>;
-}
+export type { ChartSpec } from "./chart-spec";
+export { marksPlugin, type ChartTheme, type Layouts } from "./chart-draw";
 
 export function toNumber(value: unknown): number {
   if (typeof value === "number") return value;
@@ -53,9 +15,17 @@ export function toNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** A translucent twin of a palette color, for area fills. */
-function translucent(color: string): string {
-  return /^#[0-9a-f]{6}$/i.test(color.trim()) ? `${color.trim()}40` : color;
+/** A value, or null when the row leaves it out: a gap in a line, no bar in the group. */
+export function toValue(value: unknown): number | null {
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return null;
+  return toNumber(value);
+}
+
+/** A translucent twin of a color, for area fills and dashed bars. */
+function translucent(color: string, alpha = 0.25): string {
+  const c = color.trim();
+  if (/^#[0-9a-f]{6}$/i.test(c)) return `${c}${Math.round(alpha * 255).toString(16).padStart(2, "0")}`;
+  return `color-mix(in srgb, ${c} ${Math.round(alpha * 100)}%, transparent)`;
 }
 
 /** "41 min", but "12%" and "20°": a unit that is a sign sits against its number. */
@@ -64,288 +34,297 @@ export function withUnit(value: unknown, unit: string | undefined): string {
   return /^[%°‰′″]/.test(unit) ? `${value}${unit}` : `${value} ${unit}`;
 }
 
+const formatters = new Map<string, Intl.NumberFormat>();
+
+/** A number as the chart's style reads it: 1,234 / 1.2K / 12% / $1,234, then its unit. */
+export function formatNumber(value: number, style: NumberStyle = {}): string {
+  if (!Number.isFinite(value)) return String(value);
+  const { format, currency, decimals, unit } = style;
+  let options: Intl.NumberFormatOptions;
+  switch (format) {
+    case "compact":
+      options = { notation: "compact", maximumFractionDigits: decimals ?? 1 };
+      break;
+    case "percent":
+      options = { style: "percent", maximumFractionDigits: decimals ?? 1 };
+      break;
+    case "currency":
+      options = { style: "currency", currency: currency ?? "USD", minimumFractionDigits: decimals ?? 0, maximumFractionDigits: decimals ?? 2 };
+      break;
+    default:
+      options = { maximumFractionDigits: decimals ?? 3 };
+  }
+  if (decimals !== undefined && format !== "currency") options.minimumFractionDigits = decimals;
+  const key = JSON.stringify(options);
+  let f = formatters.get(key);
+  if (!f) formatters.set(key, (f = new Intl.NumberFormat(undefined, options)));
+  return withUnit(f.format(value), unit);
+}
+
 type Side = "left" | "right";
 
-/** Which Chart.js scale is which, given the way the bars point. */
-export function scaleIds(horizontal: boolean): { category: string; left: string; right: string } {
-  return horizontal ? { category: "y", left: "x", right: "x2" } : { category: "x", left: "y", right: "y2" };
+const lineShape = (curve: Curve | undefined) =>
+  curve === "step" ? { tension: 0, stepped: "middle" as const } : { tension: curve === "straight" ? 0 : 0.32, stepped: false };
+
+/** Least squares through the points: two ends of the line that fits them. */
+export function trendLine(points: { x: number; y: number }[]): { x: number; y: number }[] | null {
+  if (points.length < 2) return null;
+  const n = points.length;
+  const mx = points.reduce((s, p) => s + p.x, 0) / n;
+  const my = points.reduce((s, p) => s + p.y, 0) / n;
+  const sxx = points.reduce((s, p) => s + (p.x - mx) ** 2, 0);
+  if (sxx === 0) return null;
+  const slope = points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / sxx;
+  const xs = points.map((p) => p.x);
+  const lo = Math.min(...xs);
+  const hi = Math.max(...xs);
+  return [
+    { x: lo, y: my + slope * (lo - mx) },
+    { x: hi, y: my + slope * (hi - mx) },
+  ];
 }
 
-// Chart.js's own types are far wider than anything built here; the config is
-// plain data, checked by the tests that read it back.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type Any = any;
+/** Largest radius a bubble gets, in pixels. Area, not radius, follows the value. */
+const BUBBLE_MAX = 22;
 
-interface Box {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-/** A small label with the surface behind it, so it reads over grid lines and bars. */
-function drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, align: "left" | "right", color: string, theme: ChartTheme): void {
-  ctx.save();
-  ctx.font = `600 11px ${theme.font}`;
-  ctx.textBaseline = "top";
-  ctx.textAlign = align;
-  const w = ctx.measureText(text).width;
-  const left = align === "left" ? x : x - w;
-  ctx.fillStyle = theme.surface;
-  ctx.globalAlpha = 0.85;
-  ctx.fillRect(left - 3, y - 2, w + 6, 15);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = color;
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
-
-function dashed(ctx: CanvasRenderingContext2D, color: string, from: [number, number], to: [number, number]): void {
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([5, 4]);
-  ctx.beginPath();
-  ctx.moveTo(from[0], from[1]);
-  ctx.lineTo(to[0], to[1]);
-  ctx.stroke();
-  ctx.restore();
-}
-
-/**
- * Lines at a value, lines at one category, and shaded ranges of categories.
- * Bands go under the data, lines and every label over it.
- */
-/** Chart.js's layout registry, passed in so this file never imports Chart.js. */
-export interface Layouts {
-  addBox(chart: Any, box: Any): void;
-}
-
-/** Height of the strip above the plot that holds the labels of lines running top to bottom. */
-const STRIP = 17;
-
-/** Marks drawn top to bottom: a value line on a sideways chart, a category line on an upright one. */
-function standing(mark: ChartMark, horizontal: boolean): boolean {
-  return mark.kind === "value" ? horizontal : mark.kind === "at" && !horizontal;
-}
-
-export function marksPlugin(spec: ChartSpec, theme: ChartTheme, labels: string[], layouts?: Layouts): Any {
-  const marks = spec.marks ?? [];
-  const horizontal = spec.horizontal === true;
-  // Their labels sit above the plot, where no bar or point can be under them.
-  const strip = marks.some((m) => m.label && standing(m, horizontal));
-  const ids = scaleIds(horizontal);
-  const color = (tone?: string) => (tone && theme.tones[tone]) || theme.muted;
-
-  // Where a category sits along its axis. Scatter charts have numbers there.
-  const at = (chart: Any, value: string | number): number | null => {
-    const scale = chart.scales[ids.category];
-    if (!scale) return null;
-    if (typeof value === "number") return scale.getPixelForValue(value);
-    const index = labels.indexOf(value);
-    return index === -1 ? null : scale.getPixelForValue(index);
-  };
-  // Bars fill their slot, so a band covers the whole slot and not just its middle.
-  const halfSlot = (chart: Any): number => {
-    const scale = chart.scales[ids.category];
-    if (!scale?.options?.offset || labels.length < 2) return 0;
-    return Math.abs(scale.getPixelForValue(1) - scale.getPixelForValue(0)) / 2;
-  };
-
-  const bandBox = (chart: Any, mark: Extract<ChartMark, { kind: "band" }>): Box | null => {
-    const a = at(chart, mark.from);
-    const b = at(chart, mark.to);
-    if (a === null || b === null) return null;
-    const half = halfSlot(chart);
-    const lo = Math.min(a, b) - half;
-    const hi = Math.max(a, b) + half;
-    const area: Box = chart.chartArea;
-    return horizontal ? { left: area.left, right: area.right, top: lo, bottom: hi } : { left: lo, right: hi, top: area.top, bottom: area.bottom };
-  };
-
-  return {
-    id: "artMarks",
-    beforeInit(chart: Any) {
-      if (!strip || !layouts) return;
-      layouts.addBox(chart, {
-        position: "top",
-        // The layout reads stacking options off every box.
-        options: {},
-        // Nearest the plot: under the legend, over any top axis.
-        weight: -1,
-        fullSize: false,
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: 0,
-        height: 0,
-        isHorizontal: () => true,
-        update(this: Box & { width: number; height: number }, width: number) {
-          this.width = width;
-          this.height = STRIP;
-        },
-        draw() {},
-      });
-    },
-    beforeDatasetsDraw(chart: Any) {
-      const ctx: CanvasRenderingContext2D = chart.ctx;
-      for (const mark of marks) {
-        if (mark.kind !== "band") continue;
-        const box = bandBox(chart, mark);
-        if (!box) continue;
-        ctx.save();
-        ctx.fillStyle = color(mark.tone);
-        ctx.globalAlpha = 0.12;
-        ctx.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
-        ctx.restore();
-      }
-    },
-    afterDatasetsDraw(chart: Any) {
-      const ctx: CanvasRenderingContext2D = chart.ctx;
-      const area: Box = chart.chartArea;
-      for (const mark of marks) {
-        const tint = color(mark.tone);
-        if (mark.kind === "band") {
-          const box = bandBox(chart, mark);
-          if (box && mark.label) drawLabel(ctx, mark.label, box.left + 5, box.top + 4, "left", tint, theme);
-          continue;
-        }
-        let across: number | null;
-        // A line across the plot (value marks on upright charts, category marks on sideways ones) or down it.
-        let lying: boolean;
-        if (mark.kind === "value") {
-          const scale = chart.scales[mark.axis === "right" ? ids.right : ids.left];
-          across = scale ? scale.getPixelForValue(mark.value) : null;
-          lying = !horizontal;
-        } else {
-          across = at(chart, mark.at);
-          lying = horizontal;
-        }
-        if (across === null || !Number.isFinite(across)) continue;
-        if (lying) {
-          dashed(ctx, tint, [area.left, across], [area.right, across]);
-          if (mark.label) {
-            // Above the line, unless that runs off the top.
-            const y = across - 18 < area.top ? across + 4 : across - 17;
-            drawLabel(ctx, mark.label, area.right - 4, y, "right", tint, theme);
-          }
-        } else {
-          dashed(ctx, tint, [across, area.top], [across, area.bottom]);
-          if (mark.label) {
-            ctx.save();
-            ctx.font = `600 11px ${theme.font}`;
-            const w = ctx.measureText(mark.label).width;
-            ctx.restore();
-            // Centered over the line, and slid back in when that would run off the chart.
-            const edge = (chart.width ?? area.right) - 4;
-            const left = Math.max(area.left, Math.min(across - w / 2, edge - w));
-            const y = strip && layouts ? area.top - STRIP + 2 : area.top + 4;
-            drawLabel(ctx, mark.label, left, y, "left", tint, theme);
-          }
-        }
-      }
-    },
-  };
-}
+/** More slices than this and the smallest fold into one "Other". */
+const MAX_SLICES = 6;
 
 /** The Chart.js type, data and options a spec draws as. */
 export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layouts): { type: string; data: Any; options: Any; plugins: Any[] } {
   const { palette, text, muted, border, surface, font } = theme;
   const isRound = spec.type === "pie" || spec.type === "doughnut";
   const isScatter = spec.type === "scatter";
+  const isBubble = isScatter && !!spec.size;
   const horizontal = spec.horizontal === true && spec.type === "bar";
   const ids = scaleIds(horizontal);
-  const base = spec.type === "area" ? "line" : spec.type;
-  const labels = spec.data.map((row) => String(row[spec.x] ?? ""));
   const stacked = spec.stacked === true;
+  const percent = stacked && spec.percent === true;
 
   const axisOf = (key: string): Side => spec.series?.[key]?.axis ?? "left";
-  const unitOf = (side: Side): string | undefined => spec.axes?.[side]?.unit ?? (side === "left" ? spec.unit : undefined);
+  // The left axis takes the chart's own style; the right has only its own.
+  const styleOf = (side: Side): NumberStyle => {
+    const own = spec.axes?.[side] ?? {};
+    const base: NumberStyle = side === "left" ? { format: spec.format, currency: spec.currency, decimals: spec.decimals, unit: spec.unit } : {};
+    return { format: own.format ?? base.format, currency: own.currency ?? base.currency, decimals: own.decimals ?? base.decimals, unit: own.unit ?? base.unit };
+  };
   const hasRight = !isRound && spec.y.some((key) => axisOf(key) === "right");
+  const colorOf = (key: string, i: number): string => {
+    const c = spec.series?.[key]?.color;
+    if (typeof c === "number") return palette[(c - 1) % palette.length];
+    if (c === "muted") return palette[palette.length - 1] ?? muted;
+    if (typeof c === "string") return theme.tones[c] ?? palette[i % palette.length];
+    return palette[i % palette.length];
+  };
 
-  const datasets = isRound
-    ? [
-        {
-          label: spec.y[0] ?? "",
-          data: spec.data.map((row) => toNumber(row[spec.y[0]])),
-          backgroundColor: spec.data.map((_, i) => palette[i % palette.length]),
-          borderColor: surface,
-          borderWidth: 1,
-        },
-      ]
-    : spec.y.map((key, i) => {
-        const color = palette[i % palette.length];
-        const drawn = isScatter ? "scatter" : (spec.series?.[key]?.as ?? spec.type);
-        const bar = drawn === "bar";
-        const area = drawn === "area";
-        const line = drawn === "line" || area;
-        const side = axisOf(key);
-        // The last bar of a stack gets the rounded cap, or every joint shows a notch.
-        const barKeys = spec.y.filter((k) => (spec.series?.[k]?.as ?? spec.type) === "bar");
-        const capped = !(bar && stacked) || key === barKeys[barKeys.length - 1];
-        const radius = horizontal
-          ? { topLeft: 0, bottomLeft: 0, topRight: 5, bottomRight: 5 }
-          : { topLeft: 5, topRight: 5, bottomLeft: 0, bottomRight: 0 };
-        const dataset: Record<string, unknown> = {
-          label: key,
-          data: isScatter
-            ? spec.data.map((row) => ({ x: toNumber(row[spec.x]), y: toNumber(row[key]) }))
-            : spec.data.map((row) => toNumber(row[key])),
-          borderColor: bar ? "transparent" : color,
-          // A solid bar reads as one shape; an outlined wash reads as a box with something in it.
-          backgroundColor: bar ? color : area ? translucent(color) : color,
-          borderWidth: bar ? 0 : 2,
-          borderRadius: bar && capped ? radius : 0,
-          borderSkipped: false,
-          maxBarThickness: 52,
-          categoryPercentage: 0.74,
-          barPercentage: 0.86,
-          fill: area,
-          tension: line ? 0.32 : 0,
-          pointRadius: line ? (spec.type === "bar" ? 2.5 : 0) : 3,
-          pointHoverRadius: 4,
-          hoverBackgroundColor: bar ? color : undefined,
-          hoverBorderColor: color,
-          // Lines drawn over bars sit in front of them.
-          order: line && spec.type === "bar" ? 0 : 1,
-        };
-        if (drawn !== spec.type && !isScatter) dataset.type = line ? "line" : "bar";
-        if (horizontal) dataset.xAxisID = side === "right" ? ids.right : ids.left;
-        else dataset.yAxisID = side === "right" ? ids.right : ids.left;
-        // Bars stack with bars and areas with areas; a line mixed into bars stands alone.
-        if (stacked) dataset.stack = drawn === spec.type ? "stack" : `own-${i}`;
-        return dataset;
+  let labels = spec.data.map((row) => String(row[spec.x] ?? ""));
+  let datasets: Record<string, unknown>[];
+  /** Per dataset and point: the words for a value label and a tooltip. */
+  let valueText: (di: number, i: number) => string | null;
+  let tooltipLabel: (item: Any) => string;
+  let tooltipTitle: ((items: Any[]) => string) | undefined;
+
+  if (isRound) {
+    // One ring: slices in order, the smallest folded into Other past six.
+    let slices = spec.data.map((row) => ({ label: String(row[spec.x] ?? ""), value: toNumber(row[spec.y[0]]) }));
+    let other = false;
+    if (slices.length > MAX_SLICES) {
+      const sorted = [...slices].sort((a, b) => b.value - a.value);
+      const kept = sorted.slice(0, MAX_SLICES - 1);
+      const rest = sorted.slice(MAX_SLICES - 1).reduce((s, x) => s + x.value, 0);
+      slices = [...kept, { label: "Other", value: rest }];
+      other = true;
+    }
+    labels = slices.map((s) => s.label);
+    const total = slices.reduce((s, x) => s + x.value, 0);
+    const style = styleOf("left");
+    datasets = [
+      {
+        label: spec.y[0] ?? "",
+        data: slices.map((s) => s.value),
+        // The last palette slot is the muted one, kept for Other.
+        backgroundColor: slices.map((_, i) => (other && i === slices.length - 1 ? palette[palette.length - 1] : palette[i % palette.length])),
+        borderColor: surface,
+        borderWidth: 1.5,
+      },
+    ];
+    const share = (v: number) => formatNumber(total ? v / total : 0, { format: "percent", decimals: 0 });
+    valueText = (_di, i) => share(slices[i]?.value ?? 0);
+    tooltipLabel = (item) => `${item.label}: ${formatNumber(item.raw, style)} (${share(item.raw)})`;
+    const plugins: Any[] = [];
+    if (spec.labels) plugins.push(valueLabelsPlugin({ theme, horizontal: false, stacked: false, round: true, text: valueText }));
+    if (spec.type === "doughnut") plugins.push(centerPlugin(theme, formatNumber(total, { ...style, format: style.format === "percent" ? undefined : style.format }), spec.center));
+    return finish(plugins);
+  }
+
+  if (isScatter) {
+    // One set per group (or per y key), each point carrying what its tooltip says.
+    const groups: { name: string; key: string; rows: Record<string, unknown>[] }[] = [];
+    if (spec.group) {
+      for (const row of spec.data) {
+        const name = String(row[spec.group] ?? "");
+        let g = groups.find((x) => x.name === name);
+        if (!g) groups.push((g = { name, key: spec.y[0], rows: [] }));
+        g.rows.push(row);
+      }
+    } else for (const key of spec.y) groups.push({ name: key, key, rows: spec.data });
+
+    const sizes = isBubble ? spec.data.map((row) => Math.abs(toNumber(row[spec.size!]))) : [];
+    const biggest = Math.max(1e-9, ...sizes);
+    datasets = [];
+    groups.forEach((g, gi) => {
+      const color = colorOf(g.key, gi);
+      const points = g.rows
+        .map((row) => ({
+          x: toNumber(row[spec.x]),
+          y: toNumber(row[g.key]),
+          ...(spec.label ? { name: String(row[spec.label] ?? "") } : {}),
+          ...(isBubble ? { r: Math.max(2, BUBBLE_MAX * Math.sqrt(Math.abs(toNumber(row[spec.size!])) / biggest)), size: toNumber(row[spec.size!]) } : {}),
+        }))
+        .sort((a, b) => (spec.line ? a.x - b.x : 0));
+      datasets.push({
+        label: g.name,
+        data: points,
+        backgroundColor: isBubble ? translucent(color, 0.55) : color,
+        borderColor: color,
+        borderWidth: isBubble ? 1.5 : 0,
+        pointRadius: 3.5,
+        pointHoverRadius: 5,
+        showLine: spec.line === true,
+        tension: 0,
+        hidden: spec.series?.[g.key]?.hidden === true && !spec.group ? true : undefined,
       });
+      if (spec.trend) {
+        const fit = trendLine(points);
+        if (fit)
+          datasets.push({
+            type: "line",
+            label: `${g.name} trend`,
+            data: fit,
+            borderColor: color,
+            borderWidth: 1.5,
+            borderDash: [6, 4],
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            fill: false,
+            artTrend: true,
+          });
+      }
+    });
+    const xStyle: NumberStyle = spec.axes?.x ?? {};
+    const yStyle = styleOf("left");
+    valueText = (di, i) => {
+      const p = (datasets[di].data as Any[])[i];
+      return p?.name ?? formatNumber(p?.y, yStyle);
+    };
+    tooltipTitle = (items) => items[0]?.raw?.name ?? "";
+    tooltipLabel = (item) => {
+      const p = item.raw;
+      // Grouped, the set is the group and the value is the one y key; otherwise the set is the y key.
+      const yName = spec.group ? spec.y[0] : item.dataset.label;
+      const bits = [`${spec.x} ${formatNumber(p.x, xStyle)}`, `${yName} ${formatNumber(p.y, yStyle)}`];
+      if (isBubble) bits.push(`${spec.size} ${formatNumber(p.size, {})}`);
+      return `${spec.group ? `${item.dataset.label}: ` : ""}${bits.join(", ")}`;
+    };
+  } else {
+    // Bars, lines and areas along categories.
+    const barKeys = spec.y.filter((k) => (spec.series?.[k]?.as ?? spec.type) === "bar");
+    const totals = percent ? spec.data.map((row) => spec.y.reduce((s, k) => s + (axisOf(k) === "left" ? Math.abs(toNumber(row[k])) : 0), 0)) : [];
+    let firstArea = true;
+    datasets = spec.y.map((key, i) => {
+      const color = colorOf(key, i);
+      const s = spec.series?.[key] ?? {};
+      const drawn = s.as ?? spec.type;
+      const bar = drawn === "bar";
+      const area = drawn === "area";
+      const line = drawn === "line" || area;
+      const side = axisOf(key);
+      const raw = spec.data.map((row) => toValue(row[key]));
+      const values = percent && side === "left" ? raw.map((v, r) => (v === null ? null : totals[r] ? v / totals[r] : 0)) : raw;
+      // The last bar of a stack gets the rounded cap, or every joint shows a notch.
+      const capped = !(bar && stacked) || key === barKeys[barKeys.length - 1];
+      const radius = horizontal ? { topLeft: 0, bottomLeft: 0, topRight: 5, bottomRight: 5 } : { topLeft: 5, topRight: 5, bottomLeft: 0, bottomRight: 0 };
+      const dataset: Record<string, unknown> = {
+        label: key,
+        data: values,
+        artRaw: raw,
+        // A solid bar reads as one shape; a dashed one reads as not yet real.
+        borderColor: bar && !s.dash ? "transparent" : color,
+        backgroundColor: bar ? (s.dash ? translucent(color, 0.28) : color) : area ? translucent(color) : color,
+        borderWidth: bar ? (s.dash ? 1.5 : 0) : 2,
+        borderDash: s.dash ? [6, 4] : undefined,
+        borderRadius: bar && capped ? radius : 0,
+        borderSkipped: false,
+        maxBarThickness: 52,
+        categoryPercentage: 0.74,
+        barPercentage: 0.86,
+        // A group missing a series closes up instead of leaving a hole.
+        skipNull: true,
+        fill: area ? (stacked && !firstArea ? "-1" : "origin") : false,
+        ...lineShape(s.curve ?? spec.curve),
+        pointRadius: line ? (spec.type === "bar" || spec.labels ? 2.5 : 0) : 3,
+        pointHoverRadius: 4,
+        hoverBackgroundColor: bar ? (s.dash ? translucent(color, 0.4) : color) : undefined,
+        hoverBorderColor: color,
+        hidden: s.hidden === true ? true : undefined,
+        // Lines drawn over bars sit in front of them.
+        order: line && spec.type === "bar" ? 0 : 1,
+      };
+      if (area) firstArea = false;
+      if (drawn !== spec.type) dataset.type = line ? "line" : "bar";
+      if (horizontal) dataset.xAxisID = side === "right" ? ids.right : ids.left;
+      else dataset.yAxisID = side === "right" ? ids.right : ids.left;
+      // Bars stack with bars and areas with areas; a line mixed into bars stands alone.
+      if (stacked) dataset.stack = drawn === spec.type ? "stack" : `own-${i}`;
+      return dataset;
+    });
+    const sideStyle = (di: number) => styleOf(axisOf(spec.y[di] ?? ""));
+    valueText = (di, i) => {
+      const d = datasets[di];
+      const v = (d.data as (number | null)[])[i];
+      if (v === null || v === undefined) return null;
+      if (percent && axisOf(spec.y[di]) === "left") return formatNumber(v, { format: "percent", decimals: 0 });
+      return formatNumber(v, sideStyle(di));
+    };
+    tooltipLabel = (item) => {
+      const d = datasets[item.datasetIndex];
+      const raw = (d.artRaw as (number | null)[])[item.dataIndex] ?? 0;
+      const own = formatNumber(raw, sideStyle(item.datasetIndex));
+      const shown = percent && axisOf(spec.y[item.datasetIndex]) === "left" ? `${formatNumber(item.raw, { format: "percent" })} (${own})` : own;
+      return `${item.dataset.label}: ${shown}`;
+    };
+  }
 
+  // Grid lines are scaffolding: hairlines along the values, none across.
   const tickFont = { family: font, size: 11, weight: 500 as const };
   const titleOf = (axis: ChartAxis | undefined) =>
     axis?.title ? { display: true, text: axis.title, color: muted, font: { family: font, size: 11.5, weight: 600 as const }, padding: { top: 4, bottom: 2 } } : undefined;
 
   // A mark's value always shows: the axis stretches to reach it.
   const markValues = (side: Side) =>
-    (spec.marks ?? []).filter((m): m is Extract<ChartMark, { kind: "value" }> => m.kind === "value" && m.axis === side).map((m) => m.value);
+    (spec.marks ?? []).flatMap((m) => (m.kind === "value" && m.axis === side ? [m.value] : []));
 
   const valueScale = (side: Side) => {
     const axis = spec.axes?.[side];
-    const unit = unitOf(side);
+    const style = percent && side === "left" ? { format: "percent" as const, decimals: 0 } : styleOf(side);
     const values = markValues(side);
     const scale: Record<string, unknown> = {
-      type: "linear",
+      type: axis?.log ? "logarithmic" : "linear",
+      axis: horizontal ? "x" : "y",
       stacked: stacked && side === "left",
-      beginAtZero: true,
-      ticks: { color: muted, font: tickFont, padding: 8, maxTicksLimit: 6, callback: (value: unknown) => withUnit(value, unit) },
-      // Grid lines are scaffolding: hairlines along the values, none across.
+      beginAtZero: !axis?.log,
+      ticks: { color: muted, font: tickFont, padding: 8, maxTicksLimit: 6, callback: (value: unknown) => formatNumber(Number(value), style) },
       grid: side === "left" ? { color: border, lineWidth: 1, drawTicks: false } : { display: false, drawOnChartArea: false },
       border: { display: false, dash: [3, 4] },
     };
     if (side === "right") scale.position = horizontal ? "top" : "right";
-    if (horizontal) scale.axis = "x";
-    else scale.axis = "y";
     if (values.length) {
       scale.suggestedMax = Math.max(...values);
       scale.suggestedMin = Math.min(0, ...values);
     }
+    if (percent && side === "left") scale.max = 1;
+    // Room above the tallest bar for its value.
+    else if (spec.labels) scale.grace = "8%";
     if (axis?.min !== undefined) scale.min = axis.min;
     if (axis?.max !== undefined) scale.max = axis.max;
     const title = titleOf(axis);
@@ -363,75 +342,87 @@ export function chartConfig(spec: ChartSpec, theme: ChartTheme, layouts?: Layout
   const xTitle = titleOf(spec.axes?.x);
   if (xTitle) category.title = xTitle;
   if (isScatter) {
-    if (spec.axes?.x?.min !== undefined) category.min = spec.axes.x.min;
-    if (spec.axes?.x?.max !== undefined) category.max = spec.axes.x.max;
+    const x = spec.axes?.x ?? {};
+    category.type = x.log ? "logarithmic" : "linear";
+    category.position = "bottom";
+    category.ticks = { ...(category.ticks as object), callback: (value: unknown) => formatNumber(Number(value), x) };
+    // Both directions are values on a scatter chart, so both get hairlines.
+    category.grid = { color: border, lineWidth: 1, drawTicks: false };
+    if (x.min !== undefined) category.min = x.min;
+    if (x.max !== undefined) category.max = x.max;
   }
 
   const scales: Record<string, unknown> = { [ids.category]: category, [ids.left]: valueScale("left") };
   if (hasRight) scales[ids.right] = valueScale("right");
 
-  const unitFor = (datasetIndex: number): string | undefined => (isRound ? spec.unit : unitOf(axisOf(spec.y[datasetIndex] ?? "")));
-  const valueLines = (spec.marks ?? []).some((m) => m.kind !== "band");
+  const plugins: Any[] = [];
+  if (spec.marks?.length) plugins.push(marksPlugin(spec, theme, labels, layouts));
+  if (spec.labels) plugins.push(valueLabelsPlugin({ theme, horizontal, stacked, round: false, text: valueText }));
+  return finish(plugins, scales);
 
-  return {
-    type: base,
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      indexAxis: horizontal ? "y" : "x",
-      layout: { padding: { top: valueLines ? 8 : 4, right: 4 } },
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: {
-          display: isRound || spec.y.length > 1,
-          position: "top",
-          align: "start",
-          labels: {
-            color: muted,
-            font: { family: font, size: 11.5 },
-            boxWidth: 7,
-            boxHeight: 7,
-            padding: 14,
-            usePointStyle: true,
-            pointStyle: "circle",
-            // In the order the y keys were written, not the order they are drawn in.
-            sort: (a: { datasetIndex?: number; index?: number }, b: { datasetIndex?: number; index?: number }) =>
-              (a.datasetIndex ?? a.index ?? 0) - (b.datasetIndex ?? b.index ?? 0),
-          },
-        },
-        tooltip: {
-          backgroundColor: surface,
-          titleColor: text,
-          bodyColor: muted,
-          borderColor: border,
-          borderWidth: 1,
-          padding: 10,
-          cornerRadius: 8,
-          titleFont: { family: font, size: 12, weight: 600 },
-          bodyFont: { family: font, size: 12 },
-          bodySpacing: 5,
-          boxWidth: 7,
-          boxHeight: 7,
-          usePointStyle: true,
-          callbacks: {
-            label: (item: { dataset?: { label?: string }; label?: string; formattedValue: string; datasetIndex: number }) => {
-              const name = isRound ? item.label : item.dataset?.label;
-              return `${name ? `${name}: ` : ""}${withUnit(item.formattedValue, unitFor(item.datasetIndex))}`;
+  function finish(extra: Any[], scaleConfig?: Record<string, unknown>) {
+    const valueLines = (spec.marks ?? []).some((m) => m.kind !== "band");
+    const legendShown = spec.legend !== "none" && (isRound || datasets.filter((d) => !d.artTrend).length > 1);
+    return {
+      type: isBubble ? "bubble" : spec.type === "area" ? "line" : spec.type,
+      data: { labels: isScatter ? undefined : labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        indexAxis: horizontal ? "y" : "x",
+        layout: { padding: { top: valueLines ? 8 : 4, right: 4 } },
+        // Along categories a tooltip lists every series at that spot; on a scatter it is one point.
+        interaction: isScatter ? { mode: "nearest", intersect: true } : { mode: "index", intersect: false },
+        ...(spec.type === "doughnut" ? { cutout: "62%" } : {}),
+        plugins: {
+          legend: {
+            display: legendShown,
+            position: spec.legend === "bottom" ? "bottom" : "top",
+            align: "start",
+            labels: {
+              color: muted,
+              font: { family: font, size: 11.5 },
+              boxWidth: 7,
+              boxHeight: 7,
+              padding: 14,
+              usePointStyle: true,
+              pointStyle: "circle",
+              // Trend lines explain themselves; the legend lists the data.
+              filter: (item: { datasetIndex?: number }) => !(item.datasetIndex !== undefined && datasets[item.datasetIndex]?.artTrend),
+              // In the order the y keys were written, not the order they are drawn in.
+              sort: (a: { datasetIndex?: number; index?: number }, b: { datasetIndex?: number; index?: number }) =>
+                (a.datasetIndex ?? a.index ?? 0) - (b.datasetIndex ?? b.index ?? 0),
             },
           },
+          tooltip: {
+            backgroundColor: surface,
+            titleColor: text,
+            bodyColor: muted,
+            borderColor: border,
+            borderWidth: 1,
+            padding: 10,
+            cornerRadius: 8,
+            titleFont: { family: font, size: 12, weight: 600 },
+            bodyFont: { family: font, size: 12 },
+            bodySpacing: 5,
+            boxWidth: 7,
+            boxHeight: 7,
+            usePointStyle: true,
+            filter: (item: { datasetIndex: number }) => !datasets[item.datasetIndex]?.artTrend,
+            callbacks: { label: tooltipLabel, ...(tooltipTitle ? { title: tooltipTitle } : {}) },
+          },
         },
+        scales: isRound ? undefined : scaleConfig,
       },
-      scales: isRound ? undefined : scales,
-    },
-    plugins: spec.marks?.length ? [marksPlugin(spec, theme, labels, layouts)] : [],
-  };
+      plugins: extra,
+    };
+  }
 }
 
 /** What a screen reader hears for the canvas: the chart's kind and what it plots. */
 export function chartSummary(spec: ChartSpec): string {
-  const kind = spec.horizontal ? "horizontal bar" : spec.type;
+  const kind = spec.horizontal ? "horizontal bar" : spec.type === "scatter" && spec.size ? "bubble" : spec.percent ? "100% stacked bar" : spec.type;
   const what = spec.y.join(", ");
   const head = spec.title ? `${spec.title}. ` : "";
   return `${head}${kind[0].toUpperCase()}${kind.slice(1)} chart of ${what} by ${spec.x}, ${spec.data.length} ${spec.data.length === 1 ? "point" : "points"}. The data follows as a table.`;

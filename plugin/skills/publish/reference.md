@@ -222,7 +222,7 @@ firmer rule above it.
 
 ### ```` ```chart ````
 
-YAML. `type` is `bar`, `line`, `area`, `pie`, `doughnut` or `scatter`. `x` is one key,
+YAML. `type` is `bar`, `line`, `area`, `pie`, `doughnut`, `scatter` or `bubble`. `x` is one key,
 `y` is a key or a list of keys, `data` is a list of objects. Two or more `y` keys on a bar
 chart draw grouped bars side by side; add `stacked: true` to stack them instead. Optional:
 `title`, `unit` (added to values: `%` sits against the number, `min` after a space),
@@ -300,6 +300,54 @@ data:
   - { week: W3, deploys: 11, cfr: 9.1 }
 ```
 ````
+
+**Numbers.** `format` is `number` (1,234), `compact` (1.2K, 3.4M), `percent` or `currency`
+(`currency:EUR`, USD by default). `percent` reads fractions, so 0.25 shows as 25%; for values
+that are already percentages, use `unit: "%"`. `decimals` fixes the places. Each axis in
+`axes` can take its own `format`, `currency`, `decimals` and `unit`; the chart's own apply to
+the left axis. Ticks, tooltips and value labels all follow them.
+
+**Reading aids.** `labels: true` writes each value on its bar or point (a share on pie
+slices). `sort: desc` or `asc` orders the rows by their total. `legend` is `top`, `bottom`
+or `none`. `axes` also take `min`, `max` and `log: true`.
+
+**Stacks, curves and series.** `stacked: percent` stacks each column to 100% and shows
+shares, with the counts in the tooltip. Areas with `stacked: true` pile on each other. Lines
+and areas take `curve: smooth` (the default), `straight` or `step`. Under `series`, a y key
+also takes `color` (a palette slot 1 to 6, or `good`, `warn`, `bad`, `info`, `muted`),
+`dash: true` for a forecast or a target, `curve`, and `hidden: true` to start it switched
+off in the legend.
+
+**Scatter and bubble.** `x` and `y` are numbers. `group: <key>` colors the points by that
+key's values (with one `y` key), `label: <key>` names each point in its tooltip, `line: true`
+joins each group's points in x order and `trend: linear` fits a line through each group.
+`type: bubble` with `size: <key>` sizes the points by area. `axes.x` takes a title, format,
+`min`, `max` and `log` here.
+
+````md
+```chart
+type: bubble
+title: Price against rating, sized by units sold
+x: price
+y: rating
+group: brand
+label: model
+size: sold
+trend: linear
+axes: { x: { title: Price, format: currency }, left: { title: Rating } }
+data:
+  - { model: A1, brand: Acme, price: 199, rating: 3.9, sold: 1200 }
+  - { model: A2, brand: Acme, price: 349, rating: 4.4, sold: 800 }
+  - { model: B1, brand: Bolt, price: 149, rating: 3.1, sold: 2600 }
+```
+````
+
+**Pie and doughnut.** One `y` key; each row is a slice. More than six rows fold the smallest
+into "Other". A doughnut shows its total in the middle, with `center: <words>` under it.
+Tooltips give each slice's share.
+
+A key the chart does not read comes back in the publish result as a warning, with the key it
+most likely meant.
 
 ### ```` ```table ````
 

@@ -17,7 +17,8 @@ import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { badgeClass, BlockError, parseChartBlock, parseTableBlock } from "@/lib/pipeline/parse";
+import { badgeClass, BlockError, parseTableBlock } from "@/lib/pipeline/parse";
+import { parseChartBlock } from "@/lib/pipeline/chart";
 import { parseStoryBlock, StoryBlockError } from "@/lib/storybook/spec";
 
 /**
