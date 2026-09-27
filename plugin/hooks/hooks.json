@@ -1,5 +1,5 @@
 {
-  "description": "Tells the agent Indy is available, in one short line.",
+  "description": "Tells the agent Indy is available and what it can do, in a few short lines.",
   "hooks": {
     "SessionStart": [
       {

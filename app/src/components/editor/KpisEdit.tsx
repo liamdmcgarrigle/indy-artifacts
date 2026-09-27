@@ -25,6 +25,7 @@ export function KpisEdit({ node, updateAttributes }: ReactNodeViewProps) {
           <Typeable className="kpi-edit__value" value={k.value} placeholder="Value" onChange={(value) => change(i, { value })} />
           <Typeable className="kpi-edit__label" value={k.label} placeholder="Label" onChange={(label) => change(i, { label })} />
           <Typeable className="kpi-edit__delta" value={k.delta ?? ""} placeholder="+ change" onChange={(delta) => change(i, { delta: delta || null })} />
+          <Typeable className="kpi-edit__note" value={k.note ?? ""} placeholder="Note" onChange={(note) => change(i, { note: note || null })} />
           <div className="kpi-edit__tools">
             <button
               type="button"

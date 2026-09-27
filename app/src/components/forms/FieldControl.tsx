@@ -30,6 +30,11 @@ const INPUT_MODE: Partial<Record<FieldSpec["type"], React.HTMLAttributes<HTMLInp
   tel: "tel",
 };
 
+/** What an empty field shows when the author gave no placeholder. */
+const DEFAULT_PLACEHOLDER: Partial<Record<FieldSpec["type"], string>> = {
+  tel: "+1 …",
+};
+
 const control = "h-11 text-base md:h-10 md:text-[15px]";
 
 /** The input for one question, chosen by its type. */
@@ -195,7 +200,7 @@ export function FieldControl({
           type={INPUT_TYPE[field.type] ?? "text"}
           inputMode={INPUT_MODE[field.type]}
           value={value === undefined || value === null ? "" : String(value)}
-          placeholder={field.placeholder}
+          placeholder={field.placeholder ?? DEFAULT_PLACEHOLDER[field.type]}
           min={field.min}
           max={field.max}
           step={field.step}

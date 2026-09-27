@@ -4,7 +4,7 @@ import { ORIGIN_ATTRS } from "./schema";
 const ORIGIN = new Set<string>(ORIGIN_ATTRS);
 
 /** Attributes that are filled in for display and are not part of what was written. */
-const DERIVED = new Set(["html", "embedId"]);
+const DERIVED = new Set(["html", "embedId", "taskKey"]);
 
 /** The block's content with origin and display attributes left out, in a stable order. */
 function canonical(node: JSONContent, top: boolean): unknown {

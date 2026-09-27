@@ -37,6 +37,7 @@ interface Share {
   opens: number;
   lastOpenedAt: string | null;
   expiresAt: string | null;
+  agent?: { agent: string; reason: string } | null;
 }
 
 type Section = "account" | "agents" | "themes" | "storybooks" | "email" | "shares" | "data";
@@ -149,7 +150,7 @@ export function SettingsView(props: {
           {section === "themes" ? <ThemesSection state={themes} setState={setThemes} say={say} /> : null}
           {section === "storybooks" ? <StorybooksSection state={storybooks} setState={setStorybooks} say={say} /> : null}
           {section === "email" ? <EmailSection email={props.email} /> : null}
-          {section === "shares" ? <SharesSection shares={shares} setShares={setShares} say={say} /> : null}
+          {section === "shares" ? <SharesSection shares={shares} setShares={setShares} say={say} settings={settings} onSettings={setSettings} /> : null}
           {section === "data" ? (
             <DataSection settings={settings} usage={usage} onSaved={(s, u) => (setSettings(s), setUsage(u))} say={say} />
           ) : null}
@@ -438,7 +439,28 @@ function EmailSection({ email }: { email: { on: boolean; from: string } }) {
 
 // ---------------------------------------------------------------- shared links
 
-function SharesSection({ shares, setShares, say }: { shares: Share[]; setShares: (s: Share[]) => void; say: Say }) {
+function SharesSection({
+  shares,
+  setShares,
+  say,
+  settings,
+  onSettings,
+}: {
+  shares: Share[];
+  setShares: (s: Share[]) => void;
+  say: Say;
+  settings: AppSettings;
+  onSettings: (s: AppSettings) => void;
+}) {
+  async function allowAgents(on: boolean) {
+    try {
+      const data = (await send("/api/settings", "PATCH", { agent_sharing: on })) as { settings: AppSettings };
+      onSettings(data.settings);
+      say.good(on ? "Agents can now create share links." : "Agents can no longer create share links.");
+    } catch (err) {
+      say.bad(err);
+    }
+  }
   async function revoke(s: Share) {
     if (!window.confirm(`Stop sharing "${s.title}"? The link stops working for everyone.`)) return;
     try {
@@ -452,6 +474,15 @@ function SharesSection({ shares, setShares, say }: { shares: Share[]; setShares:
   return (
     <>
       <Head title="Shared links" lede="Every page someone besides you can open right now. Change a link's details from the page's Share button." />
+      <Card>
+        <Row
+          label="Agents may create share links"
+          htmlFor="agent-sharing"
+          help="When on, an agent can share a page when you ask it to. Its links expire within 30 days and show which agent made them and why."
+        >
+          <Switch id="agent-sharing" checked={settings.agentSharing} onCheckedChange={(on) => void allowAgents(on)} />
+        </Row>
+      </Card>
       <Card>
         {shares.length === 0 ? (
           <p className="m-0 px-[18px] py-6 text-sm text-muted-foreground">Nothing is shared. Every page is private.</p>
@@ -471,6 +502,11 @@ function SharesSection({ shares, setShares, say }: { shares: Share[]; setShares:
                   {s.lastOpenedAt ? `, last ${agoLong(s.lastOpenedAt)}` : ""}
                   {s.expiresAt ? ` · expires ${new Date(s.expiresAt).toLocaleDateString()}` : ""}
                 </span>
+                {s.agent ? (
+                  <span className="text-xs text-fg-3">
+                    Created by agent {s.agent.agent}: {s.agent.reason}
+                  </span>
+                ) : null}
               </span>
               <span className="flex shrink-0 items-center gap-3">
                 <button

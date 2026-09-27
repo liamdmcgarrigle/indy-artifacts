@@ -33,6 +33,10 @@ import { FormBar } from "./forms/FormBar";
 import { ShareDialog } from "./viewer/ShareDialog";
 import { primitivesUrl } from "@/lib/primitives";
 import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
+import { IDENTITY_HEADER, IdentityDialog, renewIdentity, storedIdentity, storeIdentity, type VisitorIdentity } from "./share/IdentityDialog";
+import { createTickStore } from "@/lib/doc/tasks-view";
+import type { TickView } from "@/lib/tasks";
+import type { Listener } from "@/lib/service/listeners";
 
 export interface ThreadView {
   id: string;
@@ -44,6 +48,8 @@ export interface ThreadView {
   sentAt: string | null;
   /** A visitor's thread, once the owner has passed it on to the agent. */
   approvedAt?: string | null;
+  /** A visitor's thread the owner asked the agent to address. */
+  endorsedAt?: string | null;
   versionNumber: number;
   createdAt: string;
   replies: {
@@ -104,13 +110,19 @@ export interface ArtifactViewProps {
   storybooks?: string[];
   /** Set when a visitor opens the page through a share link. */
   visitor?: VisitorInfo | null;
+  /** People's ticks on this version's task items. */
+  ticks?: TickView[];
+  /** Ticks not yet sent to the agent. */
+  unsentTicks?: number;
 }
 
 export interface VisitorInfo {
   token: string;
   email: string | null;
+  /** Whether the link lets visitors take part: comment and tick. */
   allowComments: boolean;
   sharedBy: string | null;
+  mode?: "link" | "email";
 }
 
 interface Box {
@@ -151,7 +163,19 @@ function fanOut<T extends { top: number; left: number }>(pins: T[]): T[] {
   return placed;
 }
 
+/** autoFocus without the scroll: the box is placed where the reader already is. */
+function focusInPlace(el: HTMLElement | null): void {
+  el?.focus({ preventScroll: true });
+}
+
 const NAME_KEY = "art-author-name";
+
+const LISTENER_TEXT: Record<Listener, [label: string, detail: string]> = {
+  waiting: ["Agent is waiting", "It gets this right away."],
+  terminal: ["Agent's terminal", "Orca types this into its session now."],
+  "terminal-offline": ["Orca is not picking up", "The agent sees this next time it checks the page."],
+  none: ["No agent listening", "It sees this next time it checks the page."],
+};
 const POP_W = 312;
 const POP_GAP = 16;
 
@@ -171,6 +195,10 @@ function when(iso: string): string {
   return `${Math.round(hours / 24)}d`;
 }
 
+
+function capitalise(text: string): string {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
 
 /** Whether two pin layouts put every pin in the same place. */
 function samePins<T extends { thread: { id: string } }>(a: T[], b: T[]): boolean {
@@ -210,7 +238,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [pick, setPick] = useState<Box | null>(null);
   const [selected, setSelected] = useState<Anchor | null>(null);
   // Signed in, you are who you are; the name box is for when you are not.
-  const [author, setAuthor] = useState(props.userName ?? (props.visitor ? (props.visitor.email ?? "") : "operator"));
+  const [author, setAuthor] = useState(props.userName ?? (props.visitor ? "" : "operator"));
   const visitor = props.visitor ?? null;
   // Where this page's comments live: the owner's API, or the share link's.
   const commentsApi = visitor ? `/s/${visitor.token}/api/comments` : `/api/artifacts/${props.slug}/comments`;
@@ -219,6 +247,8 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
   const [batchMessage, setBatchMessage] = useState("");
   const [panel, setPanel] = useState<"none" | "list" | "send">("none");
+  // Who would get a send right now; asked while the Send panel is open.
+  const [listener, setListener] = useState<Listener | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [sharing, setSharing] = useState(props.sharing ?? "private");
   useEffect(() => setSharing(props.sharing ?? "private"), [props.sharing]);
@@ -288,6 +318,144 @@ export function ArtifactView(props: ArtifactViewProps) {
     const data = (await res.json()) as { threads: ThreadView[] };
     setThreads(data.threads);
   }, [commentsApi]);
+
+  // ---- ticks -----------------------------------------------------------------
+
+  // One store for the life of the page: the document's task items draw from it.
+  const [tickStore] = useState(() => createTickStore(props.ticks ?? []));
+  const [unsentTicks, setUnsentTicks] = useState(props.unsentTicks ?? 0);
+  useEffect(() => setUnsentTicks(props.unsentTicks ?? 0), [props.unsentTicks]);
+  useEffect(() => tickStore.set(props.ticks ?? []), [tickStore, props.ticks]);
+  // A visitor's name and email live in this browser, signed by Indy, and
+  // follow them to every share link; they are asked once, then never again.
+  const [identity, setIdentity] = useState<VisitorIdentity | null>(null);
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+  const remember = useCallback((who: VisitorIdentity | null) => {
+    identityRef.current = who;
+    setIdentity(who);
+    storeIdentity(who);
+    if (who) setAuthor(who.name);
+  }, []);
+  useEffect(() => {
+    if (!visitor) return;
+    const stored = storedIdentity();
+    identityRef.current = stored;
+    setIdentity(stored);
+    if (stored) setAuthor(stored.name);
+  }, [visitor]);
+  // A visitor who has not said who they are yet is asked, then the action goes ahead.
+  const [ask, setAsk] = useState<{ reason: "tick" | "comment"; then: (who: VisitorIdentity) => void } | null>(null);
+
+  /**
+   * A visitor's write, carrying their identity. If this link does not take the
+   * stored one as it is (an email link wants its confirmed address), it is
+   * shown to the link once to be renewed. "ask" means there is none to use.
+   */
+  const identityFetch = useCallback(
+    async (url: string, init: RequestInit): Promise<Response | "ask"> => {
+      if (!visitor) return fetch(url, init);
+      const send = (who: VisitorIdentity) => fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), [IDENTITY_HEADER]: who.token } });
+      const who = identityRef.current;
+      if (!who) return "ask";
+      const res = await send(who);
+      if (res.status !== 403) return res;
+      const data = (await res.clone().json().catch(() => null)) as { error?: { code?: string } } | null;
+      if (data?.error?.code !== "identify") return res;
+      const fresh = await renewIdentity(visitor.token, who);
+      if (fresh === "rejected") {
+        remember(null);
+        return "ask";
+      }
+      // Could not ask just now: keep who they are and let the write fail as it did.
+      if (!fresh) return res;
+      remember(fresh);
+      return send(fresh);
+    },
+    [visitor, remember],
+  );
+  const ticksApi = visitor ? `/s/${visitor.token}/api/ticks` : `/api/artifacts/${props.slug}/ticks`;
+  // The owner ticks the latest version; a visitor, whatever the link shows.
+  const canTick = props.kind === "markdown" && !editing && (visitor ? visitor.allowComments : isLatest);
+  useEffect(() => tickStore.setCanTick(canTick), [tickStore, canTick]);
+
+  const refreshTicks = useCallback(async () => {
+    const res = await fetch(`${ticksApi}${visitor ? "" : `?version=${props.versionNumber}`}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const data = (await res.json()) as { ticks: TickView[]; unsent?: number };
+    tickStore.set(data.ticks);
+    if (typeof data.unsent === "number") setUnsentTicks(data.unsent);
+  }, [ticksApi, visitor, props.versionNumber, tickStore]);
+
+  const tickNow = useCallback(
+    async (key: string, checked: boolean) => {
+      // Show it straight away; the answer from the server replaces it.
+      const mine: TickView = {
+        key,
+        checked,
+        byKind: visitor ? "visitor" : "owner",
+        byName: identityRef.current?.name ?? props.userName ?? "You",
+        at: new Date().toISOString(),
+      };
+      const snapshot = tickStore.all();
+      tickStore.set([...snapshot.filter((t) => t.key !== key), mine]);
+      try {
+        const res = await identityFetch(ticksApi, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key, checked, version: props.versionNumber }),
+        });
+        if (res === "ask") {
+          tickStore.set(snapshot);
+          setAsk({ reason: "tick", then: () => void tickNow(key, checked) });
+          return;
+        }
+        const data = (await res.json()) as { ticks?: TickView[]; unsent?: number; error?: { code?: string; message?: string } };
+        if (!res.ok || !data.ticks) {
+          tickStore.set(snapshot);
+          setNotice({ kind: "bad", text: data.error?.message ? capitalise(data.error.message) : "Could not save that tick." });
+          return;
+        }
+        tickStore.set(data.ticks);
+        if (typeof data.unsent === "number") setUnsentTicks(data.unsent);
+      } catch {
+        tickStore.set(snapshot);
+        setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
+      }
+    },
+    [props.userName, props.versionNumber, ticksApi, tickStore, visitor, identityFetch],
+  );
+
+  useEffect(() => {
+    tickStore.setHandler((key, checked) => {
+      if (visitor && !identityRef.current) {
+        setAsk({ reason: "tick", then: () => void tickNow(key, checked) });
+        return;
+      }
+      void tickNow(key, checked);
+    });
+    return () => tickStore.setHandler(null);
+  }, [tickStore, tickNow, visitor]);
+
+  // "2m ago" moves on while the page is open.
+  useEffect(() => {
+    const timer = window.setInterval(() => tickStore.touch(), 60_000);
+    return () => window.clearInterval(timer);
+  }, [tickStore]);
+
+  // A visitor has no live stream; their page looks for other people's ticks now and then.
+  useEffect(() => {
+    if (!visitor || props.kind !== "markdown") return;
+    const poll = () => {
+      if (document.visibilityState === "visible") void refreshTicks();
+    };
+    const timer = window.setInterval(poll, 10_000);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", poll);
+    };
+  }, [visitor, props.kind, refreshTicks]);
 
   // A card anchored near the foot of a long page would open with half of it
   // below the fold. Measure it on the frame after it appears and lift it back
@@ -429,9 +597,10 @@ export function ArtifactView(props: ArtifactViewProps) {
         else router.refresh();
       }
       void refreshThreads();
+      void refreshTicks();
     });
     return () => source.close();
-  }, [visitor, props.slug, props.versionNumber, refreshThreads, router]);
+  }, [visitor, props.slug, props.versionNumber, refreshThreads, refreshTicks, router]);
 
   useEffect(() => {
     busyEditingRef.current = busyEditing;
@@ -779,6 +948,8 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   function commentOnBlock(event: React.MouseEvent) {
     if (editing || !canComment) return;
+    // Two quick taps on a checkbox are two ticks, not a comment.
+    if ((event.target as HTMLElement).closest?.(".art-task__hit, .art-tick-by")) return;
     const block = blockOf(event.target as Node);
     if (!block) return;
     setActiveId(null);
@@ -972,6 +1143,12 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   /** True once the comment is saved, so a reply box only clears on success. */
   async function postComment(parentId?: string, bodyText?: string): Promise<boolean> {
+    // A visitor's comment goes under their name, so the first one asks for it.
+    if (visitor && !identityRef.current) {
+      return new Promise<boolean>((resolve) => {
+        setAsk({ reason: "comment", then: () => void postComment(parentId, bodyText).then(resolve) });
+      });
+    }
     const payload = {
       body: bodyText ?? draft?.body ?? "",
       author_name: author,
@@ -983,13 +1160,17 @@ export function ArtifactView(props: ArtifactViewProps) {
     if (!payload.body.trim()) return false;
     setBusy(true);
     try {
-      const res = await fetch(commentsApi, {
+      const res = await identityFetch(commentsApi, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (res === "ask") {
+        setBusy(false);
+        return postComment(parentId, bodyText);
+      }
       if (!res.ok) {
-        const err = (await res.json()) as { error?: { message?: string } };
+        const err = (await res.json()) as { error?: { code?: string; message?: string } };
         setNotice({ kind: "bad", text: err.error?.message ?? "could not save that comment" });
         return false;
       }
@@ -1030,25 +1211,45 @@ export function ArtifactView(props: ArtifactViewProps) {
     }
   }
 
-  /** Pass a visitor's thread on to the agent; it goes with the next batch. */
-  async function forwardThread(id: string) {
+  /** Ask the agent to address a visitor's thread: it drops the flag that says to check with you first. */
+  async function endorseThread(id: string) {
     setBusy(true);
     try {
       const res = await fetch(`/api/comments/${id}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "forward" }),
+        body: JSON.stringify({ action: "endorse" }),
       });
       if (!res.ok) {
-        setNotice({ kind: "bad", text: "Could not forward that comment." });
+        setNotice({ kind: "bad", text: "Could not pass that on to the agent." });
         return;
       }
       await refreshThreads();
-      setNotice({ kind: "good", text: "Forwarded. It goes to the agent with the next send." });
+      setNotice({ kind: "good", text: "The agent will address it." });
     } finally {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (panel !== "send") return;
+    let live = true;
+    const ask = async () => {
+      try {
+        const res = await fetch(`/api/artifacts/${props.slug}/send`, { cache: "no-store" });
+        const data = (await res.json()) as { listener?: Listener };
+        if (live && res.ok && data.listener) setListener(data.listener);
+      } catch {
+        /* the panel still sends; it just cannot say who is listening */
+      }
+    };
+    void ask();
+    const timer = window.setInterval(ask, 5000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [panel, props.slug]);
 
   async function sendBatch() {
     setBusy(true);
@@ -1058,19 +1259,19 @@ export function ArtifactView(props: ArtifactViewProps) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: batchMessage, author_name: author }),
       });
-      const data = (await res.json()) as { count?: number; error?: { message?: string } };
+      const data = (await res.json()) as { count?: number; ticks?: number; error?: { message?: string } };
       if (!res.ok) {
         setNotice({ kind: "bad", text: data.error?.message ?? "could not send" });
         return;
       }
       setPanel("none");
       setBatchMessage("");
-      await refreshThreads();
+      await Promise.all([refreshThreads(), refreshTicks()]);
+      const sent = sentWhat(data.count ?? 0, data.ticks ?? 0);
+      const heard = listener === "waiting" || listener === "terminal";
       setNotice({
         kind: "good",
-        text: data.count
-          ? `Sent ${data.count} comment${data.count === 1 ? "" : "s"} to the agent.`
-          : "Nothing new to send.",
+        text: !sent ? "Nothing new to send." : heard ? `Sent ${sent} to the agent.` : `Saved ${sent} for the agent. It sees them the next time it checks this page.`,
       });
     } catch {
       setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
@@ -1097,6 +1298,7 @@ export function ArtifactView(props: ArtifactViewProps) {
           panel={panel}
           onThreads={() => setPanel((p) => (p === "list" ? "none" : "list"))}
           onComment={canComment ? toggleTool : null}
+          as={identity?.name ?? null}
         />
       ) : (
       <ViewerHeader
@@ -1110,7 +1312,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         versions={props.versions}
         nav={nav && navIndex >= 0 ? { label: nav.label, index: navIndex, count: nav.slugs.length } : null}
         threads={visible.length}
-        unsent={unsent}
+        unsent={unsent + unsentTicks}
         panel={panel}
         canEdit={canEdit}
         responses={props.form ? props.form.responses : null}
@@ -1162,7 +1364,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                         <span className="badge badge--unsent">unsent</span>
                       ) : null}
                       {thread.status === "resolved" ? <span className="badge">resolved</span> : null}
-                      {!visitor && thread.authorKind === "visitor" && !thread.approvedAt ? <span className="badge">visitor</span> : null}
+                      {!visitor && thread.authorKind === "visitor" ? <span className="badge">{thread.endorsedAt ? "visitor" : "visitor · ask first"}</span> : null}
                     </span>
                     <span className="rowitem__body">{truncate(thread.body, 90)}</span>
                   </span>
@@ -1176,9 +1378,16 @@ export function ArtifactView(props: ArtifactViewProps) {
       {panel === "send" ? (
         <div className="panel panel--narrow">
           <div className="composer">
-            <div className="tiny">
-              {unsent} comment{unsent === 1 ? "" : "s"} will go to the agent as one message.
-            </div>
+            <div className="tiny">{capitalise(sentWhat(unsent, unsentTicks) || "nothing")} will go to the agent as one message.</div>
+            {listener ? (
+              <div className={`listener listener--${listener}`} role="status">
+                <span className="listener__dot" aria-hidden />
+                <span>
+                  <strong className="listener__label">{LISTENER_TEXT[listener][0]}</strong>{" "}
+                  <span className="listener__detail">{LISTENER_TEXT[listener][1]}</span>
+                </span>
+              </div>
+            ) : null}
             <input
               className="field"
               autoFocus
@@ -1277,6 +1486,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                     onReady={onDocReady}
                     onEditor={onEditor}
                     onDirty={onDirty}
+                    ticks={props.kind === "markdown" ? tickStore : undefined}
                   />
                 ) : (
                   <div className="art-content" dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
@@ -1362,7 +1572,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                   thread={active}
                   busy={busy}
                   role={visitor ? "visitor" : "owner"}
-                  onForward={() => forwardThread(active.id)}
+                  onEndorse={() => endorseThread(active.id)}
                   onClose={() => setActiveId(null)}
                   onStatus={(status) => setStatus(active.id, status)}
                   onReply={(text) => postComment(active.id, text)}
@@ -1370,8 +1580,10 @@ export function ArtifactView(props: ArtifactViewProps) {
               </div>
             ) : null}
 
-            {draft ? (
-              <div className="pop" style={{ top: draftSpot?.popTop ?? 8, left: draftSpot?.popLeft ?? 8 }}>
+            {/* Not until the spot is measured: at the top of the page, focusing
+                the box would scroll the reader there. */}
+            {draft && draftSpot ? (
+              <div className="pop" style={{ top: draftSpot.popTop, left: draftSpot.popLeft }}>
                 <div className="composer">
                   <div className="pop__bar">
                     <span className="pop__quote" title={describeAnchor(draft.anchor)}>
@@ -1382,7 +1594,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                     </button>
                   </div>
                   <textarea
-                    autoFocus
+                    ref={focusInPlace}
                     value={draft.body}
                     placeholder="What should change?"
                     onChange={(e) => setDraft({ ...draft, body: e.target.value })}
@@ -1390,7 +1602,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void postComment();
                     }}
                   />
-                  {props.userName ? null : <input
+                  {props.userName || visitor ? null : <input
                     className="field"
                     value={author}
                     onChange={(e) => rememberName(e.target.value)}
@@ -1399,7 +1611,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                   />}
                   <div className="composer__row">
                     {visitor ? (
-                      <span className="tiny">Only the page's owner sees this.</span>
+                      <span className="tiny">{identity ? `Commenting as ${identity.name}` : "You'll be asked for your name first."}</span>
                     ) : (
                       <label className="check">
                         <input
@@ -1414,7 +1626,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                       <button className="btn btn--ghost" onClick={() => setDraft(null)}>
                         Cancel
                       </button>
-                      <button className="btn btn--primary" onClick={() => void postComment()} disabled={busy || !draft.body.trim() || (visitor !== null && !author.trim())}>
+                      <button className="btn btn--primary" onClick={() => void postComment()} disabled={busy || !draft.body.trim()}>
                         Comment
                       </button>
                     </span>
@@ -1480,8 +1692,32 @@ export function ArtifactView(props: ArtifactViewProps) {
         <FormBar responsesHref={visitor ? undefined : `/a/${props.slug}/responses`} responseCount={visitor ? undefined : props.form.responses} />
       ) : null}
       {visitor ? <MadeWithIndy raised={props.form !== null} /> : null}
+      {visitor && ask ? (
+        <IdentityDialog
+          token={visitor.token}
+          verifiedEmail={visitor.email}
+          sharedBy={visitor.sharedBy}
+          reason={ask.reason}
+          onCancel={() => setAsk(null)}
+          onDone={(who) => {
+            const then = ask.then;
+            remember(who);
+            setAsk(null);
+            then(who);
+          }}
+        />
+      ) : null}
     </FormGate>
   );
+}
+
+/** "2 comments and 3 ticks", for the send panel and its notice. */
+function sentWhat(comments: number, ticks: number): string {
+  const parts = [
+    comments ? `${comments} comment${comments === 1 ? "" : "s"}` : "",
+    ticks ? `${ticks} tick${ticks === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  return parts.join(" and ");
 }
 
 /** The form's state around the page and its bar, on pages that have questions. */
@@ -1549,7 +1785,7 @@ function ThreadCard({
   thread,
   busy,
   role,
-  onForward,
+  onEndorse,
   onClose,
   onStatus,
   onReply,
@@ -1557,7 +1793,7 @@ function ThreadCard({
   thread: ThreadView;
   busy: boolean;
   role: "owner" | "visitor";
-  onForward: () => void;
+  onEndorse: () => void;
   onClose: () => void;
   onStatus: (status: "open" | "resolved") => void;
   onReply: (text: string) => Promise<boolean>;
@@ -1607,13 +1843,13 @@ function ThreadCard({
 
       {role === "owner" && thread.authorKind === "visitor" ? (
         <div className="pop__forward">
-          {thread.approvedAt ? (
-            <span className="tiny">{thread.sentAt ? "Sent to the agent" : "Forwarded · goes with the next send"}</span>
+          {thread.endorsedAt ? (
+            <span className="tiny">You asked the agent to address this.</span>
           ) : (
             <>
-              <span className="tiny">From a share link. The agent does not see it unless you forward it.</span>
-              <button className="btn btn--ghost" onClick={onForward} disabled={busy}>
-                Forward to agent
+              <span className="tiny">From a visitor. The agent sees it, flagged to check with you first.</span>
+              <button className="btn btn--primary" onClick={onEndorse} disabled={busy}>
+                Ask agent to address
               </button>
             </>
           )}

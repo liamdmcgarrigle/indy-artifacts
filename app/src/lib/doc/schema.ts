@@ -17,7 +17,7 @@ import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { BlockError, parseChartBlock, parseTableBlock } from "@/lib/pipeline/parse";
+import { badgeClass, BlockError, parseChartBlock, parseTableBlock } from "@/lib/pipeline/parse";
 import { parseStoryBlock, StoryBlockError } from "@/lib/storybook/spec";
 
 /**
@@ -44,6 +44,7 @@ export const TOP_LEVEL = [
   "details",
   "columns",
   "tabs",
+  "timeline",
   "kpis",
   "chart",
   "dataTable",
@@ -86,7 +87,7 @@ export interface OriginAttrs {
 function container(name: string, tag: string, content = "block+", keys: string[] = [], flags: string[] = []) {
   return Node.create({
     name,
-    group: name === "col" || name === "tab" || name === "option" ? undefined : "block",
+    group: name === "col" || name === "tab" || name === "option" || name === "event" ? undefined : "block",
     content,
     defining: true,
     addAttributes() {
@@ -109,10 +110,38 @@ function container(name: string, tag: string, content = "block+", keys: string[]
 export const Callout = container("callout", "art-callout", "block+", ["tone", "title"]);
 export const Card = container("card", "art-card", "block+", ["title", "subtitle"]);
 export const Details = container("details", "art-details", "block+", ["summary", "open"]);
-export const Columns = container("columns", "art-columns", "col+", ["n"], ["compact"]);
+export const Columns = container("columns", "art-columns", "col+", ["n"], ["compact", "aside"]);
 export const Col = container("col", "art-col", "block+");
 export const Tabs = container("tabs", "art-tabs", "tab+");
 export const Tab = container("tab", "art-tab", "block+", ["label"]);
+/** A dated list of events: `:::timeline{legend="good:Shipped, bad:Outage"}` holding `:::event`s. */
+export const Timeline = container("timeline", "art-timeline", "event+", ["legend"]);
+/** One entry: `:::event{date="Mar 2024" title="..." kind=good source="..."}`, its body any blocks. */
+export const TimelineEvent = container("event", "art-event", "block+", ["date", "title", "kind", "source"]);
+
+// -------------------------------------------------------------------- inline
+
+/** `:badge[Recommended]{tone=good}`: a short label, drawn like a stamp. */
+export const Badge = Node.create({
+  name: "badge",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return { label: { default: "", rendered: false }, attributes: { default: {}, rendered: false } };
+  },
+  parseHTML() {
+    return [{ tag: "span.art-badge" }];
+  },
+  renderHTML({ node }) {
+    const a = (node.attrs.attributes ?? {}) as Record<string, string>;
+    return ["span", { class: badgeClass(a.tone) }, String(node.attrs.label ?? "")];
+  },
+  renderText({ node }) {
+    return String(node.attrs.label ?? "");
+  },
+});
 
 // --------------------------------------------------------------------- forms
 
@@ -143,6 +172,7 @@ export interface KpiItem {
   value: string;
   tone?: string | null;
   delta?: string | null;
+  note?: string | null;
 }
 
 export const Kpis = Node.create({
@@ -165,6 +195,7 @@ export const Kpis = Node.create({
         const attrs: Record<string, string> = { label: k.label, value: k.value };
         if (k.tone) attrs.tone = k.tone;
         if (k.delta) attrs.delta = k.delta;
+        if (k.note) attrs.note = k.note;
         return ["art-kpi", attrs] as [string, Record<string, string>];
       }),
     ];
@@ -291,7 +322,9 @@ const Ordered = OrderedList.extend({
 });
 const Item = ListItem.extend({ addAttributes: () => ({ ...Spread }) });
 const Tasks = TaskList.extend({ addAttributes: () => ({ ...Spread }) });
-const TaskEntry = TaskItem.extend({ addAttributes() { return { ...this.parent?.(), ...Spread }; } }).configure({ nested: true });
+/** taskKey is where people's ticks are stored; it is worked out from the words, never written. */
+const TaskKey = { taskKey: { default: null, rendered: false, keepOnSplit: false } };
+export const TaskEntry = TaskItem.extend({ addAttributes() { return { ...this.parent?.(), ...Spread, ...TaskKey }; } }).configure({ nested: true });
 
 const Align = {
   align: {
@@ -402,6 +435,9 @@ export function docExtensions(options: DocOptions = {}): AnyExtension[] {
     Col,
     Tabs,
     Tab,
+    Timeline,
+    TimelineEvent,
+    Badge,
     Field,
     Choice,
     ChoiceOption,

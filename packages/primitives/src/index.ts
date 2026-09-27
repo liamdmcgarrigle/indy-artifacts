@@ -143,6 +143,8 @@ class ArtKpi extends ArtElement {
     if (delta) value.appendChild(make("span", "art-kpi__delta", delta));
     this.appendChild(value);
     this.appendChild(make("div", "art-kpi__label", attr(this, "label")));
+    const note = attr(this, "note");
+    if (note) this.appendChild(make("div", "art-kpi__note", note));
   }
 }
 
@@ -251,6 +253,85 @@ class ArtDetails extends ArtElement {
     details.appendChild(make("summary", "art-details__summary", attr(this, "summary") || "Details"));
     details.appendChild(body);
     this.appendChild(details);
+  }
+}
+
+/* --------------------------------------------------------- timeline, event */
+
+/** Marker kinds: the callout tones, plus a plain milestone and an inferred gap. */
+const EVENT_KINDS = new Set(["neutral", "key", "good", "warn", "bad", "info", "gap"]);
+const EVENT_ALIASES: Record<string, string> = {
+  success: "good",
+  danger: "bad",
+  error: "bad",
+  warning: "warn",
+  milestone: "key",
+  inferred: "gap",
+};
+
+export function eventKind(raw: string): string {
+  const k = raw.trim().toLowerCase();
+  const kind = EVENT_ALIASES[k] ?? k;
+  return EVENT_KINDS.has(kind) ? kind : "neutral";
+}
+
+/** `legend="good:Shipped, bad:Outage"` as kind and label pairs, in order. */
+export function parseLegend(raw: string): { kind: string; label: string }[] {
+  return raw
+    .split(",")
+    .map((part) => {
+      const sep = part.indexOf(":");
+      const label = (sep === -1 ? part : part.slice(sep + 1)).trim();
+      return { kind: eventKind(sep === -1 ? "" : part.slice(0, sep)), label };
+    })
+    .filter((item) => item.label);
+}
+
+class ArtTimeline extends ArtElement {
+  protected render(): void {
+    this.classList.add("art-timeline");
+    const list = wrapChildren(this, "art-timeline__list");
+    list.setAttribute("role", "list");
+
+    const legend = parseLegend(attr(this, "legend"));
+    if (legend.length) {
+      const row = make("div", "art-timeline__legend");
+      for (const item of legend) {
+        const key = make("span", `art-timeline__key art-timeline__key--${item.kind}`);
+        const dot = make("span", "art-timeline__dot");
+        dot.setAttribute("aria-hidden", "true");
+        key.append(dot, item.label);
+        row.appendChild(key);
+      }
+      this.appendChild(row);
+    }
+    this.appendChild(list);
+  }
+}
+
+class ArtEvent extends ArtElement {
+  protected render(): void {
+    const kind = eventKind(attr(this, "kind"));
+    this.classList.add("art-event", `art-event--${kind}`);
+    this.setAttribute("role", "listitem");
+    const body = wrapChildren(this, "art-event__body");
+
+    const rail = make("div", "art-event__rail");
+    rail.setAttribute("aria-hidden", "true");
+    rail.appendChild(make("span", "art-event__marker"));
+
+    const main = make("div", "art-event__main");
+    const title = attr(this, "title");
+    const source = attr(this, "source");
+    if (title || source) {
+      const head = make("div", "art-event__head");
+      if (title) head.appendChild(make("span", "art-event__title", title));
+      if (source) head.appendChild(make("span", "art-event__source", source));
+      main.appendChild(head);
+    }
+    main.appendChild(body);
+
+    this.append(make("div", "art-event__date", attr(this, "date")), rail, main);
   }
 }
 
@@ -793,6 +874,8 @@ const ELEMENTS: ReadonlyArray<readonly [string, CustomElementConstructor]> = [
   ["art-tabs", ArtTabs],
   ["art-tab", ArtTab],
   ["art-details", ArtDetails],
+  ["art-timeline", ArtTimeline],
+  ["art-event", ArtEvent],
   ["art-table", ArtTable],
   ["art-chart", ArtChart],
   ["art-embed", ArtEmbed],

@@ -1,6 +1,6 @@
 import { requireMember, requireOwner } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
-import { forwardComment, patchComment } from "@/lib/service/comments";
+import { endorseComment, forwardComment, patchComment } from "@/lib/service/comments";
 import { body, fail, json } from "@/lib/api/respond";
 import { ForbiddenError } from "@/lib/service/errors";
 import type { CommentStatus } from "@/lib/service/types";
@@ -25,13 +25,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 }
 
-/** The owner forwarding a visitor's thread to the agent. */
+/**
+ * The owner passing a visitor's thread on. "forward" lets the agent read it,
+ * flagged so it asks the owner before acting; "endorse" asks the agent to
+ * address it.
+ */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     requireOwner(getContext(), request);
     const { id } = await params;
     const payload = await body(request);
-    if (payload.action !== "forward") return json({ error: { message: 'action must be "forward"' } }, { status: 400 });
+    if (payload.action === "endorse") return json({ comment: endorseComment(getContext(), id) });
+    if (payload.action !== "forward") return json({ error: { message: 'action must be "forward" or "endorse"' } }, { status: 400 });
     return json({ comment: forwardComment(getContext(), id) });
   } catch (err) {
     return fail(err);

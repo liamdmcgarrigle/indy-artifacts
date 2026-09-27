@@ -297,6 +297,7 @@ const KIND: Record<string, string> = {
   details: "Toggle",
   columns: "Columns",
   tabs: "Tabs",
+  timeline: "Timeline",
   kpis: "Numbers",
   chart: "Chart",
   dataTable: "Data table",

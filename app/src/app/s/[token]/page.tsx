@@ -65,7 +65,14 @@ export default async function SharedPage({ params }: Params) {
       initialThreads={link.allowComments ? view.initialThreads : []}
       form={view.form ? { ...view.form, responses: 0 } : null}
       userName={null}
-      visitor={{ token, email: visitor?.email ?? null, allowComments: link.allowComments, sharedBy: owner }}
+      unsentTicks={0}
+      visitor={{
+        token,
+        email: visitor?.email ?? null,
+        allowComments: link.allowComments,
+        sharedBy: owner,
+        mode: link.mode,
+      }}
     />
   );
 }

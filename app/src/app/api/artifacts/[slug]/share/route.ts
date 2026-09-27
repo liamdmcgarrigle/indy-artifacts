@@ -1,7 +1,7 @@
 import { requireOwner } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { requireArtifact } from "@/lib/service/artifacts";
-import { activeLink, emailGateAvailable, renewLink, setSharing, shareUrl, type Expiry, type ShareLink, type ShareMode } from "@/lib/service/sharing";
+import { activeLink, agentOrigin, emailGateAvailable, renewLink, setSharing, shareUrl, type Expiry, type ShareLink, type ShareMode } from "@/lib/service/sharing";
 import { config } from "@/lib/config";
 import { body, fail, json } from "@/lib/api/respond";
 
@@ -13,7 +13,7 @@ function state(slug: string, link: ShareLink | null) {
   const artifact = requireArtifact(getContext(), slug);
   return {
     mode: link?.mode ?? "private",
-    link: link ? { ...link, url: shareUrl(link) } : null,
+    link: link ? { ...link, url: shareUrl(link), agent: agentOrigin(getContext(), link.id) } : null,
     privateUrl: `${config().url}/a/${artifact.slug}`,
     emailGate: emailGateAvailable(),
     currentVersion: artifact.currentVersion,

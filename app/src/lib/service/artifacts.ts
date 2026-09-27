@@ -18,6 +18,7 @@ export const LIVE_EDIT_MESSAGE = "live edit";
 import { recordEvent } from "./events";
 import { searchableText } from "./plaintext";
 import { checkStories } from "./storybooks";
+import { reconcileTicks, type Tick } from "./ticks";
 import {
   KINDS,
   LIMITS,
@@ -135,8 +136,8 @@ export interface ArtifactSummary extends Artifact {
   updatedBy: AuthorKind | null;
 }
 
-/** Comments an agent can see: the owner's, and visitor threads the owner forwarded. */
-export const WAITING = "(c.author_kind = 'human' OR (c.author_kind = 'visitor' AND c.approved_at IS NOT NULL))";
+/** Comments an agent can see: the owner's and visitors' (a visitor's flagged for the owner's go-ahead). */
+export const WAITING = "(c.author_kind IN ('human', 'visitor'))";
 
 export function listArtifacts(
   ctx: ServiceContext,
@@ -381,6 +382,7 @@ async function writeVersion(
   }
 
   const stamp = now();
+  let dropped: Tick[] = [];
   withTx(ctx.db, () => {
     ctx.db
       .prepare(
@@ -446,6 +448,9 @@ async function writeVersion(
       .prepare("INSERT INTO search (artifact_id, title, description, body) VALUES (?, ?, ?, ?)")
       .run(artifact.id, meta.title, meta.description ?? "", searchableText(content, artifact.kind));
 
+    // People's ticks follow the items' words; say which ones this version loses.
+    dropped = reconcileTicks(ctx, artifact, previous, { contentHash, source: content.source }).dropped;
+
     if (authorKind === "human") {
       recordEvent(ctx, artifact.id, "version.created", {
         version: { number, author_name: authorName, message: input.message ?? null },
@@ -468,6 +473,9 @@ async function writeVersion(
     warnings,
     buildStatus,
     ...(buildLog ? { buildLog } : {}),
+    ...(dropped.length
+      ? { droppedTicks: dropped.map((t) => ({ item: t.itemText, by: t.byName, byKind: t.byKind, at: t.at })) }
+      : {}),
   };
 }
 

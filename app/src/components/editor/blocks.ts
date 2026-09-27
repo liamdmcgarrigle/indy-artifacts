@@ -100,6 +100,22 @@ export const BLOCKS: BlockChoice[] = [
         ],
       }),
   },
+  {
+    id: "timeline",
+    label: "Timeline",
+    hint: "Dated events in order",
+    words: "history dates events chronology",
+    group: "Layout",
+    run: (e, r) =>
+      place(e, r, {
+        type: "timeline",
+        attrs: { attributes: {} },
+        content: [
+          { type: "event", attrs: { attributes: {} }, content: [p()] },
+          { type: "event", attrs: { attributes: {} }, content: [p()] },
+        ],
+      }),
+  },
   { id: "divider", label: "Divider", hint: "A line across", words: "hr rule separator", group: "Layout", run: (e, r) => turn(e, r).setHorizontalRule().run() },
   {
     id: "kpis",

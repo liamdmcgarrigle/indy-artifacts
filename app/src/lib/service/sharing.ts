@@ -1,11 +1,13 @@
-import { issueCode, normaliseEmail, owner, redeemCode, validEmail } from "../auth/accounts";
-import { randomToken, sha256 } from "../auth/crypto";
+import { issueCode, normaliseEmail, owner, redeemCode, secret, validEmail } from "../auth/accounts";
+import { hmac, randomToken, safeEqual, sha256 } from "../auth/crypto";
 import { config, emailEnabled } from "../config";
 import { codeEmail, sendEmail } from "../email";
-import { bind } from "../db/index";
+import { bind, withTx } from "../db/index";
 import type { ServiceContext } from "./context";
-import { NotFoundError, ValidationError } from "./errors";
+import { NotFoundError, ServiceError, ValidationError } from "./errors";
 import { requireArtifact } from "./artifacts";
+import { recordEvent } from "./events";
+import { getSettings } from "./settings";
 import type { Artifact } from "./types";
 
 /**
@@ -195,14 +197,118 @@ export function visitCookieName(link: ShareLink): string {
   return `indy_visit_${link.id}`;
 }
 
+/** Someone on a share link. `email` is set only when they confirmed it with a code. */
+export interface Visitor {
+  email: string | null;
+}
+
 /** Who a visit cookie belongs to on this link, if it is still good. */
-export function visitorOf(ctx: ServiceContext, link: ShareLink, cookie: string | undefined): { email: string | null } | null {
+export function visitorOf(ctx: ServiceContext, link: ShareLink, cookie: string | undefined): Visitor | null {
   if (!cookie) return null;
   const row = ctx.db
     .prepare("SELECT * FROM visitor_sessions WHERE id_hash = ? AND link_id = ?")
     .get(sha256(cookie), link.id) as Row | undefined;
   if (!row || String(row.expires_at) < now()) return null;
   return { email: (row.email as string | null) ?? null };
+}
+
+// ---------------------------------------------------------------- identity
+
+/**
+ * The name and email a visitor's ticks and comments go under. It is given
+ * once, then carried by the browser as a signed token and used on every share
+ * link of this Indy, so it cannot be changed from the page.
+ */
+export interface Identity {
+  id: string;
+  name: string;
+  email: string;
+  /** The email was confirmed with a code on an email link, not just typed. */
+  verified: boolean;
+}
+
+/**
+ * A name someone typed, made safe to show anywhere: control and direction
+ * characters out, spaces collapsed, at most 60 characters. It is shown as
+ * text, never markup, and agents are told it is unverified.
+ */
+export function cleanName(raw: unknown): string {
+  const name = String(raw ?? "")
+    .normalize("NFKC")
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!name) throw new ValidationError("add your name");
+  if (Array.from(name).length > 60) throw new ValidationError("that name is too long; 60 characters at most");
+  return name;
+}
+
+function cleanEmail(raw: unknown): string {
+  const email = normaliseEmail(String(raw ?? "").replace(/[\p{Cc}\p{Cf}]/gu, ""));
+  if (!validEmail(email)) throw new ValidationError("that does not look like an email address");
+  return email;
+}
+
+const b64 = (value: string) => Buffer.from(value, "utf8").toString("base64url");
+
+/** Sign an identity: its fields, then an HMAC over them with the install's secret. */
+export function identityToken(ctx: ServiceContext, identity: Identity): string {
+  const body = b64(JSON.stringify({ i: identity.id, n: identity.name, e: identity.email, v: identity.verified ? 1 : 0 }));
+  return `${body}.${hmac(secret(ctx), `visitor-identity|${body}`)}`;
+}
+
+/** The identity a token carries, or null when it was not signed here or has been altered. */
+export function readIdentityToken(ctx: ServiceContext, token: unknown): Identity | null {
+  if (typeof token !== "string" || token.length > 2000) return null;
+  const dot = token.indexOf(".");
+  if (dot < 1) return null;
+  const body = token.slice(0, dot);
+  if (!safeEqual(hmac(secret(ctx), `visitor-identity|${body}`), token.slice(dot + 1))) return null;
+  try {
+    const raw = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { i?: unknown; n?: unknown; e?: unknown; v?: unknown };
+    if (typeof raw.i !== "string" || typeof raw.n !== "string" || typeof raw.e !== "string") return null;
+    return { id: raw.i, name: raw.n, email: raw.e, verified: raw.v === 1 };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Say who a visitor is. A token already signed here wins over anything typed,
+ * so a name and email cannot be changed once given. On an email link the
+ * confirmed address is used and only the name is asked for; a token made
+ * elsewhere keeps its name and takes that address.
+ */
+export function identify(
+  ctx: ServiceContext,
+  link: ShareLink,
+  visitor: Visitor | null,
+  input: { token?: unknown; name?: unknown; email?: unknown },
+): { identity: Identity; token: string } {
+  const existing = readIdentityToken(ctx, input.token);
+  const confirmed = link.mode === "email" ? (visitor?.email ?? null) : null;
+  if (link.mode === "email" && !confirmed) throw new ValidationError("confirm your email first");
+  if (existing) {
+    if (!confirmed || (existing.email === confirmed && existing.verified)) return { identity: existing, token: identityToken(ctx, existing) };
+    const moved = { ...existing, email: confirmed, verified: true };
+    return { identity: moved, token: identityToken(ctx, moved) };
+  }
+  const identity: Identity = {
+    id: randomToken(9),
+    name: cleanName(input.name),
+    email: confirmed ?? cleanEmail(input.email),
+    verified: confirmed !== null,
+  };
+  return { identity, token: identityToken(ctx, identity) };
+}
+
+/** The identity behind an interaction, when its token is good for this link. */
+export function identityFor(ctx: ServiceContext, link: ShareLink, visitor: Visitor | null, token: unknown): Identity | null {
+  const identity = readIdentityToken(ctx, token);
+  if (!identity) return null;
+  // An email link knows who confirmed; a token for someone else is not good there.
+  if (link.mode === "email" && (!identity.verified || identity.email !== visitor?.email)) return null;
+  return identity;
 }
 
 /** Email a visitor a code for this link. Returns the id the code is checked against. */
@@ -243,7 +349,9 @@ export function sharedBy(ctx: ServiceContext): string | null {
 }
 
 /** Every page that someone besides the owner can open right now, newest link first. */
-export function listSharedPages(ctx: ServiceContext): (ShareLink & { slug: string; title: string; url: string })[] {
+export function listSharedPages(
+  ctx: ServiceContext,
+): (ShareLink & { slug: string; title: string; url: string; agent: AgentOrigin | null })[] {
   const rows = ctx.db
     .prepare(
       `SELECT s.*, a.slug AS slug, a.title AS title FROM share_links s JOIN artifacts a ON a.id = s.artifact_id
@@ -253,5 +361,137 @@ export function listSharedPages(ctx: ServiceContext): (ShareLink & { slug: strin
   return rows
     .map((row) => ({ link: toLink(row), slug: String(row.slug), title: String(row.title) }))
     .filter(({ link }) => live(link))
-    .map(({ link, slug, title }) => ({ ...link, slug, title, url: shareUrl(link) }));
+    .map(({ link, slug, title }) => ({ ...link, slug, title, url: shareUrl(link), agent: agentOrigin(ctx, link.id) }));
+}
+
+// ---------------------------------------------------------------- agents
+
+/**
+ * An agent may make a link only when the owner has allowed it in Settings,
+ * and only a narrow one: it expires within AGENT_SHARE_MAX_DAYS, and the
+ * agent has to type the slug back and say why. The link row is the same as
+ * the owner's; the share.created event records which agent made it and why,
+ * so no column is needed for it.
+ */
+export const AGENT_SHARE_MAX_DAYS = 30;
+export const AGENT_SHARE_DEFAULT_DAYS = 7;
+
+export interface AgentOrigin {
+  /** The API token or OAuth connection the agent signed in with. */
+  agent: string;
+  reason: string;
+}
+
+export interface AgentCaller {
+  name: string;
+  tokenId: string | null;
+}
+
+export interface AgentShareInput {
+  confirm: string;
+  reason: string;
+  mode?: "link" | "email";
+  allowComments?: boolean;
+  expiresDays?: number;
+  /** Hold the link to the current version (default), or follow the latest. */
+  pin?: boolean;
+}
+
+export class AgentSharingOffError extends ServiceError {
+  constructor() {
+    super(
+      "agent_sharing_off",
+      "The operator has not allowed agents to create share links. Only the operator can allow it, in Settings › Shared links › Agents may create share links, or they can share the page themselves from its Share button. Tell the operator this and stop: do not try any other way to make the page public.",
+      403,
+    );
+  }
+}
+
+/** Which agent made a link, and why, when an agent made it. */
+export function agentOrigin(ctx: ServiceContext, linkId: string): AgentOrigin | null {
+  const row = ctx.db
+    .prepare(
+      `SELECT json_extract(payload_json, '$.agent') AS agent, json_extract(payload_json, '$.reason') AS reason
+         FROM events WHERE kind = 'share.created' AND json_extract(payload_json, '$.link_id') = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(linkId) as Row | undefined;
+  return row ? { agent: String(row.agent ?? "agent"), reason: String(row.reason ?? "") } : null;
+}
+
+/** Make a share link on an agent's behalf. Refused unless the owner allowed it. */
+export function agentShare(
+  ctx: ServiceContext,
+  slug: string,
+  input: AgentShareInput,
+  by: AgentCaller,
+): ShareLink & { url: string; agent: AgentOrigin } {
+  if (!getSettings(ctx).agentSharing) throw new AgentSharingOffError();
+  const artifact = requireArtifact(ctx, slug);
+  if (input.confirm !== artifact.slug)
+    throw new ValidationError(
+      `confirm must be the page's slug typed back exactly ("${artifact.slug}"), to show this is the page the operator asked to share`,
+    );
+  const reason = String(input.reason ?? "").trim();
+  if (reason.length < 10 || reason.length > 500)
+    throw new ValidationError("reason is required (10 to 500 characters): quote or paraphrase the operator's request to share this page");
+  if (artifact.archivedAt) throw new ValidationError("this page is archived; the operator has to restore it before it can be shared");
+  const mode = input.mode ?? "link";
+  if (mode !== "link" && mode !== "email") throw new ValidationError('mode must be "link" or "email"');
+  if (mode === "email" && !emailGateAvailable()) throw new ValidationError("email-confirmed links need email set up on this server");
+  const days = input.expiresDays ?? AGENT_SHARE_DEFAULT_DAYS;
+  if (!Number.isInteger(days) || days < 1 || days > AGENT_SHARE_MAX_DAYS)
+    throw new ValidationError(
+      `expires_days must be a whole number from 1 to ${AGENT_SHARE_MAX_DAYS}; an agent cannot make a link that lasts longer or never expires`,
+    );
+
+  const current = activeLink(ctx, slug);
+  if (current) {
+    const origin = agentOrigin(ctx, current.id);
+    if (origin)
+      throw new ValidationError(
+        `"${slug}" already has a link, made by ${origin.agent}${current.expiresAt ? ` and open until ${current.expiresAt}` : ""}: ${shareUrl(current)}. To change it, revoke it with artifact_share_revoke and make a new one.`,
+      );
+    throw new ValidationError(`"${slug}" is already shared by the operator. Only they can change that link, from the page's Share button.`);
+  }
+
+  const expiresAt = iso(new Date(Date.now() + days * DAY));
+  const link = withTx(ctx.db, () => {
+    const made = createLink(ctx, artifact, {
+      mode,
+      allowComments: input.allowComments === true,
+      pinnedVersion: input.pin === false ? null : artifact.currentVersion,
+    });
+    ctx.db.prepare("UPDATE share_links SET expires_at = ? WHERE id = ?").run(expiresAt, made.id);
+    recordEvent(ctx, artifact.id, "share.created", {
+      link_id: made.id,
+      agent: by.name,
+      token_id: by.tokenId,
+      reason,
+      mode,
+      allow_comments: made.allowComments,
+      pinned_version: made.pinnedVersion,
+      expires_at: expiresAt,
+    });
+    return { ...made, expiresAt };
+  });
+  return { ...link, url: shareUrl(link), agent: { agent: by.name, reason } };
+}
+
+/** Links agents made that still work, newest first. */
+export function listAgentLinks(ctx: ServiceContext) {
+  return listSharedPages(ctx).filter((s) => s.agent !== null);
+}
+
+/** Revoke the page's link, when an agent made it. The owner's own links are theirs to revoke. */
+export function revokeAgentLink(ctx: ServiceContext, slug: string, by: AgentCaller): ShareLink {
+  const artifact = requireArtifact(ctx, slug);
+  const current = activeLink(ctx, slug);
+  if (!current) throw new NotFoundError(`"${slug}" has no working share link`);
+  if (!agentOrigin(ctx, current.id))
+    throw new ValidationError(`the operator made the link on "${slug}"; only they can revoke it, from the page's Share button`);
+  withTx(ctx.db, () => {
+    ctx.db.prepare("UPDATE share_links SET revoked_at = ? WHERE id = ?").run(now(), current.id);
+    recordEvent(ctx, artifact.id, "share.revoked", { link_id: current.id, agent: by.name, token_id: by.tokenId });
+  });
+  return current;
 }

@@ -16,6 +16,7 @@ export function VisitorHeader({
   panel,
   onThreads,
   onComment,
+  as,
 }: {
   title: string;
   sharedBy: string | null;
@@ -24,6 +25,8 @@ export function VisitorHeader({
   panel: "none" | "list" | "send";
   onThreads: () => void;
   onComment: (() => void) | null;
+  /** The visitor's own name, once they have given it; it goes on what they do here. */
+  as?: string | null;
 }) {
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-hairline bg-background px-3 md:h-[52px] md:bg-background/92 md:px-4 md:backdrop-blur">
@@ -32,7 +35,11 @@ export function VisitorHeader({
       </span>
       <span className="flex min-w-0 flex-col leading-tight">
         <span className="truncate text-[14px] font-medium text-foreground">{title}</span>
-        {sharedBy ? <span className="truncate text-[12px] text-muted-foreground">Shared by {sharedBy}</span> : null}
+        {sharedBy || as ? (
+          <span className="truncate text-[12px] text-muted-foreground">
+            {[sharedBy ? `Shared by ${sharedBy}` : "", as ? `you're ${as}` : ""].filter(Boolean).join(" · ")}
+          </span>
+        ) : null}
       </span>
       <span className="ml-auto flex shrink-0 items-center gap-1">
         {threads !== null ? (

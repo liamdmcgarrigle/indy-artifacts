@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { toString as mdToString } from "mdast-util-to-string";
 import { CHART_TYPES, type ChartSpec, type TableSpec } from "./types";
 
 export class BlockError extends Error {}
@@ -129,9 +130,34 @@ export interface KpiItem {
   value: string;
   tone?: string;
   delta?: string;
+  note?: string;
 }
 
 const TONES = new Set(["good", "warn", "bad", "info", "neutral"]);
+
+/** Tone words agents reach for, as the ones Indy draws. */
+const TONE_ALIASES: Record<string, string> = { success: "good", danger: "bad", error: "bad", warning: "warn" };
+
+/** A tone as written, as one of Indy's, or undefined when it is none of them. */
+export function knownTone(raw: string | undefined | null): string | undefined {
+  const t = String(raw ?? "").trim().toLowerCase();
+  const tone = TONE_ALIASES[t] ?? t;
+  return TONES.has(tone) ? tone : undefined;
+}
+
+/** `:badge[Recommended]{tone=good}`: the one inline directive, and only with words in it. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function isBadge(node: any): boolean {
+  return node?.name === "badge" && mdToString(node).trim() !== "";
+}
+
+/** The classes a `:badge[...]` is drawn with, by the pipeline and the editor alike. */
+export function badgeClass(tone: string | undefined | null): string {
+  return `art-badge art-badge--${knownTone(tone) ?? "neutral"}`;
+}
+
+/** The `{tone=bad note="..."}` group on a counter line. */
+const KPI_OPTIONS = /\{\s*((?:tone|note)\s*=[^{}]*)\}/i;
 
 export function parseKpiLine(text: string): KpiItem | null {
   const raw = text.trim();
@@ -139,12 +165,17 @@ export function parseKpiLine(text: string): KpiItem | null {
   let rest = raw;
   let tone: string | undefined;
   let delta: string | undefined;
+  let note: string | undefined;
 
-  const toneMatch = rest.match(/\{\s*tone\s*=\s*([a-z]+)\s*\}/i);
-  if (toneMatch) {
-    const t = toneMatch[1].toLowerCase();
-    if (TONES.has(t)) tone = t;
-    rest = rest.replace(toneMatch[0], "").trim();
+  const options = rest.match(KPI_OPTIONS);
+  if (options) {
+    for (const m of options[1].matchAll(/([a-z]+)\s*=\s*(?:"([^"]*)"|([^\s"]+))/gi)) {
+      const key = m[1].toLowerCase();
+      const value = (m[2] ?? m[3] ?? "").trim();
+      if (key === "tone") tone = knownTone(value);
+      else if (key === "note" && value) note = value;
+    }
+    rest = rest.replace(options[0], "").trim();
   }
   const deltaMatch = rest.match(/\(([^()]*)\)\s*$/);
   if (deltaMatch) {
@@ -152,11 +183,12 @@ export function parseKpiLine(text: string): KpiItem | null {
     rest = rest.slice(0, deltaMatch.index).trim();
   }
   const sep = rest.indexOf(":");
-  if (sep === -1) return { label: rest, value: "", tone, delta };
+  if (sep === -1) return { label: rest, value: "", tone, delta, note };
   return {
     label: rest.slice(0, sep).trim(),
     value: rest.slice(sep + 1).trim(),
     tone,
     delta,
+    note,
   };
 }

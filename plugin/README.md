@@ -10,7 +10,7 @@ plugin/
   .claude-plugin/plugin.json    Claude Code manifest
   .codex-plugin/plugin.json     Codex manifest
   hooks/hooks.json              SessionStart, shared by both
-  hooks/session-start.sh        one line of context: Indy is there, and when to use it
+  hooks/session-start.sh        a few lines of context: Indy is there, what it can do, when to use it
   skills/publish/               when to publish, how, and what to do with comments
   skills/publish/reference.md   every block, one example each; the server serves the same file
   skills/feedback/              pick up the operator's comments on this project's pages
@@ -26,9 +26,10 @@ codex plugin marketplace add liamdmcgarrigle/indy-artifacts && codex plugin add 
 
 ## What each part is for
 
-The session-start hook prints one line: Indy is set up, publish results that read better as pages,
-and the publish skill has the details. It makes no network call and costs about 60 tokens. It runs
-on startup, `/clear` and compaction, but not on resume, where the line is already in the
+The session-start hook prints a short list: Indy is set up, publish results that read better as pages,
+what it can do (pages, checklists, forms, comments, stories, share links, live typing), and where the
+details are. It makes no network call and costs about 200 tokens. It runs
+on startup, `/clear` and compaction, but not on resume, where the list is already in the
 conversation. Codex asks once before it runs a plugin's hook; `/hooks` shows it.
 
 Each skill costs one line of context until it is used. `publish` carries the workflow: publish, give

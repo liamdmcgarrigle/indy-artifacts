@@ -11,6 +11,7 @@ import type { Audience } from "./service/comments";
 import { activeLink } from "./service/sharing";
 import { getBuild } from "./service/storybooks";
 import type { ServiceContext } from "./service/context";
+import { tickViews, unsentTicks } from "./service/ticks";
 
 /** The Storybooks a version draws stories from, by their own names. */
 function storybooksShown(ctx: ServiceContext, pins: Record<string, string>): string[] {
@@ -66,6 +67,7 @@ export function loadView(slug: string, versionNumber?: number, opts: { audience?
     status: t.status,
     sentAt: t.sentAt,
     approvedAt: t.approvedAt,
+    endorsedAt: t.endorsedAt,
     versionNumber: t.versionNumber,
     createdAt: t.createdAt,
     replies: t.replies.map((r) => ({
@@ -117,6 +119,8 @@ export function loadView(slug: string, versionNumber?: number, opts: { audience?
       buildStatus: v.buildStatus,
     })),
     initialThreads: threads,
+    ticks: framed ? [] : tickViews(ctx, artifact, version),
+    unsentTicks: framed ? 0 : unsentTicks(ctx, artifact.id).length,
     sharing: activeLink(ctx, slug)?.mode ?? "private",
     storybooks: storybooksShown(ctx, version.storybooks),
   };

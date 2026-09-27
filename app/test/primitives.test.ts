@@ -33,6 +33,8 @@ describe("registration", () => {
       "art-tabs",
       "art-tab",
       "art-details",
+      "art-timeline",
+      "art-event",
       "art-table",
       "art-chart",
       "art-embed",
@@ -124,6 +126,73 @@ describe("art-kpis / art-kpi", () => {
 
     expect(second.querySelector(".art-kpi__delta")).toBeNull();
     expect(second.className).toBe("art-kpi");
+  });
+});
+
+describe("art-kpi note", () => {
+  it("puts the note under the label, and leaves it out when there is none", async () => {
+    const kpis = await mount('<art-kpis><art-kpi label="Budget" value="4.2M" note="over since March"></art-kpi><art-kpi label="Rooms" value="14"></art-kpi></art-kpis>');
+    const [first, second] = Array.from(kpis.querySelectorAll("art-kpi"));
+    expect(first.lastElementChild?.className).toBe("art-kpi__note");
+    expect(first.querySelector(".art-kpi__note")?.textContent).toBe("over since March");
+    expect(second.querySelector(".art-kpi__note")).toBeNull();
+  });
+});
+
+describe("art-timeline / art-event", () => {
+  const TIMELINE =
+    '<art-timeline legend="key:Milestone, danger:Outage, Unlabelled kind, nope:">' +
+    '<art-event date="Mar 2021" title="Survey" kind="key" source="report 12"><p>body</p></art-event>' +
+    '<art-event date="2022" kind="success"><p>two</p></art-event>' +
+    '<art-event title="Odd" kind="purple"></art-event>' +
+    "</art-timeline>";
+
+  it("wraps its events in a list, under a legend", async () => {
+    const timeline = await mount(TIMELINE);
+    expect(timeline.classList.contains("art-timeline")).toBe(true);
+    const [legend, list] = Array.from(timeline.children);
+    expect(legend.className).toBe("art-timeline__legend");
+    expect(list.className).toBe("art-timeline__list");
+    expect(list.getAttribute("role")).toBe("list");
+    expect(list.querySelectorAll(":scope > art-event")).toHaveLength(3);
+
+    const keys = Array.from(legend.querySelectorAll(".art-timeline__key"));
+    expect(keys.map((k) => k.textContent)).toEqual(["Milestone", "Outage", "Unlabelled kind"]);
+    expect(keys.map((k) => k.className.split(" ")[1])).toEqual([
+      "art-timeline__key--key",
+      "art-timeline__key--bad",
+      "art-timeline__key--neutral",
+    ]);
+    expect(keys[0].querySelector(".art-timeline__dot")).not.toBeNull();
+  });
+
+  it("draws each event as date, rail and entry, keeping the body it was given", async () => {
+    const timeline = await mount(TIMELINE);
+    const [first, second, third] = Array.from(timeline.querySelectorAll("art-event"));
+
+    expect(Array.from(first.children).map((c) => c.className)).toEqual(["art-event__date", "art-event__rail", "art-event__main"]);
+    expect(first.getAttribute("role")).toBe("listitem");
+    expect(first.classList.contains("art-event--key")).toBe(true);
+    expect(first.querySelector(".art-event__date")?.textContent).toBe("Mar 2021");
+    expect(first.querySelector(".art-event__title")?.textContent).toBe("Survey");
+    expect(first.querySelector(".art-event__source")?.textContent).toBe("report 12");
+    expect(first.querySelector(".art-event__body > p")?.textContent).toBe("body");
+    expect(first.querySelector(".art-event__rail")?.getAttribute("aria-hidden")).toBe("true");
+
+    // Aliases map to Indy's tones; anything else is the plain marker.
+    expect(second.classList.contains("art-event--good")).toBe(true);
+    expect(second.querySelector(".art-event__head")).toBeNull();
+    expect(third.classList.contains("art-event--neutral")).toBe(true);
+    expect(third.querySelector(".art-event__date")?.textContent).toBe("");
+  });
+
+  it("renders once, however often it is connected", async () => {
+    const timeline = await mount(TIMELINE);
+    timeline.remove();
+    document.body.appendChild(timeline);
+    await tick();
+    expect(timeline.querySelectorAll(".art-timeline__legend")).toHaveLength(1);
+    expect(timeline.querySelectorAll(".art-event__main")).toHaveLength(3);
   });
 });
 

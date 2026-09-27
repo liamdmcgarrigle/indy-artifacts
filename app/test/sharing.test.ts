@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeContext, type ServiceContext } from "@/lib/service/context";
 import { publishArtifact } from "@/lib/service/artifacts";
-import { createComment, forwardComment, listComments, sendFeedback } from "@/lib/service/comments";
+import { createComment, endorseComment, listComments, sendFeedback } from "@/lib/service/comments";
+import { listEvents } from "@/lib/service/events";
 import { forwardResponse, listResponses, submitResponse } from "@/lib/service/responses";
 import { issueCode } from "@/lib/auth/accounts";
 import { NotFoundError, ValidationError } from "@/lib/service/errors";
@@ -92,24 +93,27 @@ describe("visitors", () => {
     expect(visitorOf(ctx, other, cookie)).toBeNull();
   });
 
-  it("keeps a visitor's comment from the agent until the owner forwards it", () => {
+  it("passes a visitor's comment to the agent at once, flagged until the owner endorses it", () => {
     const link = setSharing(ctx, slug, { mode: "link", allowComments: true })!;
     openVisit(ctx, link, null);
-    const thread = createComment(ctx, slug, { body: "Option B, please", authorName: "Maya", visitor: { linkId: link.id, email: null } });
+    const thread = createComment(ctx, slug, { body: "Option B, please", authorName: "Maya", visitor: { linkId: link.id, email: "maya@studio.io" } });
     createComment(ctx, slug, { body: "Owner note to the agent", authorName: "Liam" });
 
     expect(thread.authorKind).toBe("visitor");
     expect(listComments(ctx, slug, { audience: "owner" }).map((t) => t.body)).toContain("Option B, please");
-    expect(listComments(ctx, slug, { audience: "agent" }).map((t) => t.body)).toEqual(["Owner note to the agent"]);
+    expect(listComments(ctx, slug, { audience: "agent" }).map((t) => t.body)).toEqual(["Option B, please", "Owner note to the agent"]);
     // The visitor sees their link's threads, never the owner's notes.
     expect(listComments(ctx, slug, { audience: { linkId: link.id } }).map((t) => t.body)).toEqual(["Option B, please"]);
 
-    const first = sendFeedback(ctx, slug);
-    expect(first.count).toBe(1);
-
-    forwardComment(ctx, thread.id);
-    expect(listComments(ctx, slug, { audience: "agent" }).map((t) => t.body)).toContain("Option B, please");
+    // It went to the agent when it was written, flagged; a send carries only the owner's note.
+    const event = listEvents(ctx, { slug, undeliveredOnly: true }).events.find((e) => e.kind === "comment.created")!;
+    expect(event.payload.comment).toMatchObject({ id: thread.id, needs_operator_ok: true, from: "Maya (visitor, via share link)" });
+    expect(JSON.stringify(event.payload)).not.toContain("maya@studio.io");
     expect(sendFeedback(ctx, slug).count).toBe(1);
+
+    endorseComment(ctx, thread.id);
+    const endorsed = listEvents(ctx, { slug }).events.find((e) => e.kind === "comment.endorsed")!;
+    expect(endorsed.payload.comment).toMatchObject({ id: thread.id, needs_operator_ok: false });
   });
 
   it("will not let a visitor reply on a thread from somewhere else", () => {

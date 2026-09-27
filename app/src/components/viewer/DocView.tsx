@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { viewExtensions } from "@/lib/doc/views";
 import { primitivesUrl } from "@/lib/primitives";
 import type * as EditViews from "@/components/editor/edit-views";
+import type { TickStore } from "@/lib/doc/tasks-view";
 
 // Editing code loads when editing starts; reading a page never fetches it.
 const EditChrome = dynamic(() => import("@/components/editor/EditChrome").then((m) => m.EditChrome), { ssr: false });
@@ -62,6 +63,8 @@ export function DocView(props: {
   onEditor?: (editor: Editor | null) => void;
   /** Called on the first change after the editor opens. */
   onDirty?: () => void;
+  /** People's ticks on task items; the store stays the same for the life of the page. */
+  ticks?: TickStore;
 }) {
   const primitives = usePrimitives();
   const editViews = useEditViews(props.editing === true);
@@ -89,6 +92,7 @@ function DocEditor({
   onEditor,
   onDirty,
   editViews,
+  ticks,
 }: {
   doc: JSONContent;
   assetBase: string;
@@ -98,8 +102,12 @@ function DocEditor({
   onMounted: () => void;
   onEditor?: (editor: Editor | null) => void;
   onDirty?: () => void;
+  ticks?: TickStore;
 }) {
-  const extensions = useMemo(() => viewExtensions({ assetBase, editing, editViews: editViews ?? undefined }), [assetBase, editing, editViews]);
+  const extensions = useMemo(
+    () => viewExtensions({ assetBase, editing, editViews: editViews ?? undefined, ticks }),
+    [assetBase, editing, editViews, ticks],
+  );
   const editor = useEditor({
     extensions,
     content: doc,

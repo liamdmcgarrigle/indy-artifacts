@@ -305,7 +305,84 @@ describe("colons in prose", () => {
   });
 });
 
+describe("dossier blocks", () => {
+  const TIMELINE = [
+    ':::timeline{legend="good:Shipped, bad:Outage, gap:Inferred"}',
+    ':::event{date="Mar 2021" title="First release" kind=good source="v1.0 notes"}',
+    "Shipped to **three** teams.",
+    ":::",
+    ':::event{date="2021 – 2022" title="Quiet year" kind=gap}',
+    "No releases on record.",
+    ":::",
+    ":::",
+  ].join("\n");
+
+  it("renders a timeline of events with their dates, kinds and sources", () => {
+    const r = renderMarkdown(TIMELINE);
+    expect(r.warnings).toEqual([]);
+    expect(r.html).toContain('<art-timeline legend="good:Shipped, bad:Outage, gap:Inferred"');
+    expect(r.html).toContain('<art-event date="Mar 2021" title="First release" kind="good" source="v1.0 notes">');
+    expect(r.html).toContain("<strong>three</strong>");
+    expect(r.html).toContain('<art-event date="2021 – 2022" title="Quiet year" kind="gap">');
+    // One block: the timeline is a single top-level element.
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0].kind).toBe("art-timeline");
+  });
+
+  it("keeps a timeline's attributes through the sanitizer, and nothing else", () => {
+    const r = renderMarkdown(':::timeline\n:::event{date="x" title="y" onclick="alert(1)" style="color:red"}\nz\n:::\n:::');
+    expect(r.html).toContain('<art-event date="x" title="y">');
+    expect(r.html).not.toContain("onclick");
+    expect(r.html).not.toContain("style=");
+  });
+
+  it("warns about an event outside a timeline, and other blocks inside one", () => {
+    const loose = renderMarkdown(':::event{date="x"}\ny\n:::');
+    expect(loose.warnings[0].message).toBe('":::event" is only rendered inside ":::timeline"');
+    const stray = renderMarkdown(":::timeline\nJust text.\n:::");
+    expect(stray.warnings[0].message).toContain('holds ":::event" blocks');
+  });
+
+  it("renders a badge in a heading, and leaves other inline directives as typed", () => {
+    const r = renderMarkdown("### Phased works :badge[Recommended]{tone=good}\n\nAt 10:30 we met; see :badge alone and :note[x].");
+    expect(r.html).toContain('>Phased works <span class="art-badge art-badge--good">Recommended</span></h3>');
+    expect(r.html).toContain(":badge alone");
+    expect(r.html).toContain(":note[x]");
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("maps badge tones to Indy's and falls back to neutral", () => {
+    expect(renderMarkdown(":badge[Risky]{tone=danger}").html).toContain('class="art-badge art-badge--bad"');
+    expect(renderMarkdown(":badge[Maybe]{tone=purple}").html).toContain('class="art-badge art-badge--neutral"');
+    expect(renderMarkdown(':badge[<b>x</b>]{tone="good onclick=alert(1)"}').html).not.toContain("onclick");
+  });
+
+  it("marks columns with an aside", () => {
+    const r = renderMarkdown(":::columns{aside}\n:::col\nMain.\n:::\n:::col\n#### Watch out\nSide.\n:::\n:::");
+    expect(r.html).toContain('<art-columns n="2" aside="true"');
+  });
+
+  it("gives a counter tile a note line", () => {
+    const r = renderMarkdown(':::kpis\n- Budget: 4.2M (+12%) {tone=bad note="over since March"}\n- Rooms: 14 {note=reopened}\n:::');
+    expect(r.html).toContain('<art-kpi label="Budget" value="4.2M" tone="bad" delta="+12%" note="over since March">');
+    expect(r.html).toContain('<art-kpi label="Rooms" value="14" note="reopened">');
+  });
+
+  it("keeps a markdown table's column alignment for the stylesheet", () => {
+    const r = renderMarkdown("| Item | Cost |\n|:--|--:|\n| Roof | 1,200 |\n| **Total** | **1,200** |\n");
+    expect(r.html).toContain('<td align="right">1,200</td>');
+    expect(r.html).toContain('<td align="left"><strong>Total</strong></td>');
+  });
+});
+
 describe("plain text for search", () => {
+  it("reads an event's date and source as words", async () => {
+    const { plainText } = await import("@/lib/service/plaintext");
+    expect(plainText(':::event{date="Mar 2021" title="First release" kind=good source="v1.0 notes"}\nBody.\n:::')).toBe(
+      "Mar 2021 First release v1.0 notes\nBody.",
+    );
+  });
+
   it("stays linear on a page of blank lines", async () => {
     const { plainText } = await import("@/lib/service/plaintext");
     const started = Date.now();

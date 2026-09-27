@@ -285,6 +285,88 @@ describe("editing in place", () => {
   });
 });
 
+describe("dossier blocks", () => {
+  const DOSSIER = `#### Project history
+
+# Riverside works
+
+:::timeline{legend="key:Milestone, good:Done, warn:Pending, gap:Inferred"}
+:::event{date="Mar 2021" title="Survey" kind=key source="report 12"}
+The roof survey found **two** leaks.
+:::
+:::event{date="2021 – 2022" title="No records" kind=gap}
+Probably paused.
+:::
+:::
+
+### Phased works :badge[Recommended]{tone=good}
+
+:::columns{aside}
+:::col
+Main text.
+:::
+:::col
+#### Watch out
+Side note.
+:::
+:::
+
+:::kpis
+- Budget: 4.2M (+12%) {tone=bad note="over since March"}
+- Rooms: 14
+:::
+
+| Item | Cost |
+|:-----|-----:|
+| Roof | 1,200 |
+| **Total** | **1,200** |
+`;
+
+  it("round-trips byte for byte and models the timeline", () => {
+    const doc = markdownToDoc(DOSSIER);
+    expect(docToMarkdown(doc)).toBe(DOSSIER);
+    const types = (doc.content ?? []).map((n) => n.type);
+    expect(types).toEqual(["heading", "heading", "timeline", "heading", "columns", "kpis", "table"]);
+    const timeline = doc.content![2];
+    expect(timeline.content!.map((e) => e.type)).toEqual(["event", "event"]);
+    expect(timeline.attrs!.attributes).toEqual({ legend: "key:Milestone, good:Done, warn:Pending, gap:Inferred" });
+    expect(timeline.content![0].attrs!.attributes).toEqual({ date: "Mar 2021", title: "Survey", kind: "key", source: "report 12" });
+  });
+
+  it("models a badge as an inline node", () => {
+    const heading = markdownToDoc(DOSSIER).content![3];
+    expect(heading.content).toEqual([
+      { type: "text", text: "Phased works " },
+      { type: "badge", attrs: { label: "Recommended", attributes: { tone: "good" } } },
+    ]);
+  });
+
+  it("writes every dossier block afresh to markdown that means the same", () => {
+    const doc = markdownToDoc(DOSSIER);
+    const fresh = docToMarkdown(doc, { fresh: true });
+    expect(fresh).toContain(":badge[Recommended]{tone=\"good\"}");
+    expect(fresh).toContain('- Budget: 4.2M (+12%) {tone=bad note="over since March"}');
+    expect(content(markdownToDoc(fresh))).toEqual(content(doc));
+  });
+
+  it("rewrites an edited event and keeps its neighbours as written", () => {
+    const doc = markdownToDoc(DOSSIER);
+    const event = doc.content![2].content![1];
+    event.attrs = { ...event.attrs, attributes: { ...event.attrs!.attributes, title: "Paused" } };
+    const out = docToMarkdown(doc);
+    expect(out).toContain('title="Paused"');
+    expect(out).toContain('### Phased works :badge[Recommended]{tone=good}');
+    expect((content(markdownToDoc(out)) as unknown[]).length).toBe((content(doc) as unknown[]).length);
+  });
+
+  it("keeps an event outside a timeline as written", () => {
+    const md = ':::event{date="x"}\nLoose.\n:::\n';
+    const doc = markdownToDoc(md);
+    expect(doc.content![0].type).toBe("rawBlock");
+    expect(docToMarkdown(doc)).toBe(md);
+  });
+});
+
 describe("leading blank lines", () => {
   it("survive a round trip", async () => {
     const { markdownToDoc } = await import("@/lib/doc/parse");

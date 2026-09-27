@@ -7,6 +7,7 @@ import { bearer, principalFrom } from "@/lib/auth/access";
 import { SCOPE } from "@/lib/auth/oauth";
 import { requestBase } from "@/lib/api/oauth";
 import { json } from "@/lib/api/respond";
+import type { AgentCaller } from "@/lib/service/sharing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -41,7 +42,8 @@ const handler = createMcpHandler(
  * owner to the browser to approve them. Hand-made tokens work too.
  */
 async function guarded(request: Request): Promise<Response> {
-  if (!principalFrom(getContext(), request.headers)) {
+  const who = principalFrom(getContext(), request.headers);
+  if (!who) {
     const url = requestBase(request.headers);
     const presented = Boolean(bearer(request.headers));
     const challenge = [
@@ -59,6 +61,9 @@ async function guarded(request: Request): Promise<Response> {
       { status: 401, headers: { "www-authenticate": challenge, "access-control-expose-headers": "www-authenticate" } },
     );
   }
+  // Tools that record who acted (artifact_share) read this as ctx.http.authInfo.
+  const caller: AgentCaller = who.kind === "agent" ? { name: who.name, tokenId: who.tokenId } : { name: "agent without a token", tokenId: null };
+  Object.assign(request, { auth: { token: "", clientId: caller.tokenId ?? "", scopes: [], extra: { caller } } });
   return handler(request);
 }
 
