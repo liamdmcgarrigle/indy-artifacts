@@ -57,6 +57,8 @@ export interface Anchor {
   selector?: string;
   x?: number;
   y?: number;
+  /** One mark of a chart: its series, its x value, and the value it had when the comment was left. */
+  point?: { series: string; x: string; value?: string };
 }
 
 export interface PublishInput {

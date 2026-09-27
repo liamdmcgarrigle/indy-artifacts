@@ -790,12 +790,148 @@ art-table {
 /* Chart ------------------------------------------------------------------- */
 
 art-chart {
+  position: relative;
   margin: 1.5em 0;
   padding: var(--art-space-4) var(--art-space-4) var(--art-space-3);
   background: var(--art-surface);
   border: 1px solid var(--art-hairline);
   border-radius: var(--art-radius-lg);
   box-shadow: var(--art-shadow-sm);
+}
+
+.art-chart__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--art-space-2);
+  margin-bottom: var(--art-space-4);
+}
+
+.art-chart__head .art-chart__title {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* The menu sits in the corner, quiet until the chart is hovered or it is open. */
+.art-chart__menu {
+  position: relative;
+  margin: -4px -6px 0 auto;
+}
+
+.art-chart__more {
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--art-text-faint);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.art-chart__more svg {
+  fill: currentColor;
+}
+
+art-chart:hover .art-chart__more,
+.art-chart__more:focus-visible,
+.art-chart__more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.art-chart__more:hover {
+  background: var(--art-surface-2);
+  color: var(--art-text);
+}
+
+@media (hover: none) {
+  .art-chart__more {
+    opacity: 1;
+  }
+}
+
+.art-chart__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--art-border);
+  border-radius: var(--art-radius);
+  background: var(--art-surface);
+  box-shadow: var(--art-shadow-md);
+}
+
+.art-chart__list[hidden] {
+  display: none;
+}
+
+.art-chart__item {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--art-text);
+  font-family: var(--art-font-sans);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.art-chart__item:hover,
+.art-chart__item:focus-visible {
+  background: var(--art-surface-2);
+}
+
+.art-chart__stale {
+  margin: 0;
+  padding: var(--art-space-5) 0;
+  font-family: var(--art-font-sans);
+  font-size: 0.85em;
+  text-align: center;
+  color: var(--art-text-muted);
+}
+
+/* The numbers, shown under the drawing when asked for. */
+.art-chart__data {
+  max-height: 320px;
+  margin-top: var(--art-space-3);
+  overflow: auto;
+  border-top: 1px solid var(--art-hairline);
+}
+
+.art-chart__data table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-family: var(--art-font-sans);
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+}
+
+.art-chart__data caption {
+  display: none;
+}
+
+.art-chart__data :is(th, td) {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--art-hairline);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.art-chart__data td {
+  text-align: right;
+}
+
+.art-chart__data thead th {
+  position: sticky;
+  top: 0;
+  background: var(--art-surface);
+  color: var(--art-text-muted);
+  font-weight: 600;
 }
 
 .art-chart__title {
@@ -817,6 +953,19 @@ art-chart {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* Read aloud, never drawn: the numbers behind a chart. */
+.art-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Embed ------------------------------------------------------------------- */
@@ -1339,6 +1488,34 @@ art-columns[aside] > art-col:last-child p {
   line-height: 1.35;
   color: var(--art-text-faint);
 }
+
+/* The recent values behind a counter, in its tone. */
+.art-kpi__trend {
+  display: block;
+  width: 100%;
+  max-width: 160px;
+  height: 28px;
+  margin-top: 8px;
+  overflow: visible;
+  color: var(--art-chart-1);
+}
+
+.art-kpi__trend polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.art-kpi__trend circle {
+  fill: currentColor;
+}
+
+.art-kpi--good .art-kpi__trend { color: var(--art-good); }
+.art-kpi--warn .art-kpi__trend { color: var(--art-warn); }
+.art-kpi--bad .art-kpi__trend { color: var(--art-bad); }
+.art-kpi--info .art-kpi__trend { color: var(--art-info); }
 
 /* A column aligned right in the markdown (`---:`) holds figures: they line up
    in the mono face. The editor writes the same alignment as a style. */

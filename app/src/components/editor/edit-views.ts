@@ -4,5 +4,6 @@
  * editing code (yaml, the data grids, the source boxes).
  */
 export { KpisEdit } from "./KpisEdit";
-export { ChartEdit, TableEdit } from "./DataEdit";
+export { TableEdit } from "./DataEdit";
+export { ChartEdit } from "./chart/ChartBuilder";
 export { EmbedEdit, RawEdit } from "./SourceEdit";

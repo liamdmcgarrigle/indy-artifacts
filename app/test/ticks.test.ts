@@ -254,8 +254,25 @@ describe("agent ticks", () => {
     };
     expect(text(out)).toContain('Ticked "Postgres version pinned"');
     expect(text(out)).toContain("2 of 4 done");
+    expect(text(out)).toMatch(/Still open:\n {2}line \d+: /);
+    expect(text(out)).not.toContain('"checklist"');
+    // Quoted the way the source writes it, backticks and box included.
+    const quoted = (await tool("artifact_tick").run({ slug, items: [{ item: "- [ ] `Backups tested`" }], agent: { name: "claude" } }, undefined)) as { content: { text: string }[] };
+    expect(text(quoted)).toContain('Ticked "Backups tested"');
     const got = (await tool("artifact_get").run({ slug }, undefined)) as { content: { text: string }[] };
     expect(text(got)).toMatch(/\[x\] Postgres version pinned\s+✓ ticked by claude \(agent\)/);
+  });
+
+  it("matches an item whose words really have an underscore in them", async () => {
+    const slug = await page(`---
+title: Migration
+---
+
+- [ ] rename user_id column
+- [ ] drop the \`legacy_users\` table
+`);
+    expect(agentTick(ctx, slug, [{ item: "rename user_id column", done: true }], "claude")[0].done).toBe(true);
+    expect(agentTick(ctx, slug, [{ item: "drop the `legacy_users` table", done: true }], "claude")[0].done).toBe(true);
   });
 });
 

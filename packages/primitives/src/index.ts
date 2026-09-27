@@ -12,6 +12,8 @@
  *      node is moved in the DOM, and it must not duplicate anything.
  */
 
+import { chartConfig, chartCsv, chartSummary, type ChartPoint, type ChartSpec, type ChartTheme } from "./chart-config";
+
 declare global {
   interface Window {
     /** Origin/prefix the sandboxed embed frames are served from. */
@@ -145,7 +147,39 @@ class ArtKpi extends ArtElement {
     this.appendChild(make("div", "art-kpi__label", attr(this, "label")));
     const note = attr(this, "note");
     if (note) this.appendChild(make("div", "art-kpi__note", note));
+    const trend = sparkline(attr(this, "trend"));
+    if (trend) this.appendChild(trend);
   }
+}
+
+/** Recent values as a small line under a counter, last point marked. SVG, so it needs no chart library. */
+function sparkline(raw: string): SVGSVGElement | null {
+  const values = raw.split(",").map(Number).filter(Number.isFinite);
+  if (values.length < 2) return null;
+  const W = 120;
+  const H = 28;
+  const pad = 3;
+  const lo = Math.min(...values);
+  const span = Math.max(...values) - lo || 1;
+  const points = values.map((v, i) => [pad + (i * (W - pad * 2)) / (values.length - 1), H - pad - ((v - lo) * (H - pad * 2)) / span]);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("class", "art-kpi__trend");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `Trend: ${values.join(", ")}`);
+  const line = document.createElementNS(ns, "polyline");
+  line.setAttribute("points", points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "));
+  line.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.appendChild(line);
+  const [lx, ly] = points[points.length - 1];
+  const dot = document.createElementNS(ns, "circle");
+  dot.setAttribute("cx", lx.toFixed(1));
+  dot.setAttribute("cy", ly.toFixed(1));
+  dot.setAttribute("r", "2.5");
+  svg.appendChild(dot);
+  return svg;
 }
 
 /* --------------------------------------------------------- columns, column */
@@ -428,47 +462,119 @@ class ArtTable extends ArtElement {
 
 /* ------------------------------------------------------------------- chart */
 
-interface ChartSpec {
-  type: string;
-  title?: string;
-  x: string;
-  y: string[];
-  data: Record<string, unknown>[];
-  stacked?: boolean;
-  unit?: string;
-  height?: number;
+/**
+ * The chart types Chart.js does not draw itself come from plugins, each a
+ * chunk of its own that loads the first time a page draws that type.
+ */
+async function registerChartType(Chart: { register: (...items: unknown[]) => void }, type: string): Promise<void> {
+  if (type === "heatmap") {
+    const m = await import("chartjs-chart-matrix");
+    Chart.register(m.MatrixController, m.MatrixElement);
+  } else if (type === "box") {
+    const b = await import("@sgratzl/chartjs-chart-boxplot");
+    Chart.register(b.BoxPlotController, b.BoxAndWiskers);
+  } else if (type === "sankey") {
+    const k = await import("chartjs-chart-sankey");
+    Chart.register(k.SankeyController, k.Flow);
+  }
 }
 
-function toNumber(value: unknown): number {
-  if (typeof value === "number") return value;
-  const n = Number(String(value ?? "").replace(/[,\s]/g, ""));
-  return Number.isFinite(n) ? n : 0;
+/** The slice of Chart.js's chart the element reads back. */
+interface DrawnChart {
+  destroy?: () => void;
+  getElementsAtEventForMode: (e: Event, mode: string, options: { intersect: boolean }, useFinal: boolean) => { datasetIndex: number; index: number }[];
+  getDatasetMeta: (i: number) => { data: { x: number; y: number; getCenterPoint?: () => { x: number; y: number } }[] };
+  data: { datasets: unknown[] };
 }
 
-/** A translucent twin of a palette colour, for area and bar fills. */
-function translucent(color: string): string {
-  return /^#[0-9a-f]{6}$/i.test(color.trim()) ? `${color.trim()}40` : color;
+/** A file handed to the browser to save. */
+function download(name: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function fileName(spec: ChartSpec): string {
+  const base = (spec.title ?? "chart").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return base.slice(0, 60) || "chart";
 }
 
 class ArtChart extends ArtElement {
   #spec: ChartSpec | null = null;
-  #chart: { destroy?: () => void } | null = null;
+  #chart: DrawnChart | null = null;
+  #describe: ((datasetIndex: number, index: number) => ChartPoint | null) | null = null;
+
+  /** The bar, point, slice, cell or flow under a screen position, in words; null over empty space. */
+  pointAt(clientX: number, clientY: number): ChartPoint | null {
+    const chart = this.#chart;
+    if (!chart || !this.#describe) return null;
+    const canvas = this.querySelector("canvas");
+    if (!canvas) return null;
+    // Chart.js takes a position already inside the canvas this way; a bare MouseEvent that was never dispatched reads wrong.
+    const box = canvas.getBoundingClientRect();
+    const at = { type: "mousemove", native: null, x: clientX - box.left, y: clientY - box.top } as unknown as Event;
+    // On the mark itself first; failing that, the nearest one, so a tap above a short bar still means that bar.
+    const hits = chart.getElementsAtEventForMode(at, "nearest", { intersect: true }, false);
+    const near = hits.length ? hits : chart.getElementsAtEventForMode(at, "nearest", { intersect: false }, false);
+    const hit = near.find((h) => this.#describe!(h.datasetIndex, h.index));
+    return hit ? this.#describe(hit.datasetIndex, hit.index) : null;
+  }
+
+  /** Where a named point is drawn now, in screen coordinates, so a comment's pin can find it again. */
+  pixelOf(point: { series: string; x: string }): { x: number; y: number } | null {
+    const chart = this.#chart;
+    const canvas = this.querySelector("canvas");
+    if (!chart || !this.#describe || !canvas) return null;
+    const box = canvas.getBoundingClientRect();
+    for (let di = 0; di < chart.data.datasets.length; di++) {
+      const meta = chart.getDatasetMeta(di);
+      for (let i = 0; i < meta.data.length; i++) {
+        const named = this.#describe(di, i);
+        if (!named || named.series !== point.series || named.x !== point.x) continue;
+        const el = meta.data[i];
+        const c = el.getCenterPoint ? el.getCenterPoint() : { x: el.x, y: el.y };
+        return { x: box.left + c.x, y: box.top + c.y };
+      }
+    }
+    return null;
+  }
   #drawing = false;
+  /** The scheme changed while a drawing was under way: draw again when it lands. */
+  #again = false;
 
   connectedCallback(): void {
     super.connectedCallback();
+    window.addEventListener("art:scheme", this.#onScheme);
     // Drawing lives here rather than in render() so a chart destroyed on
     // disconnect comes back when the element is re-attached.
-    if (this.#chart || this.#drawing || !this.#spec) return;
-    const canvas = this.querySelector("canvas");
-    if (!canvas) return;
-    this.#drawing = true;
-    void this.#draw(canvas, this.#spec).finally(() => {
-      this.#drawing = false;
-    });
+    this.#redraw();
   }
 
   disconnectedCallback(): void {
+    window.removeEventListener("art:scheme", this.#onScheme);
+    this.#destroy();
+  }
+
+  /** The colors are read once per drawing, so a new scheme means a new drawing. */
+  #onScheme = (): void => {
+    // The page swaps its variables in the same tick; read them on the next frame.
+    requestAnimationFrame(() => {
+      if (!this.isConnected) return;
+      if (this.#drawing) {
+        this.#again = true;
+        return;
+      }
+      this.#destroy();
+      this.#redraw();
+    });
+  };
+
+  #destroy(): void {
     try {
       this.#chart?.destroy?.();
     } catch {
@@ -477,161 +583,179 @@ class ArtChart extends ArtElement {
     this.#chart = null;
   }
 
+  #redraw(): void {
+    if (this.#chart || this.#drawing || !this.#spec) return;
+    const canvas = this.querySelector("canvas");
+    if (!canvas) return;
+    this.#drawing = true;
+    void this.#draw(canvas, this.#spec).finally(() => {
+      this.#drawing = false;
+      if (this.#again && this.isConnected) {
+        this.#again = false;
+        this.#destroy();
+        this.#redraw();
+      }
+    });
+  }
+
   protected render(): void {
     const spec = parseJson<ChartSpec>(this.dataset.chart);
     if (!spec || !Array.isArray(spec.data) || !Array.isArray(spec.y)) return;
     this.#spec = spec;
     this.classList.add("art-chart");
 
-    if (spec.title) this.appendChild(make("div", "art-chart__title", spec.title));
+    const head = make("div", "art-chart__head");
+    if (spec.title) head.appendChild(make("div", "art-chart__title", spec.title));
+    head.appendChild(this.#menu(spec));
+    this.appendChild(head);
 
     const frame = make("div", "art-chart__canvas");
     const height = Number(spec.height);
     frame.style.height = `${Number.isFinite(height) && height > 0 ? height : 280}px`;
-    frame.appendChild(make("canvas"));
+    frame.setAttribute("role", "img");
+    frame.setAttribute("aria-label", chartSummary(spec));
+    const canvas = make("canvas");
+    canvas.setAttribute("aria-hidden", "true");
+    frame.appendChild(canvas);
     this.appendChild(frame);
+    this.appendChild(this.#table(spec));
+  }
+
+  /**
+   * A small menu for reading the chart another way: its numbers as a table,
+   * the drawing as an image, the data as a CSV file.
+   */
+  #menu(spec: ChartSpec): HTMLElement {
+    const wrap = make("div", "art-chart__menu");
+    const button = make("button", "art-chart__more");
+    button.type = "button";
+    button.setAttribute("aria-label", "Chart menu");
+    button.setAttribute("aria-haspopup", "menu");
+    button.setAttribute("aria-expanded", "false");
+    button.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg>';
+    const list = make("div", "art-chart__list");
+    list.setAttribute("role", "menu");
+    list.hidden = true;
+    const close = () => {
+      list.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", outside, true);
+    };
+    const outside = (e: Event) => {
+      if (!wrap.contains(e.target as Node)) close();
+    };
+    const item = (text: string, run: () => void) => {
+      const b = make("button", "art-chart__item", text);
+      b.type = "button";
+      b.setAttribute("role", "menuitem");
+      b.addEventListener("click", () => {
+        close();
+        run();
+      });
+      list.appendChild(b);
+      return b;
+    };
+    const numbers = item("Show the numbers", () => {
+      const box = this.querySelector<HTMLElement>(".art-chart__data, .art-sr-only");
+      if (!box) return;
+      const showing = box.classList.toggle("art-chart__data");
+      box.classList.toggle("art-sr-only", !showing);
+      numbers.textContent = showing ? "Hide the numbers" : "Show the numbers";
+    });
+    item("Download image", () => this.#downloadImage(spec));
+    item("Download data (CSV)", () => download(`${fileName(spec)}.csv`, new Blob([chartCsv(spec)], { type: "text/csv" })));
+    button.addEventListener("click", () => {
+      const opening = list.hidden;
+      list.hidden = !opening;
+      button.setAttribute("aria-expanded", String(opening));
+      if (opening) document.addEventListener("pointerdown", outside, true);
+      else document.removeEventListener("pointerdown", outside, true);
+    });
+    wrap.append(button, list);
+    return wrap;
+  }
+
+  /** The drawing on the chart's own background, with its title over it, as a PNG. */
+  #downloadImage(spec: ChartSpec): void {
+    const canvas = this.querySelector("canvas");
+    if (!canvas) return;
+    const style = getComputedStyle(this);
+    const token = (name: string, fallback: string) => (style.getPropertyValue(name) || "").trim() || fallback;
+    const scale = canvas.width / (canvas.clientWidth || canvas.width);
+    const pad = Math.round(20 * scale);
+    const titleSpace = spec.title ? Math.round(34 * scale) : 0;
+    const out = document.createElement("canvas");
+    out.width = canvas.width + pad * 2;
+    out.height = canvas.height + pad * 2 + titleSpace;
+    const ctx = out.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = token("--art-surface", "#ffffff");
+    ctx.fillRect(0, 0, out.width, out.height);
+    if (spec.title) {
+      ctx.fillStyle = token("--art-text", "#1b1b1a");
+      ctx.font = `600 ${Math.round(15 * scale)}px ${token("--art-font-sans", "system-ui, sans-serif")}`;
+      ctx.textBaseline = "top";
+      ctx.fillText(spec.title, pad, pad);
+    }
+    ctx.drawImage(canvas, pad, pad + titleSpace);
+    out.toBlob((blob) => blob && download(`${fileName(spec)}.png`, blob), "image/png");
+  }
+
+  /** The numbers behind the drawing, for screen readers. A table grows to fit its rows whatever its height, so it sits in a box that is clipped. */
+  #table(spec: ChartSpec): HTMLElement {
+    const box = make("div", "art-sr-only");
+    const table = box.appendChild(make("table"));
+    if (spec.title) table.appendChild(make("caption", undefined, spec.title));
+    // Every key the rows use, so a sankey's amounts or a heatmap's values are there too.
+    const keys: string[] = [spec.x, ...spec.y];
+    for (const row of spec.data) for (const k of Object.keys(row)) if (!keys.includes(k)) keys.push(k);
+    const head = make("tr");
+    for (const key of keys) head.appendChild(make("th", undefined, key));
+    table.appendChild(make("thead")).appendChild(head);
+    const body = make("tbody");
+    for (const row of spec.data.slice(0, 500)) {
+      const tr = make("tr");
+      tr.appendChild(make("th", undefined, String(row[spec.x] ?? "")));
+      for (const key of keys.slice(1)) tr.appendChild(make("td", undefined, String(row[key] ?? "")));
+      body.appendChild(tr);
+    }
+    table.appendChild(body);
+    return box;
   }
 
   async #draw(canvas: HTMLCanvasElement, spec: ChartSpec): Promise<void> {
     try {
       const style = getComputedStyle(this);
-      const token = (name: string, fallback: string) =>
-        (style.getPropertyValue(name) || "").trim() || fallback;
-
-      const palette = CHART_FALLBACK.map((fallback, i) => token(`--art-chart-${i + 1}`, fallback));
-      const text = token("--art-text", "#1B1B1A");
-      const muted = token("--art-text-muted", "#5F5F5B");
-      const border = token("--art-border", "#E3E3E0");
-      const surface = token("--art-surface", "#FFFFFF");
-      const font = token("--art-font-sans", "system-ui, sans-serif");
-      const unit = spec.unit ? ` ${spec.unit}` : "";
-
-      const isRound = spec.type === "pie" || spec.type === "doughnut";
-      const isArea = spec.type === "area";
-      const type = isArea ? "line" : spec.type;
-      const labels = spec.data.map((row) => String(row[spec.x] ?? ""));
-
-      const datasets = isRound
-        ? [
-            {
-              label: spec.y[0] ?? "",
-              data: spec.data.map((row) => toNumber(row[spec.y[0]])),
-              backgroundColor: spec.data.map((_, i) => palette[i % palette.length]),
-              borderColor: surface,
-              borderWidth: 1,
-            },
-          ]
-        : spec.y.map((key, i) => {
-            const color = palette[i % palette.length];
-            const bar = type === "bar";
-            // In a stack only the segment on top gets the rounded cap,
-            // otherwise every joint in the column shows a notch.
-            const stacked = bar && spec.stacked === true;
-            const capped = !stacked || i === spec.y.length - 1;
-            return {
-              label: key,
-              data:
-                spec.type === "scatter"
-                  ? spec.data.map((row) => ({ x: toNumber(row[spec.x]), y: toNumber(row[key]) }))
-                  : spec.data.map((row) => toNumber(row[key])),
-              borderColor: bar ? "transparent" : color,
-              // A solid bar reads as one shape; an outlined wash reads as a box
-              // with something in it.
-              backgroundColor: bar ? color : isArea ? translucent(color) : color,
-              borderWidth: bar ? 0 : 2,
-              borderRadius: bar && capped ? { topLeft: 5, topRight: 5, bottomLeft: 0, bottomRight: 0 } : 0,
-              borderSkipped: false,
-              maxBarThickness: 52,
-              categoryPercentage: 0.74,
-              barPercentage: 0.86,
-              fill: isArea,
-              tension: isArea || type === "line" ? 0.32 : 0,
-              pointRadius: type === "line" || isArea ? 0 : 3,
-              pointHoverRadius: 4,
-              hoverBackgroundColor: bar ? color : undefined,
-              hoverBorderColor: color,
-            };
-          });
-
-      // Grid lines are scaffolding, not content: keep the horizontal ones as
-      // hairlines, drop the vertical ones and the axis frame entirely.
-      const tickFont = { family: font, size: 11, weight: 500 as const };
-      const scales = {
-        x: {
-          stacked: spec.stacked === true,
-          ticks: { color: muted, font: tickFont, padding: 6, autoSkipPadding: 12 },
-          grid: { display: false },
-          border: { display: false },
-        },
-        y: {
-          stacked: spec.stacked === true,
-          beginAtZero: true,
-          ticks: {
-            color: muted,
-            font: tickFont,
-            padding: 8,
-            maxTicksLimit: 6,
-            callback: (value: unknown) => `${value}${unit}`,
-          },
-          grid: { color: border, lineWidth: 1, drawTicks: false },
-          border: { display: false, dash: [3, 4] },
+      const token = (name: string, fallback: string) => (style.getPropertyValue(name) || "").trim() || fallback;
+      const theme: ChartTheme = {
+        palette: CHART_FALLBACK.map((fallback, i) => token(`--art-chart-${i + 1}`, fallback)),
+        text: token("--art-text", "#1B1B1A"),
+        muted: token("--art-text-muted", "#5F5F5B"),
+        border: token("--art-border", "#E3E3E0"),
+        surface: token("--art-surface", "#FFFFFF"),
+        font: token("--art-font-sans", "system-ui, sans-serif"),
+        tones: {
+          good: token("--art-good", "#15803D"),
+          warn: token("--art-warn", "#B45309"),
+          bad: token("--art-bad", "#B91C1C"),
+          info: token("--art-info", "#2563EB"),
         },
       };
-
-      const { default: Chart } = await import("chart.js/auto");
-
-      this.#chart = new Chart(canvas, {
-        type: type as never,
-        data: { labels, datasets: datasets as never },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false,
-          layout: { padding: { top: 4, right: 4 } },
-          interaction: { mode: "index" as const, intersect: false },
-          plugins: {
-            legend: {
-              display: isRound || spec.y.length > 1,
-              position: "top" as const,
-              align: "start" as const,
-              labels: {
-                color: muted,
-                font: { family: font, size: 11.5 },
-                boxWidth: 7,
-                boxHeight: 7,
-                padding: 14,
-                usePointStyle: true,
-                pointStyle: "circle" as const,
-              },
-            },
-            tooltip: {
-              backgroundColor: surface,
-              titleColor: text,
-              bodyColor: muted,
-              borderColor: border,
-              borderWidth: 1,
-              padding: 10,
-              cornerRadius: 8,
-              titleFont: { family: font, size: 12, weight: 600 as const },
-              bodyFont: { family: font, size: 12 },
-              bodySpacing: 5,
-              boxWidth: 7,
-              boxHeight: 7,
-              usePointStyle: true,
-              callbacks: {
-                label: (item: { dataset?: { label?: string }; label?: string; formattedValue: string }) => {
-                  const name = isRound ? item.label : item.dataset?.label;
-                  return `${name ? `${name}: ` : ""}${item.formattedValue}${unit}`;
-                },
-              },
-            },
-          },
-          scales: isRound ? undefined : scales,
-        } as never,
-      }) as unknown as { destroy?: () => void };
-    } catch {
+      const { default: Chart, layouts } = await import("chart.js/auto");
+      await registerChartType(Chart, spec.type);
+      const config = chartConfig(spec, theme, layouts);
+      this.#describe = config.describe;
+      if (!canvas.isConnected) return;
+      this.#chart = new Chart(canvas, config as never) as unknown as DrawnChart;
+    } catch (err) {
       // A chart that cannot be drawn (bad spec, no canvas, no chart.js) leaves
       // the empty frame in place rather than taking the page down with it.
+      console.warn("art-chart: could not draw", err);
+      // A page left open across an update asks for drawing code that has since
+      // been replaced; say so rather than showing an empty box.
+      if (/dynamically imported module|Importing a module script failed|error loading dynamically/i.test(String((err as Error)?.message ?? err))) {
+        canvas.parentElement?.replaceChildren(make("p", "art-chart__stale", "Indy was updated while this page was open. Reload to see this chart."));
+      }
     }
   }
 }

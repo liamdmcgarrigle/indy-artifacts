@@ -17,7 +17,8 @@ import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { badgeClass, BlockError, parseChartBlock, parseTableBlock } from "@/lib/pipeline/parse";
+import { badgeClass, BlockError, parseTableBlock } from "@/lib/pipeline/parse";
+import { parseChartBlock } from "@/lib/pipeline/chart";
 import { parseStoryBlock, StoryBlockError } from "@/lib/storybook/spec";
 
 /**
@@ -173,6 +174,7 @@ export interface KpiItem {
   tone?: string | null;
   delta?: string | null;
   note?: string | null;
+  trend?: string | null;
 }
 
 export const Kpis = Node.create({
@@ -196,6 +198,7 @@ export const Kpis = Node.create({
         if (k.tone) attrs.tone = k.tone;
         if (k.delta) attrs.delta = k.delta;
         if (k.note) attrs.note = k.note;
+        if (k.trend) attrs.trend = k.trend;
         return ["art-kpi", attrs] as [string, Record<string, string>];
       }),
     ];

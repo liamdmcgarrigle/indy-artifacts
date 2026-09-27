@@ -18,6 +18,7 @@ import {
   resolveAnchor,
   isOverText,
   kindName,
+  pointQuote,
   truncate,
   type Anchor,
   type Spot,
@@ -853,7 +854,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     if (!el || !block) return;
     const options: { label: string; anchor: Anchor }[] = [];
     const picked = anchorFromPick(content, el, x, y);
-    if (picked) options.push({ label: `Comment on this ${kindName(el)}`, anchor: picked });
+    if (picked) options.push({ label: picked.point ? `Comment on ${truncate(pointQuote(picked.point), 48)}` : `Comment on this ${kindName(el)}`, anchor: picked });
     if (el !== block) {
       const r = block.getBoundingClientRect();
       options.push({

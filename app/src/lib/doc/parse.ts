@@ -215,7 +215,7 @@ function kpis(node: Md): JSONContent {
   const items: KpiItem[] = [];
   visit(node, "listItem", (item: Md) => {
     const parsed = parseKpiLine(mdToString(item));
-    if (parsed) items.push({ label: parsed.label, value: parsed.value, tone: parsed.tone ?? null, delta: parsed.delta ?? null, note: parsed.note ?? null });
+    if (parsed) items.push({ label: parsed.label, value: parsed.value, tone: parsed.tone ?? null, delta: parsed.delta ?? null, note: parsed.note ?? null, trend: parsed.trend ?? null });
   });
   return { type: "kpis", attrs: { items } };
 }

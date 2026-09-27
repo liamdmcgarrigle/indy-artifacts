@@ -1,6 +1,6 @@
 {
   "name": "@artifacts/primitives",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
@@ -14,5 +14,10 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2"
+  },
+  "dependencies": {
+    "@sgratzl/chartjs-chart-boxplot": "4.4.5",
+    "chartjs-chart-matrix": "3.1.0",
+    "chartjs-chart-sankey": "0.19.1"
   }
 }

@@ -222,10 +222,13 @@ export function agentTick(ctx: ServiceContext, slug: string, inputs: AgentTickIn
       if (!hit) throw new NotFoundError(`no task item starts on line ${input.line}. The items are:\n${listing()}`);
       return { item: hit, done: input.done };
     }
-    const want = normaliseTaskText(String(input.item ?? ""));
+    // Agents quote items as the source writes them; the page's words have no backticks, stars or box.
+    // Both sides lose that markup, so an item that really has user_id in it still matches.
+    const bare = (s: string) => normaliseTaskText(s.replace(/[`*_]/g, ""));
+    const want = bare(String(input.item ?? "").replace(/^\s*[-*]\s*\[[ xX]\]\s*/, ""));
     if (!want) throw new ValidationError("each item needs its words (item) or its line");
-    const exact = items.filter((t) => normaliseTaskText(t.text) === want);
-    const hits = exact.length ? exact : items.filter((t) => normaliseTaskText(t.text).includes(want));
+    const exact = items.filter((t) => bare(t.text) === want);
+    const hits = exact.length ? exact : items.filter((t) => bare(t.text).includes(want));
     if (hits.length !== 1)
       throw new NotFoundError(
         `${hits.length ? `"${input.item}" matches ${hits.length} items; give the line instead` : `no task item matches "${input.item}"`}. The items are:\n${listing()}`,

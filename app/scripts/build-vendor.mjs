@@ -7,7 +7,7 @@
  * to be a plain same-origin script.
  */
 import { build } from "esbuild";
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +36,9 @@ await rm(entry, { force: true });
 for (const name of ["primitives.js", "primitives.css"]) {
   await copyFile(resolve(repo, "packages/primitives/dist", name), resolve(app, "public/primitives", name));
 }
+// The chunks primitives.js loads on first use (Chart.js and its chart types), by relative path.
+await rm(resolve(app, "public/primitives/chunks"), { recursive: true, force: true });
+await cp(resolve(repo, "packages/primitives/dist/chunks"), resolve(app, "public/primitives/chunks"), { recursive: true });
 
 /* ------------------------------------------------------------------ fonts */
 

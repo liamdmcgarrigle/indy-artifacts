@@ -90,7 +90,7 @@ The 90-day policy is holding 104 days of snapshots. Nothing is at risk yet.
 
 The body is a bullet list of \`Label: value\`. A bullet may carry a \`{tone=...}\` and end
 with a delta in parentheses. Add \`note="..."\` inside the braces for a small line under the
-label, such as where the figure came from.
+label, such as where the figure came from, and \`trend="3,5,4,8"\` for a sparkline.
 
 \`\`\`md
 :::kpis
@@ -223,10 +223,12 @@ firmer rule above it.
 
 ### \`\`\`\` \`\`\`chart \`\`\`\`
 
-YAML. \`type\` is \`bar\`, \`line\`, \`area\`, \`pie\`, \`doughnut\` or \`scatter\`. \`x\` is one key,
-\`y\` is a key or a list of keys, \`data\` is a list of objects. Optional: \`title\`,
-\`stacked\` (bool), \`unit\` (a suffix on values), \`height\` (px, default 280). Colours come
-from the theme.
+YAML. \`type\` is \`bar\`, \`line\`, \`area\`, \`pie\`, \`doughnut\`, \`scatter\`, \`bubble\`, \`radar\`,
+\`histogram\`, \`waterfall\`, \`sankey\`, \`funnel\`, \`heatmap\` or \`box\`. \`x\` is one key,
+\`y\` is a key or a list of keys, \`data\` is a list of objects. Two or more \`y\` keys on a bar
+chart draw grouped bars side by side; add \`stacked: true\` to stack them instead. Optional:
+\`title\`, \`unit\` (added to values: \`%\` sits against the number, \`min\` after a space),
+\`height\` (px, default 280). Colors come from the theme.
 
 \`\`\`\`md
 \`\`\`chart
@@ -243,6 +245,177 @@ data:
   - { night: Wed, full: 0, incremental: 5 }
 \`\`\`
 \`\`\`\`
+
+**Horizontal bars.** \`horizontal: true\` on a bar chart puts the categories down the left.
+Use it when labels are long or there are more than about six categories. \`type: barh\` and
+\`orientation: horizontal\` mean the same.
+
+**Reference lines and shaded ranges.** \`marks\` is a list drawn over the data:
+
+- \`{ y: 0.25, label: Error budget }\` is a line at a value. \`y\` always means the value axis,
+  so on a horizontal chart the line runs top to bottom. Add \`axis: right\` for a line on the
+  right axis.
+- \`{ x: W3, label: Release }\` is a line at one x value.
+- \`{ from: "09:00", to: "19:00", label: Incident }\` shades the x values from one to the other.
+
+Each takes an optional \`tone\` (\`good\`, \`warn\`, \`bad\`, \`info\`). An \`x\`, \`from\` or \`to\` must
+be an x value in the data, written the same way (numbers on a scatter chart). Marks work on
+bar, line, area and scatter charts, and the axis stretches to show a line above the data.
+
+\`\`\`\`md
+\`\`\`chart
+type: bar
+horizontal: true
+title: Error rate by service, last 7 days
+x: service
+y: errors
+unit: "%"
+marks:
+  - { y: 0.25, label: 0.25% error budget, tone: bad }
+data:
+  - { service: checkout-api, errors: 0.31 }
+  - { service: search, errors: 0.12 }
+  - { service: notifications, errors: 0.05 }
+\`\`\`
+\`\`\`\`
+
+**Bars and a line on two axes.** \`series\` sets how one \`y\` key is drawn: \`as\` is \`bar\`,
+\`line\` or \`area\`, and \`axis\` is \`left\` or \`right\`. \`axes\` gives each axis a \`title\`, a
+\`unit\`, \`min\` and \`max\` (\`left\`, \`right\`, and \`x\` for the title under the categories). A
+top-level \`unit\` is the left axis's. Put a second axis only on a series in a different unit,
+never to make two series in the same unit look alike.
+
+\`\`\`\`md
+\`\`\`chart
+type: bar
+title: Deploys and change failure rate
+x: week
+y: [deploys, cfr]
+series:
+  cfr: { as: line, axis: right }
+axes:
+  left: { title: Deploys per week }
+  right: { title: Change failure rate, unit: "%" }
+data:
+  - { week: W1, deploys: 14, cfr: 7.1 }
+  - { week: W2, deploys: 18, cfr: 5.6 }
+  - { week: W3, deploys: 11, cfr: 9.1 }
+\`\`\`
+\`\`\`\`
+
+**Numbers.** \`format\` is \`number\` (1,234), \`compact\` (1.2K, 3.4M), \`percent\` or \`currency\`
+(\`currency:EUR\`, USD by default). \`percent\` reads fractions, so 0.25 shows as 25%; for values
+that are already percentages, use \`unit: "%"\`. \`decimals\` fixes the places. Each axis in
+\`axes\` can take its own \`format\`, \`currency\`, \`decimals\` and \`unit\`; the chart's own apply to
+the left axis. Ticks, tooltips and value labels all follow them.
+
+**Reading aids.** \`labels: true\` writes each value on its bar or point (a share on pie
+slices). \`sort: desc\` or \`asc\` orders the rows by their total. \`legend\` is \`top\`, \`bottom\`
+or \`none\`. \`axes\` also take \`min\`, \`max\` and \`log: true\`.
+
+**Stacks, curves and series.** \`stacked: percent\` stacks each column to 100% and shows
+shares, with the counts in the tooltip. Areas with \`stacked: true\` pile on each other. Lines
+and areas take \`curve: smooth\` (the default), \`straight\` or \`step\`. Under \`series\`, a y key
+also takes \`color\` (a palette slot 1 to 6, or \`good\`, \`warn\`, \`bad\`, \`info\`, \`muted\`),
+\`dash: true\` for a forecast or a target, \`curve\`, and \`hidden: true\` to start it switched
+off in the legend.
+
+**Scatter and bubble.** \`x\` and \`y\` are numbers. \`group: <key>\` colors the points by that
+key's values (with one \`y\` key), \`label: <key>\` names each point in its tooltip, \`line: true\`
+joins each group's points in x order and \`trend: linear\` fits a line through each group.
+\`type: bubble\` with \`size: <key>\` sizes the points by area. \`axes.x\` takes a title, format,
+\`min\`, \`max\` and \`log\` here.
+
+\`\`\`\`md
+\`\`\`chart
+type: bubble
+title: Price against rating, sized by units sold
+x: price
+y: rating
+group: brand
+label: model
+size: sold
+trend: linear
+axes: { x: { title: Price, format: currency }, left: { title: Rating } }
+data:
+  - { model: A1, brand: Acme, price: 199, rating: 3.9, sold: 1200 }
+  - { model: A2, brand: Acme, price: 349, rating: 4.4, sold: 800 }
+  - { model: B1, brand: Bolt, price: 149, rating: 3.1, sold: 2600 }
+\`\`\`
+\`\`\`\`
+
+**Pie and doughnut.** One \`y\` key; each row is a slice. More than six rows fold the smallest
+into "Other". A doughnut shows its total in the middle, with \`center: <words>\` under it.
+Tooltips give each slice's share.
+
+**Radar.** \`type: radar\`: each \`x\` value is a spoke and each \`y\` key a ring. Use it to
+compare a few profiles (two or three) across five to eight measures on the same scale.
+
+**Histogram.** \`type: histogram\` counts the values of \`x\` into equal ranges; leave out \`y\`.
+\`bins\` sets how many (default by the number of values). \`data\` can be a plain list of numbers:
+\`data: [212, 340, 198, 1210, 405]\`.
+
+**Waterfall.** \`type: waterfall\` with one \`y\` key: each row is a change, drawn from the running
+total before it, green up and red down. A row with \`total: true\` stands on zero: with a
+value it sets the running total (a starting balance), without one it shows it.
+
+\`\`\`\`md
+\`\`\`chart
+type: waterfall
+title: Monthly recurring revenue, June to July
+x: step
+y: change
+format: currency
+labels: true
+data:
+  - { step: June, change: 48000, total: true }
+  - { step: New, change: 9500 }
+  - { step: Expansion, change: 3200 }
+  - { step: Churn, change: -6100 }
+  - { step: July, total: true }
+\`\`\`
+\`\`\`\`
+
+**Range bars.** \`range: true\` on a bar chart with two \`y\` keys draws each bar from the first to
+the second: price bands, time windows, or a simple schedule with \`horizontal: true\`.
+
+**Sankey.** \`type: sankey\` draws flows between stages: each row is one flow, with \`from\`,
+\`to\` and \`value\` keys (rename them with \`from: <key>\`, \`to: <key>\`, \`value: <key>\`). Flows
+must run one way; a loop is refused. Use it when the question is where things went: traffic
+to signups, a budget to its uses, requests through services.
+
+\`\`\`\`md
+\`\`\`chart
+type: sankey
+title: Where last month's visitors went
+format: compact
+data:
+  - { from: Search, to: Landing page, value: 42000 }
+  - { from: Social, to: Landing page, value: 18000 }
+  - { from: Landing page, to: Signup, value: 14500 }
+  - { from: Landing page, to: Left, value: 45500 }
+  - { from: Signup, to: Paid, value: 2600 }
+  - { from: Signup, to: Left, value: 11900 }
+\`\`\`
+\`\`\`\`
+
+**Funnel.** \`type: funnel\` with \`x\` as the stage and one \`y\` key as how many reached it,
+in order. Each stage shows its count and share of the first; the tooltip adds the share of
+the stage before.
+
+**Heatmap.** \`type: heatmap\`: \`x\` is the columns, \`y\` the rows (one key), and \`value\` the
+number that shades each cell. One row per cell. \`labels: true\` writes the numbers in the
+cells. Good for hour by weekday, service by day, or any two categories against one measure.
+
+**Box plot.** \`type: box\` shows the spread of values per \`x\`: give raw values (one row per
+value, \`x\` and a \`y\` key), or one row per \`x\` with \`min\`, \`q1\`, \`median\`, \`q3\` and \`max\`
+already worked out. Takes \`horizontal: true\` and \`axes\` titles.
+
+**Counter sparklines.** A counter line in \`:::kpis\` takes \`trend="3,5,4,8"\`, oldest first, and
+draws it as a small line in the counter's tone: \`- Signups: 412 {tone=good trend="310,344,380,412"}\`.
+
+A key the chart does not read comes back in the publish result as a warning, with the key it
+most likely meant.
 
 ### \`\`\`\` \`\`\`table \`\`\`\`
 

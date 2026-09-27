@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import { toString as mdToString } from "mdast-util-to-string";
-import { CHART_TYPES, type ChartSpec, type TableSpec } from "./types";
+import type { TableSpec } from "./types";
 
 export class BlockError extends Error {}
 
@@ -77,60 +77,14 @@ export function parseTableBlock(body: string): TableSpec {
   return { columns, rows, sortable };
 }
 
-export function parseChartBlock(body: string): ChartSpec {
-  let doc: unknown;
-  try {
-    doc = parseYaml(body);
-  } catch (err) {
-    throw new BlockError(`chart YAML is invalid: ${(err as Error).message}`);
-  }
-  const o = doc as Record<string, unknown> | null;
-  if (!o || typeof o !== "object") throw new BlockError("chart block must be a YAML mapping");
-
-  const type = String(o.type ?? "");
-  if (!(CHART_TYPES as readonly string[]).includes(type))
-    throw new BlockError(`chart type must be one of ${CHART_TYPES.join(", ")}, got "${type || "nothing"}"`);
-
-  if (!Array.isArray(o.data) || o.data.length === 0)
-    throw new BlockError("chart needs a non-empty data list");
-  const data = o.data.map((row, i) => {
-    if (!row || typeof row !== "object" || Array.isArray(row))
-      throw new BlockError(`chart data item ${i + 1} must be a mapping`);
-    return row as Record<string, unknown>;
-  });
-
-  const keys = Object.keys(data[0]);
-  const x = String(o.x ?? keys[0] ?? "");
-  if (!x) throw new BlockError("chart needs an x key");
-
-  let y: string[];
-  if (Array.isArray(o.y)) y = o.y.map(String);
-  else if (typeof o.y === "string") y = [o.y];
-  else y = keys.filter((k) => k !== x);
-  if (y.length === 0) throw new BlockError("chart needs at least one y key");
-
-  const missing = [x, ...y].filter((k) => !keys.includes(k));
-  if (missing.length) throw new BlockError(`chart keys not present in data: ${missing.join(", ")}`);
-
-  const height = Number(o.height ?? 280);
-  return {
-    type: type as ChartSpec["type"],
-    title: o.title ? String(o.title) : undefined,
-    x,
-    y,
-    data,
-    stacked: o.stacked === true,
-    unit: o.unit ? String(o.unit) : undefined,
-    height: Number.isFinite(height) ? Math.min(Math.max(height, 80), 900) : 280,
-  };
-}
-
 export interface KpiItem {
   label: string;
   value: string;
   tone?: string;
   delta?: string;
   note?: string;
+  /** Recent values, oldest first, drawn as a sparkline: "3,5,4,8". */
+  trend?: string;
 }
 
 const TONES = new Set(["good", "warn", "bad", "info", "neutral"]);
@@ -156,8 +110,18 @@ export function badgeClass(tone: string | undefined | null): string {
   return `art-badge art-badge--${knownTone(tone) ?? "neutral"}`;
 }
 
-/** The `{tone=bad note="..."}` group on a counter line. */
-const KPI_OPTIONS = /\{\s*((?:tone|note)\s*=[^{}]*)\}/i;
+/** A `{tone=bad note="..." trend="3,5,4"}` group on a counter line. Agents often write one per option. */
+const KPI_OPTIONS = /\{\s*((?:tone|note|trend)\s*=[^{}]*)\}/gi;
+
+/** A sparkline's values as written, or undefined when they are not 2 to 60 numbers. */
+export function kpiTrend(raw: string): string | undefined {
+  const values = raw.split(/[\s,]+/).filter(Boolean).map(Number);
+  if (values.length < 2 || values.length > 60 || values.some((v) => !Number.isFinite(v))) return undefined;
+  return values.join(",");
+}
+
+/** Text that looks like a directive's `{key=value}` options: on a page it shows as typed. */
+export const STRAY_OPTIONS = /\{\s*[a-z][\w-]*\s*=[^{}\n]*\}/i;
 
 export function parseKpiLine(text: string): KpiItem | null {
   const raw = text.trim();
@@ -166,29 +130,33 @@ export function parseKpiLine(text: string): KpiItem | null {
   let tone: string | undefined;
   let delta: string | undefined;
   let note: string | undefined;
+  let trend: string | undefined;
 
-  const options = rest.match(KPI_OPTIONS);
-  if (options) {
+  for (const options of raw.matchAll(KPI_OPTIONS)) {
     for (const m of options[1].matchAll(/([a-z]+)\s*=\s*(?:"([^"]*)"|([^\s"]+))/gi)) {
       const key = m[1].toLowerCase();
       const value = (m[2] ?? m[3] ?? "").trim();
       if (key === "tone") tone = knownTone(value);
       else if (key === "note" && value) note = value;
+      else if (key === "trend") trend = kpiTrend(value);
     }
-    rest = rest.replace(options[0], "").trim();
+    rest = rest.replace(options[0], " ");
   }
+  rest = rest.replace(/\s+/g, " ").trim();
   const deltaMatch = rest.match(/\(([^()]*)\)\s*$/);
   if (deltaMatch) {
     delta = deltaMatch[1].trim();
     rest = rest.slice(0, deltaMatch.index).trim();
   }
   const sep = rest.indexOf(":");
-  if (sep === -1) return { label: rest, value: "", tone, delta, note };
+  const extra = trend ? { trend } : {};
+  if (sep === -1) return { label: rest, value: "", tone, delta, note, ...extra };
   return {
     label: rest.slice(0, sep).trim(),
     value: rest.slice(sep + 1).trim(),
     tone,
     delta,
     note,
+    ...extra,
   };
 }

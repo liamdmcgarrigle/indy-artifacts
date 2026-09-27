@@ -38,16 +38,15 @@ export interface RenderResult {
   blockHtml: Record<number, string>;
 }
 
-export interface ChartSpec {
-  type: "bar" | "line" | "area" | "pie" | "doughnut" | "scatter";
-  title?: string;
-  x: string;
-  y: string[];
-  data: Record<string, unknown>[];
-  stacked: boolean;
-  unit?: string;
-  height: number;
-}
+export type {
+  ChartAxis,
+  ChartFormat,
+  ChartMark,
+  ChartSeries,
+  ChartSpec,
+  ChartType,
+  Curve,
+} from "../../../../packages/primitives/src/chart-spec";
 
 export interface TableSpec {
   columns: string[];
@@ -71,4 +70,4 @@ export interface PipelineContext {
   source?: string;
 }
 
-export const CHART_TYPES = ["bar", "line", "area", "pie", "doughnut", "scatter"] as const;
+export const CHART_TYPES = ["bar", "line", "area", "pie", "doughnut", "scatter", "radar", "histogram", "waterfall", "heatmap", "box", "funnel", "sankey"] as const;

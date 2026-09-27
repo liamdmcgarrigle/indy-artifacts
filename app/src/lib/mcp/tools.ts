@@ -98,7 +98,7 @@ function summarise(result: {
   if (result.buildStatus === "error") lines.push(`Build FAILED; the page shows the error. Fix and update:\n${result.buildLog}`);
   else if (result.buildStatus === "ok" && result.buildLog) lines.push(`Build warnings:\n${result.buildLog}`);
   if (result.warnings.length)
-    lines.push(`Block warnings:\n${result.warnings.map((w) => `  line ${w.line}: ${w.message}`).join("\n")}`);
+    lines.push(`The page published, but these parts show wrong. Fix them with artifact_update:\n${result.warnings.map((w) => `  line ${w.line}: ${w.message}`).join("\n")}`);
   const dropped = result.droppedTicks ?? [];
   if (dropped.length)
     lines.push(
@@ -720,10 +720,10 @@ export function buildTools(ctx: ServiceContext): ToolDef[] {
           const artifact = requireArtifact(ctx, slug);
           const all = taskStates(ctx, artifact, requireVersion(ctx, artifact));
           const done = all.filter((s) => s.done).length;
-          return ok(
-            `${states.map((s) => `${s.done ? "Ticked" : "Unticked"} "${s.text}"`).join("\n")}\n${done} of ${all.length} done on "${slug}".`,
-            { checklist: checklistWire(all) },
-          );
+          // What is left, not the whole list again: an agent ticking as it goes calls this often.
+          const open = all.filter((s) => !s.done);
+          const left = open.length ? `\nStill open:\n${open.map((s) => `  line ${s.line}: ${s.text}`).join("\n")}` : "";
+          return ok(`${states.map((s) => `${s.done ? "Ticked" : "Unticked"} "${s.text}"`).join("\n")}\n${done} of ${all.length} done on "${slug}".${left}`);
         } catch (err) {
           return fail(err);
         }

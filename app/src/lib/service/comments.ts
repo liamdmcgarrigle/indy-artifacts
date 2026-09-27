@@ -51,6 +51,9 @@ export function validateAnchor(raw: unknown): Anchor | null {
   if (typeof a.selector === "string") out.selector = a.selector.slice(0, 500);
   if (typeof a.x === "number") out.x = a.x;
   if (typeof a.y === "number") out.y = a.y;
+  const p = a.point as Record<string, unknown> | undefined;
+  if (p && typeof p === "object" && typeof p.series === "string" && typeof p.x === "string")
+    out.point = { series: p.series.slice(0, 200), x: p.x.slice(0, 200), ...(typeof p.value === "string" ? { value: p.value.slice(0, 200) } : {}) };
   return out;
 }
 
