@@ -13,7 +13,11 @@ export function Consent({ clientName, destination, params }: { clientName: strin
   const [name, setName] = useState(clientName);
   const [busy, setBusy] = useState(false);
   return (
-    <form method="post" action="/api/oauth/authorize" className="flex flex-col gap-5 rounded-xl border border-hairline bg-card p-6" onSubmit={() => setBusy(true)}>
+    <form method="post" action="/api/oauth/authorize" className="flex flex-col gap-5 rounded-xl border border-hairline bg-card p-6" onSubmit={() => {
+      // Disable the buttons only after the browser has read the form: a
+      // disabled submit button leaves its decision=allow out of the post.
+      setTimeout(() => setBusy(true), 0);
+    }}>
       <input type="hidden" name="params" value={params} />
       <div className="flex flex-col gap-2">
         <h1 className="m-0 text-xl font-semibold tracking-[-0.01em]">Connect {clientName}?</h1>
