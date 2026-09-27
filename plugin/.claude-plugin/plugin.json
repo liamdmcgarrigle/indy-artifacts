@@ -1,7 +1,7 @@
 {
   "name": "indy",
   "displayName": "Indy",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Publish reports, plans and forms to your Indy, and pick up the comments you leave on them",
   "author": {
     "name": "Liam McGarrigle"
