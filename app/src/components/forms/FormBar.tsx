@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { useForm } from "./FormState";
  */
 export function FormBar({ responsesHref, responseCount }: { responsesHref?: string; responseCount?: number }) {
   const form = useForm();
+  const [confirming, setConfirming] = useState(false);
   if (!form) return null;
   const required = form.fields.filter((f) => f.required);
   const done = required.length - form.requiredLeft.length;
@@ -71,6 +73,7 @@ export function FormBar({ responsesHref, responseCount }: { responsesHref?: stri
               <span className="block h-full rounded-full bg-sand transition-[width]" style={{ width: `${(done / required.length) * 100}%` }} />
             </span>
           ) : null}
+          {form.answered ? <ClearAnswers form={form} confirming={confirming} setConfirming={setConfirming} /> : null}
         </div>
         {responsesHref && responseCount ? (
           <Link href={responsesHref} className="hidden shrink-0 text-[13px] text-muted-foreground hover:text-foreground md:block">
@@ -83,5 +86,46 @@ export function FormBar({ responsesHref, responseCount }: { responsesHref?: stri
         </Button>
       </div>
     </div>
+  );
+}
+
+/** Starting over empties every answer, so it asks first. */
+function ClearAnswers({
+  form,
+  confirming,
+  setConfirming,
+}: {
+  form: NonNullable<ReturnType<typeof useForm>>;
+  confirming: boolean;
+  setConfirming: (v: boolean) => void;
+}) {
+  const link = "underline decoration-dotted underline-offset-4 py-1";
+  if (confirming) {
+    return (
+      <span className="text-[12px] text-muted-foreground">
+        Clear {form.answered === 1 ? "your answer" : `all ${form.answered} answers`}?{" "}
+        <button
+          type="button"
+          className={`${link} text-bad hover:text-foreground`}
+          onClick={() => {
+            form.clear();
+            setConfirming(false);
+          }}
+        >
+          Clear
+        </button>
+        {" · "}
+        <button type="button" className={`${link} hover:text-foreground`} onClick={() => setConfirming(false)}>
+          Keep them
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span className="text-[12px] text-muted-foreground">
+      <button type="button" className={`${link} hover:text-foreground`} onClick={() => setConfirming(true)}>
+        Clear answers
+      </button>
+    </span>
   );
 }
