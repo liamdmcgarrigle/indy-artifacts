@@ -175,6 +175,27 @@ kbd {
   border-color: transparent;
 }
 
+/* The send shortcut on a send button: quiet, and gone where there is no keyboard. */
+.sendkeys {
+  margin-left: 2px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  color: inherit;
+  font-family: var(--art-font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  opacity: 0.8;
+}
+
+@media (hover: none) {
+  .sendkeys {
+    display: none;
+  }
+}
+
 .btn--ghost {
   background: transparent;
   border-color: transparent;
@@ -918,7 +939,7 @@ kbd {
 .reply__row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--art-space-2);
 }
 
@@ -1042,6 +1063,26 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The page's editor while it builds, laid out at full width but out of the
+   flow and unseen, so the server's stand-in stays put until it is replaced. */
+.docview {
+  position: relative;
+}
+
+.docview__pending {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Inline code on a page being read copies on a click. */
+.doc .art-content:not(.art-content--editing) :not(pre) > code {
+  cursor: copy;
 }
 
 /* ---------- toast ---------- */
@@ -1261,15 +1302,18 @@ kbd {
   }
 
   /* No room beside a pin, so the card becomes a sheet at the bottom. */
+  /* The keyboard covers the foot of the window without moving anything fixed
+     there, so the sheet sits on top of it (use-keyboard-inset), and never grows
+     taller than what is left showing. */
   .pop {
     position: fixed;
     top: auto !important;
     left: 10px !important;
     right: 10px;
-    bottom: 10px;
+    bottom: calc(10px + var(--keyboard-inset, 0px));
     width: auto;
     max-width: none;
-    max-height: 70vh;
+    max-height: min(70vh, calc(var(--visible-height, 100vh) - 20px));
     overflow-y: auto;
     z-index: 45;
     border-radius: 16px;
@@ -1278,8 +1322,8 @@ kbd {
 
   .panel {
     position: fixed;
-    inset: auto 0 0 0;
-    max-height: 75vh;
+    inset: auto 0 var(--keyboard-inset, 0px) 0;
+    max-height: min(75vh, calc(var(--visible-height, 100vh) - 10px));
     width: auto;
     max-width: none;
     border-radius: 16px 16px 0 0;

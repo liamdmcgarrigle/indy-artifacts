@@ -815,6 +815,70 @@ function storyClipHeight(): number {
   return Math.max(360, Math.round(tall * 0.7));
 }
 
+/**
+ * Frames load when they come near the screen, and stories a few at a time.
+ *
+ * A story pulls a couple of hundred chunk files from its Storybook. A page of
+ * eighty of them, all loading at once, runs Chrome out of request slots
+ * (net::ERR_INSUFFICIENT_RESOURCES) and most frames fail. The chunks are the
+ * same files for every story in a build, so once the first few have loaded
+ * the rest come from the cache and go quickly.
+ */
+const STORY_SLOTS = 4;
+/** A story that never says it loaded gives its slot up after this long. */
+const STORY_SLOT_MS = 20_000;
+let storiesLoading = 0;
+const storyQueue: Array<() => void> = [];
+
+function nextStory(): void {
+  while (storiesLoading < STORY_SLOTS && storyQueue.length) {
+    storiesLoading++;
+    storyQueue.shift()!();
+  }
+}
+
+/** Run `start` when a story slot is free; returns a function that takes it back out of the line. */
+function queueStory(start: () => void): () => void {
+  storyQueue.push(start);
+  nextStory();
+  return () => {
+    const at = storyQueue.indexOf(start);
+    if (at >= 0) storyQueue.splice(at, 1);
+  };
+}
+
+function freeStorySlot(): void {
+  storiesLoading = Math.max(0, storiesLoading - 1);
+  nextStory();
+}
+
+const nearby = new WeakMap<Element, () => void>();
+let nearObserver: IntersectionObserver | null = null;
+
+/** Call `then` once `el` is within a screen or so of the window. */
+function whenNear(el: Element, then: () => void): void {
+  if (typeof IntersectionObserver === "undefined") return then();
+  nearObserver ??= new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const run = nearby.get(entry.target);
+        nearObserver?.unobserve(entry.target);
+        nearby.delete(entry.target);
+        run?.();
+      }
+    },
+    { rootMargin: "800px 0px" },
+  );
+  nearby.set(el, then);
+  nearObserver.observe(el);
+}
+
+function stopWatching(el: Element): void {
+  nearby.delete(el);
+  nearObserver?.unobserve(el);
+}
+
 class ArtEmbed extends ArtElement {
   #frame: HTMLIFrameElement | null = null;
   #box: HTMLDivElement | null = null;
@@ -849,7 +913,7 @@ class ArtEmbed extends ArtElement {
     this.#layout();
   };
 
-  /** A story follows the page's scheme through its globals, so it reloads. */
+  /** A story follows the page's scheme through its globals, so it reloads, waiting its turn like the first load. */
   #onScheme = (event: Event): void => {
     const scheme = (event as CustomEvent).detail === "dark" ? "dark" : "light";
     if (this.#frame && this.dataset.kind === "story") {
@@ -857,10 +921,51 @@ class ArtEmbed extends ArtElement {
       if (this.#frame.dataset.src !== next) {
         this.#frame.dataset.src = next;
         this.classList.remove("is-loaded");
-        this.#frame.src = next;
+        if (this.#started) {
+          this.#release();
+          this.#started = false;
+          this.#schedule();
+        }
       }
     }
   };
+
+  /** Whether the frame has been given its address (or is in line for it). */
+  #started = false;
+  #holding = false;
+  #slotTimer = 0;
+  #dequeue: (() => void) | null = null;
+
+  /** Load the frame once it is near the screen; a story also waits for a free slot. */
+  #schedule(): void {
+    if (this.#started || !this.isConnected) return;
+    whenNear(this, () => {
+      if (this.#started || !this.isConnected) return;
+      this.#started = true;
+      if (this.dataset.kind !== "story") return this.#load();
+      this.#dequeue = queueStory(() => {
+        this.#dequeue = null;
+        this.#holding = true;
+        this.#slotTimer = window.setTimeout(() => this.#release(), STORY_SLOT_MS);
+        this.#load();
+      });
+    });
+  }
+
+  #load(): void {
+    const frame = this.#frame;
+    if (frame?.dataset.src) frame.src = frame.dataset.src;
+  }
+
+  /** Give back a story slot, or the place in line for one. */
+  #release(): void {
+    this.#dequeue?.();
+    this.#dequeue = null;
+    window.clearTimeout(this.#slotTimer);
+    if (!this.#holding) return;
+    this.#holding = false;
+    freeStorySlot();
+  }
 
   #src(scheme: string): string {
     const base = window.__ARTIFACT_EMBED_BASE ?? "";
@@ -936,8 +1041,8 @@ class ArtEmbed extends ArtElement {
     this.#height = Number(this.dataset.height) || 0;
 
     const frame = make("iframe");
-    frame.src = this.#src(scheme);
-    frame.dataset.src = frame.src;
+    // The address waits in data-src until the frame is near the screen (#schedule).
+    frame.dataset.src = this.#src(scheme);
     frame.setAttribute("sandbox", "allow-scripts allow-forms");
     frame.setAttribute("loading", "lazy");
     frame.title = kind === "story" ? `Story: ${this.dataset.title || id}` : kind;
@@ -949,8 +1054,11 @@ class ArtEmbed extends ArtElement {
     // again on load rather than trusting the first report to have found a
     // listener.
     frame.addEventListener("load", () => {
+      // A frame with no address yet fires load for its empty page; that is not the story.
+      if (!frame.getAttribute("src")) return;
       frame.contentWindow?.postMessage({ type: "art:measure" }, "*");
       this.classList.add("is-loaded");
+      this.#release();
     });
 
     this.#frame = frame;
@@ -989,6 +1097,7 @@ class ArtEmbed extends ArtElement {
     this.#lastHeight = window.innerHeight;
     window.addEventListener("resize", this.#onResize);
     this.#resize?.observe(this);
+    this.#schedule();
   }
 
   disconnectedCallback(): void {
@@ -996,6 +1105,12 @@ class ArtEmbed extends ArtElement {
     window.removeEventListener("art:scheme", this.#onScheme);
     window.removeEventListener("resize", this.#onResize);
     this.#resize?.disconnect();
+    // Taken off the page before it loaded: out of line, and its slot back.
+    stopWatching(this);
+    if (!this.classList.contains("is-loaded")) {
+      this.#release();
+      this.#started = false;
+    }
   }
 }
 

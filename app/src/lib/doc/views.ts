@@ -8,6 +8,7 @@ import { docExtensions, type DocOptions } from "./schema";
 import { ChoiceView, FieldView, OptionView } from "@/components/forms/NodeViews";
 import type * as EditViews from "@/components/editor/edit-views";
 import { taskItemView, TickDecorations, wireRawTasks, type TickStore } from "./tasks-view";
+import { copyText } from "@/lib/clipboard";
 
 /**
  * Browser-only node views for the directive containers and raw blocks.
@@ -333,6 +334,43 @@ function rawView(ticks: TickStore | undefined) {
   };
 }
 
+/** Reading, a code block carries a button that copies what it says. */
+function codeBlockView(props: NodeViewRendererProps): NodeView {
+  const dom = document.createElement("div");
+  dom.className = "art-code";
+  const pre = document.createElement("pre");
+  const code = document.createElement("code");
+  const language = props.node.attrs.language as string | null;
+  if (language) code.className = `language-${language}`;
+  pre.append(code);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "art-code__copy";
+  button.contentEditable = "false";
+  button.textContent = "Copy";
+  button.setAttribute("aria-label", "Copy code");
+  let timer = 0;
+  button.addEventListener("click", async () => {
+    if (!(await copyText(code.textContent ?? ""))) return;
+    button.textContent = "Copied";
+    button.classList.add("is-done");
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      button.textContent = "Copy";
+      button.classList.remove("is-done");
+    }, 1400);
+  });
+  dom.append(pre, button);
+  return {
+    dom,
+    contentDOM: code,
+    ignoreMutation: (m) => m.type !== "selection" && button.contains(m.target),
+    stopEvent: (e) => button.contains(e.target as globalThis.Node),
+    update: (node) => node.type === props.node.type && node.attrs.language === language,
+    destroy: () => window.clearTimeout(timer),
+  };
+}
+
 /** Editing views are React; their own inputs keep their events. */
 const own = { stopEvent: ({ event }: { event: Event }) => !(event instanceof DragEvent) };
 
@@ -363,6 +401,8 @@ export function viewExtensions(options: ViewOptions = {}): AnyExtension[] {
       case "rawBlock":
         return ext.extend({ addNodeView: () => (editing ? ReactNodeViewRenderer(edit!.RawEdit, own) : rawView(options.ticks)) });
       // Reading, a task item is ticked by people over the source; editing, its box is the source.
+      case "codeBlock":
+        return editing ? ext : ext.extend({ addNodeView: () => codeBlockView });
       case "taskItem":
         return !editing && options.ticks ? ext.extend({ addNodeView: () => taskItemView(options.ticks!) }) : ext;
       // Questions are React, on shadcn controls. Their events are theirs: the

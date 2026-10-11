@@ -6,7 +6,7 @@ import { recordEvent } from "./events";
 import { requireArtifact, requireVersion } from "./artifacts";
 import { markdownToDoc } from "../doc/parse";
 import { readFrontmatter } from "../pipeline/index";
-import { answerText, checkAnswers, cleanAnswers, formFields, formSettings, type Answers, type FieldSpec, type FormSettings } from "../forms/spec";
+import { answerText, checkAnswers, cleanAnswers, formFields, formSettings, noteText, type Answers, type FieldSpec, type FormSettings } from "../forms/spec";
 
 const id12 = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12);
 
@@ -130,15 +130,18 @@ function csvCell(value: string): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
-/** Every response as CSV, one column per question on the current version. */
+/** Every response as CSV, one column per question on the current version, and one for each question's note. */
 export function responsesCsv(ctx: ServiceContext, slug: string): string {
   const artifact = requireArtifact(ctx, slug);
   const { fields } = formOf(requireVersion(ctx, artifact).source);
-  const header = ["submitted_at", "respondent", "version", ...fields.map((f) => f.label)];
+  const header = ["submitted_at", "respondent", "version", ...fields.flatMap((f) => (f.note === undefined ? [f.label] : [f.label, `${f.label} (note)`]))];
   const lines = [header.map(csvCell).join(",")];
   for (const r of listResponses(ctx, slug)) {
     const who = r.respondentKind === "owner" ? "you" : (r.email ?? "visitor");
-    lines.push([r.createdAt, who, String(r.versionNumber), ...fields.map((f) => answerText(f, r.answers[f.name]))].map(csvCell).join(","));
+    lines.push([r.createdAt, who, String(r.versionNumber), ...fields.flatMap((f) => {
+      const answer = answerText(f, r.answers[f.name]);
+      return f.note === undefined ? [answer] : [answer, noteText(f, r.answers)];
+    })].map(csvCell).join(","));
   }
   return lines.join("\r\n") + "\r\n";
 }

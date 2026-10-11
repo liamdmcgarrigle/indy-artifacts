@@ -200,6 +200,7 @@ export function kindName(el: HTMLElement): string {
   if (el.matches("pre:has(> art-chart)")) return "chart";
   if (el.matches("pre:has(> art-table)")) return "table";
   if (el.tagName === "ART-KPIS") return "row of tiles";
+  if (el.classList.contains("art-code")) return "code block";
   return KIND_NAMES[el.tagName] ?? "block";
 }
 
@@ -312,11 +313,21 @@ export function pathWithin(block: HTMLElement, el: HTMLElement): string | undefi
  * A comment on a picked element. Inside running text it marks the exact spot;
  * on a tile, a chart, an image or a row it pins the element itself, with the
  * point clicked inside it and the words it holds as the quote.
+ *
+ * `caret: false` keeps a click in the empty part of a paragraph (beside a short
+ * line, between lines) where it landed, instead of snapping it to the nearest
+ * character, which can be far away.
  */
-export function anchorFromPick(root: HTMLElement, el: HTMLElement, clientX: number, clientY: number): Anchor | null {
+export function anchorFromPick(
+  root: HTMLElement,
+  el: HTMLElement,
+  clientX: number,
+  clientY: number,
+  { caret = true }: { caret?: boolean } = {},
+): Anchor | null {
   const block = blockOf(el);
   if (!block || !root.contains(block)) return null;
-  if (TEXTUAL.has(el.tagName)) {
+  if (caret && TEXTUAL.has(el.tagName)) {
     const point = anchorFromPoint(root, clientX, clientY);
     if (point?.type === "point") return point;
   }

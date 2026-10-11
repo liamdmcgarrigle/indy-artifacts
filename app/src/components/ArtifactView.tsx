@@ -2,6 +2,7 @@
 
 import { Ago } from "@/components/indy/Ago";
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -33,6 +34,7 @@ import { FormProvider } from "./forms/FormState";
 import { FormBar } from "./forms/FormBar";
 import { ShareDialog } from "./viewer/ShareDialog";
 import { primitivesUrl } from "@/lib/primitives";
+import { copyText } from "@/lib/clipboard";
 import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
 import { IDENTITY_HEADER, IdentityDialog, renewIdentity, storedIdentity, storeIdentity, type VisitorIdentity } from "./share/IdentityDialog";
 import { createTickStore } from "@/lib/doc/tasks-view";
@@ -162,6 +164,22 @@ function fanOut<T extends { top: number; left: number }>(pins: T[]): T[] {
     placed.push(pin);
   }
   return placed;
+}
+
+/** ⌘↵ (Ctrl+↵ off a Mac) sends from every box in a comment, the way it does in most chat apps. */
+function isSendKey(event: React.KeyboardEvent): boolean {
+  return event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing;
+}
+
+/** The send shortcut, shown on a send button. Hidden on a touch screen, which has no such keys. */
+function SendKeys() {
+  const [mac, setMac] = useState(true);
+  useEffect(() => setMac(/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)), []);
+  return (
+    <kbd className="sendkeys" aria-hidden>
+      {mac ? "⌘↵" : "Ctrl ↵"}
+    </kbd>
+  );
 }
 
 /** autoFocus without the scroll: the box is placed where the reader already is. */
@@ -896,7 +914,9 @@ export function ArtifactView(props: ArtifactViewProps) {
 
     if (tool) {
       const el = pickTarget(content, document.elementFromPoint(event.clientX, event.clientY));
-      const anchor = el ? anchorFromPick(content, el, event.clientX, event.clientY) : anchorFromPoint(content, event.clientX, event.clientY);
+      // On words, the caret between two letters; anywhere else, exactly where the click was.
+      const caret = isOverText(event.clientX, event.clientY);
+      const anchor = el ? anchorFromPick(content, el, event.clientX, event.clientY, { caret }) : anchorFromPoint(content, event.clientX, event.clientY);
       setTool(false);
       setFramePicking(false);
       setPick(null);
@@ -947,14 +967,40 @@ export function ArtifactView(props: ArtifactViewProps) {
     return null;
   }
 
+  /** A click on a bit of inline code copies it: a command or a path, ready to paste. */
+  function onContentClick(event: React.MouseEvent) {
+    if (editing || tool || event.detail > 1) return;
+    const code = (event.target as HTMLElement).closest?.("code");
+    if (!code || code.closest("pre, a") || !contentRef.current?.contains(code)) return;
+    // Dragging across the words selects them; only a plain click copies.
+    if (window.getSelection()?.isCollapsed === false) return;
+    const text = code.textContent ?? "";
+    if (!text.trim()) return;
+    void copyText(text).then((ok) => ok && setNotice({ kind: "good", text: `Copied ${truncate(text, 48)}` }));
+  }
+
   function commentOnBlock(event: React.MouseEvent) {
     if (editing || !canComment) return;
-    // Two quick taps on a checkbox are two ticks, not a comment.
-    if ((event.target as HTMLElement).closest?.(".art-task__hit, .art-tick-by")) return;
+    // Two quick taps on a checkbox are two ticks, not a comment; two on a button are two presses.
+    if ((event.target as HTMLElement).closest?.(".art-task__hit, .art-tick-by, button, a, input, textarea, select, label")) return;
+    // A double click on words selects a word, the way it does everywhere else.
+    // The selection gets its own Comment button, so the comment is on the word.
+    if (isOverText(event.clientX, event.clientY)) return;
+    const content = contentRef.current;
     const block = blockOf(event.target as Node);
-    if (!block) return;
+    if (!content || !block) return;
+    // The comment goes where the double click was, not the middle of the block,
+    // so the pin shows the spot and the anchor tells the agent where it is.
+    const { clientX: x, clientY: y } = event;
+    const el = pickTarget(content, event.target as HTMLElement);
+    const r = block.getBoundingClientRect();
+    const anchor =
+      (el ? anchorFromPick(content, el, x, y, { caret: false }) : null) ??
+      anchorForBlock(block, { x: r.width ? (x - r.left) / r.width : 0.5, y: r.height ? (y - r.top) / r.height : 0.5 });
+    window.getSelection()?.removeAllRanges();
+    setBubble(null);
     setActiveId(null);
-    setDraft({ anchor: anchorForBlock(block), body: "", notify: false });
+    setDraft({ anchor, body: "", notify: false });
   }
 
   function openThread(thread: ThreadView) {
@@ -1127,6 +1173,9 @@ export function ArtifactView(props: ArtifactViewProps) {
     return list;
   }, [visitor, canEdit, canComment, toggleTool, goVersion, props.versionNumber, props.currentVersion]);
   useCommands("viewer", commands);
+
+  // On a phone the comment sheet rides above the keyboard, not under it.
+  useKeyboardInset(draft !== null || active !== null || panel !== "none");
 
   // Leaving with unsaved changes asks first, by reload, close or Back.
   useLeaveGuard(editing && dirty && !saving);
@@ -1396,15 +1445,16 @@ export function ArtifactView(props: ArtifactViewProps) {
               value={batchMessage}
               onChange={(e) => setBatchMessage(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void sendBatch();
+                // One line, so a plain Enter sends too.
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) void sendBatch();
               }}
             />
             <div className="composer__row">
               <button className="btn btn--ghost" onClick={() => setPanel("none")}>
                 Cancel
               </button>
-              <button className="btn btn--primary" onClick={sendBatch} disabled={busy}>
-                Send to agent
+              <button className="btn btn--primary" onClick={sendBatch} disabled={busy} title="Send (⌘↵ or Enter)">
+                Send to agent <SendKeys />
               </button>
             </div>
           </div>
@@ -1447,6 +1497,7 @@ export function ArtifactView(props: ArtifactViewProps) {
             className="doc"
             ref={contentRef}
             onMouseUp={onContentMouseUp}
+            onClick={onContentClick}
             onPointerDown={onPressStart}
             onPointerMove={onPressMove}
             onPointerUp={onPressEnd}
@@ -1600,7 +1651,10 @@ export function ArtifactView(props: ArtifactViewProps) {
                     placeholder="What should change?"
                     onChange={(e) => setDraft({ ...draft, body: e.target.value })}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void postComment();
+                      if (isSendKey(e)) {
+                        e.preventDefault();
+                        void postComment();
+                      }
                     }}
                   />
                   {props.userName || visitor ? null : <input
@@ -1609,6 +1663,12 @@ export function ArtifactView(props: ArtifactViewProps) {
                     onChange={(e) => rememberName(e.target.value)}
                     placeholder="Your name"
                     aria-label="Your name"
+                    onKeyDown={(e) => {
+                      if (isSendKey(e)) {
+                        e.preventDefault();
+                        void postComment();
+                      }
+                    }}
                   />}
                   <div className="composer__row">
                     {visitor ? (
@@ -1627,8 +1687,8 @@ export function ArtifactView(props: ArtifactViewProps) {
                       <button className="btn btn--ghost" onClick={() => setDraft(null)}>
                         Cancel
                       </button>
-                      <button className="btn btn--primary" onClick={() => void postComment()} disabled={busy || !draft.body.trim()}>
-                        Comment
+                      <button className="btn btn--primary" onClick={() => void postComment()} disabled={busy || !draft.body.trim()} title="Comment (⌘↵)">
+                        Comment <SendKeys />
                       </button>
                     </span>
                   </div>
@@ -1919,7 +1979,7 @@ function ReplyBox({ onSend, busy }: { onSend: (text: string) => Promise<boolean>
         onBlur={() => setFocused(false)}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
+          if (isSendKey(event)) {
             event.preventDefault();
             void send();
           }
@@ -1927,9 +1987,8 @@ function ReplyBox({ onSend, busy }: { onSend: (text: string) => Promise<boolean>
       />
       {focused || text ? (
         <div className="reply__row">
-          <span className="tiny">Enter sends</span>
-          <button className="btn btn--primary" disabled={busy || !text.trim()} onMouseDown={(e) => e.preventDefault()} onClick={send}>
-            Reply
+          <button className="btn btn--primary" disabled={busy || !text.trim()} onMouseDown={(e) => e.preventDefault()} onClick={send} title="Reply (⌘↵)">
+            Reply <SendKeys />
           </button>
         </div>
       ) : null}

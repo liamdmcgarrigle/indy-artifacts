@@ -651,7 +651,7 @@ Everything on one screen.
 :::
 
 ::field{name=why type=textarea label="Why this one?" required placeholder="A line or two"}
-::field{name=sure type=scale label="How sure are you?" min=1 max=5 low="a coin flip" high="certain"}
+::field{name=sure type=scale label="How sure are you?" min=1 max=5 low="a coin flip" high="certain" note}
 ::field{name=worries type=checkboxes label="Anything worrying?" options="Too many steps|Total shows late"}
 ```
 
@@ -659,6 +659,22 @@ Everything on one screen.
 checkboxes (these three take `options="A|B|C"`), checkbox, switch, rating (`max`),
 scale (`min`, `max`, `low`, `high`) and slider (`min`, `max`, `step`). Every question
 needs a unique `name`; `label`, `help`, `placeholder` and `required` are optional.
+
+**Notes under an answer.** For room to explain an answer, give the question (a `::field`
+or a `:::choice`) a note rather than following it with a separate notes question. A note
+is an optional text box under the answer, part of the same question, so it is not
+numbered as a question of its own. There are three settings:
+
+| Write | People see |
+| --- | --- |
+| nothing | no note |
+| `note` | an "Add a note" link that opens the box, for when a note is welcome but rare |
+| `note-open` | the box already open, for when you want people to write one |
+
+`note="Anything we missed?"` sets the words, with either setting:
+`::field{name=sure type=scale label="How sure?" note="What would change your mind?" note-open}`.
+A note is never required. Notes come back beside the answers in `artifact_responses`,
+under `notes`, keyed by question name.
 A `:::choice` takes `multiple` to allow several picks and `columns` to set the grid.
 On a phone the options stack, one per row; add `compact` to keep them side by side
 (two across at most), which suits options that are screens or images to compare:

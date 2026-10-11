@@ -248,6 +248,55 @@ Everything on one screen.
     });
     expect(formSettings({ form: { submit: "Send my pick" } }).submit).toBe("Send my pick");
   });
+
+  it("keeps a note beside the answer only on a question that takes one", async () => {
+    const { formFields, cleanAnswers, checkAnswers, noteText, DEFAULT_NOTE } = await import("@/lib/forms/spec");
+    const md = `::field{name=sure type=scale label="How sure?" note}
+
+:::choice{name=pick label="Which?" note="Anything we missed?"}
+:::option{value=a label="A"}
+A.
+:::
+:::
+
+::field{name=why type=text label="Why?"}
+`;
+    const doc = markdownToDoc(md);
+    expect(docToMarkdown(doc)).toBe(md);
+    const fields = formFields(doc);
+    expect(fields.map((f) => f.note)).toEqual([DEFAULT_NOTE, "Anything we missed?", undefined]);
+    const answers = cleanAnswers(fields, {
+      sure: 3,
+      "sure.note": "  Depends on the budget. ",
+      pick: "a",
+      "pick.note": "   ",
+      why: "x",
+      "why.note": "dropped: this question takes no note",
+    });
+    expect(answers).toEqual({ sure: 3, "sure.note": "Depends on the budget.", pick: "a", why: "x" });
+    expect(checkAnswers(fields, answers)).toEqual({});
+    expect(noteText(fields[0], answers)).toBe("Depends on the budget.");
+    expect(noteText(fields[1], answers)).toBe("");
+  });
+
+  it("opens a note box from the start with note-open, which implies a note", async () => {
+    const { formFields, cleanAnswers, DEFAULT_NOTE } = await import("@/lib/forms/spec");
+    const md = `::field{name=a type=text label="A" note-open}
+
+::field{name=b type=text label="B" note="Why?" note-open}
+
+::field{name=c type=text label="C" note}
+`;
+    const doc = markdownToDoc(md);
+    expect(docToMarkdown(doc)).toBe(md);
+    const fields = formFields(doc);
+    expect(fields.map((f) => [f.note, f.noteOpen ?? false])).toEqual([
+      [DEFAULT_NOTE, true],
+      ["Why?", true],
+      [DEFAULT_NOTE, false],
+    ]);
+    expect(cleanAnswers(fields, { a: "x", "a.note": "kept" })).toEqual({ a: "x", "a.note": "kept" });
+  });
 });
 
 describe("editing in place", () => {

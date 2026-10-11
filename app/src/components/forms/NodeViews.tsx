@@ -4,7 +4,8 @@ import { onRadioKeys } from "@/components/indy/radio";
 import { useId, useState } from "react";
 import { NodeViewContent, NodeViewWrapper, type ReactNodeViewProps } from "@tiptap/react";
 import { Check, Plus, X } from "lucide-react";
-import { FIELD_TYPES, fieldSpec, type Answer, type FieldSpec } from "@/lib/forms/spec";
+import { FIELD_TYPES, fieldSpec, noteKey, type Answer, type FieldSpec } from "@/lib/forms/spec";
+import { Textarea } from "@/components/ui/textarea";
 import { Typeable } from "@/components/editor/Typeable";
 import { cn } from "@/lib/utils";
 import { FieldControl } from "./FieldControl";
@@ -27,6 +28,78 @@ function Label({ field, htmlFor }: { field: FieldSpec; htmlFor?: string }) {
       {htmlFor ? <label htmlFor={htmlFor}>{field.label}</label> : <span>{field.label}</span>}
       {field.required ? <span className="art-q__required">Required</span> : null}
     </span>
+  );
+}
+
+/**
+ * The optional note under a question: one line inviting it until someone
+ * takes it up, then a box, or the box from the start when the page asks for
+ * it open. It belongs to the question, so it is not numbered.
+ */
+function QuestionNote({ field }: { field: FieldSpec }) {
+  const id = useId();
+  const form = useForm();
+  const [local, setLocal] = useState("");
+  const [open, setOpen] = useState(false);
+  const key = noteKey(field.name);
+  const value = form ? String(form.answers[key] ?? "") : local;
+  const set = (text: string) => (form ? form.set(key, text) : setLocal(text));
+  if (field.note === undefined) return null;
+  if (!open && !value && !field.noteOpen) {
+    return (
+      <button type="button" className="art-q__note-add" contentEditable={false} onClick={() => setOpen(true)} disabled={form?.status === "sent"}>
+        <Plus className="size-3.5" /> {field.note}
+      </button>
+    );
+  }
+  return (
+    <div className="art-q__note" contentEditable={false}>
+      <label htmlFor={id} className="art-q__note-label">
+        {field.note}
+        <span className="art-q__note-optional">Optional</span>
+      </label>
+      <Textarea
+        id={id}
+        autoFocus={open && !value}
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        className="min-h-[72px] text-base md:text-[15px]"
+      />
+    </div>
+  );
+}
+
+type NoteMode = "none" | "link" | "open";
+
+function noteMode(attrs: Attrs): NoteMode {
+  const on = (v: unknown) => v !== undefined && v !== null && v !== "false";
+  if (on(attrs["note-open"])) return "open";
+  return on(attrs.note) ? "link" : "none";
+}
+
+/** The attributes for a note mode; the note's own words, if it has any, are kept. */
+function notePatch(attrs: Attrs, mode: NoteMode): Record<string, string | null> {
+  if (mode === "none") return { note: null, "note-open": null };
+  const words = typeof attrs.note === "string" && attrs.note !== "false" ? attrs.note : "";
+  // note-open implies a note, so a bare `note` beside it would only repeat it.
+  if (mode === "open") return { note: words || null, "note-open": "" };
+  return { note: words, "note-open": null };
+}
+
+/** Whether a question takes a note under its answer, and whether that box starts open. */
+function NoteSelect({ attrs, onChange }: { attrs: Attrs; onChange: (patch: Record<string, string | null>) => void }) {
+  return (
+    <select
+      className="q-tool"
+      value={noteMode(attrs)}
+      onChange={(e) => onChange(notePatch(attrs, e.target.value as NoteMode))}
+      aria-label="Note under the answer"
+      title="An optional note under the answer, for anything the answer leaves out"
+    >
+      <option value="none">No note</option>
+      <option value="link">Note on request</option>
+      <option value="open">Note box open</option>
+    </select>
   );
 }
 
@@ -121,6 +194,7 @@ function FieldEditor({ node, updateAttributes }: ReactNodeViewProps) {
           ))}
         </select>
         <RequiredToggle on={field.required} onChange={(on) => set({ required: on ? "" : null })} />
+        <NoteSelect attrs={attrs} onChange={set} />
       </div>
     </NodeViewWrapper>
   );
@@ -153,6 +227,7 @@ function FieldAnswer({ node }: ReactNodeViewProps) {
           {error}
         </p>
       ) : null}
+      <QuestionNote field={field} />
     </NodeViewWrapper>
   );
 }
@@ -195,6 +270,7 @@ function ChoiceEditor({ node, updateAttributes, editor, getPos }: ReactNodeViewP
           <Plus className="size-3.5" /> Option
         </button>
         <RequiredToggle on={required} onChange={(on) => set({ required: on ? "" : null })} />
+        <NoteSelect attrs={attrs} onChange={set} />
         <button type="button" className={cn("q-tool", multiple && "q-tool--on")} aria-pressed={multiple} onClick={() => set({ multiple: multiple ? null : "" })}>
           Several allowed
         </button>
@@ -242,6 +318,7 @@ function ChoiceAnswer({ node }: ReactNodeViewProps) {
           {error}
         </p>
       ) : null}
+      {field ? <QuestionNote field={field} /> : null}
     </NodeViewWrapper>
   );
 }

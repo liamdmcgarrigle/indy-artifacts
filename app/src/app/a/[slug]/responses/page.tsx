@@ -6,7 +6,7 @@ import { getContext } from "@/lib/service/context";
 import { requireArtifact, requireVersion } from "@/lib/service/artifacts";
 import { formOf, listResponses, type FormResponse } from "@/lib/service/responses";
 import { NotFoundError } from "@/lib/service/errors";
-import { answerText, isEmpty, type FieldSpec } from "@/lib/forms/spec";
+import { answerText, isEmpty, noteText, type FieldSpec } from "@/lib/forms/spec";
 import { Button } from "@/components/ui/button";
 import { ago } from "@/lib/time";
 import { artifactMetadata } from "@/lib/view";
@@ -15,6 +15,27 @@ export const dynamic = "force-dynamic";
 export const generateMetadata = ({ params }: { params: Promise<{ slug: string }> }) => artifactMetadata(params, (title) => `Responses to ${title}`);
 
 /** Counts for a question with options; an average for numbers; the latest words for text. */
+/** The notes people left on a question, the first few of them. */
+function Notes({ field, responses }: { field: FieldSpec; responses: FormResponse[] }) {
+  const notes = responses.map((r) => noteText(field, r.answers)).filter(Boolean);
+  if (!notes.length) return null;
+  return (
+    <div className="flex flex-col gap-2 border-t border-hairline pt-3">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {notes.length} note{notes.length === 1 ? "" : "s"}
+      </span>
+      <ul className="flex flex-col gap-1.5">
+        {notes.slice(0, 3).map((note, i) => (
+          <li key={i} className="text-[13px] leading-relaxed text-muted-foreground">
+            {note}
+          </li>
+        ))}
+        {notes.length > 3 ? <li className="text-[13px] text-faint">and {notes.length - 3} more in the table below</li> : null}
+      </ul>
+    </div>
+  );
+}
+
 function Summary({ field, responses }: { field: FieldSpec; responses: FormResponse[] }) {
   const answered = responses.filter((r) => !isEmpty(r.answers[field.name]));
   if (field.options?.length) {
@@ -115,6 +136,7 @@ export default async function ResponsesPage({ params }: { params: Promise<{ slug
                     <span className="shrink-0 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">{f.type}</span>
                   </div>
                   <Summary field={f} responses={responses} />
+                  <Notes field={f} responses={responses} />
                 </div>
               ))}
             </section>
@@ -143,6 +165,9 @@ export default async function ResponsesPage({ params }: { params: Promise<{ slug
                           {fields.map((f) => (
                             <td key={f.name} className="max-w-[320px] px-4 py-3 leading-relaxed">
                               {answerText(f, r.answers[f.name]) || <span className="text-faint">—</span>}
+                              {noteText(f, r.answers) ? (
+                                <span className="mt-1 block whitespace-pre-wrap text-muted-foreground">Note: {noteText(f, r.answers)}</span>
+                              ) : null}
                             </td>
                           ))}
                         </tr>

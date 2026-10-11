@@ -53,8 +53,14 @@ const nextConfig: NextConfig = {
       { key: "access-control-allow-origin", value: "*" },
       { key: "cache-control", value: "public, max-age=3600, stale-while-revalidate=604800" },
     ];
+    // The dev server takes the primitives' hash once, when it starts, so a
+    // rebuild while it runs keeps the same address; ask every time instead.
+    const fresh = [
+      { key: "access-control-allow-origin", value: "*" },
+      { key: "cache-control", value: "no-cache" },
+    ];
     return [
-      { source: "/primitives/:file*", headers: open },
+      { source: "/primitives/:file*", headers: process.env.NODE_ENV === "development" ? fresh : open },
       { source: "/vendor/:file*", headers: open },
       { source: "/fonts/:file*", headers: open },
       // Indy's own pages may only be framed by Indy. The artifact frames under
