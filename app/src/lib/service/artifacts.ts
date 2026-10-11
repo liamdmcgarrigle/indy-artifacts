@@ -19,6 +19,7 @@ import { recordEvent } from "./events";
 import { searchableText } from "./plaintext";
 import { checkStories } from "./storybooks";
 import { reconcileTicks, type Tick } from "./ticks";
+import { ancestorsOf, assertAgentMayMove, checkPlacement, placePage, restoreWithParents, treeProject, type Placement } from "./tree";
 import {
   KINDS,
   LIMITS,
@@ -85,6 +86,9 @@ function toArtifact(row: Row): Artifact {
     seenAt: (row.seen_at as string | null) ?? null,
     liveBy: (row.live_by as string | null) ?? null,
     liveAt: (row.live_at as string | null) ?? null,
+    parentId: (row.parent_id as string | null) ?? null,
+    position: Number(row.position ?? 0),
+    group: (row.nav_group as string | null) ?? null,
   };
 }
 
@@ -211,7 +215,7 @@ export function requireVersion(ctx: ServiceContext, artifact: Artifact, number?:
   return v;
 }
 
-function validateContent(kind: Kind, input: PublishInput, existing?: Version) {
+export function validateContent(kind: Kind, input: PublishInput, existing?: Version) {
   const source = input.source;
   const files = input.files;
 
@@ -260,7 +264,7 @@ interface Meta {
   tags: string[];
 }
 
-function resolveMeta(
+export function resolveMeta(
   ctx: ServiceContext,
   kind: Kind,
   input: PublishInput,
@@ -309,6 +313,31 @@ function resolveMeta(
   };
 }
 
+/**
+ * Where a publish puts the page in a tree. Arguments always count. Frontmatter
+ * counts where it changed from the previous version, so a page someone moved
+ * on the site is not moved back by the next update of an unchanged file.
+ */
+export function resolvePlacement(kind: Kind, input: PublishInput, source: string | null, previousSource?: string | null): Placement {
+  const read = (src: string | null | undefined): Placement => {
+    const fm = kind === "markdown" && src ? readFrontmatter(src) : null;
+    if (!fm) return {};
+    const out: Placement = {};
+    if (typeof fm.parent === "string" || fm.parent === null) out.parent = fm.parent;
+    if (typeof fm.position === "number") out.position = fm.position;
+    if (typeof fm.group === "string" || fm.group === null) out.group = fm.group;
+    return out;
+  };
+  const now = read(source);
+  const before = previousSource === undefined ? {} : read(previousSource);
+  const changed = <K extends keyof Placement>(key: K) => (previousSource === undefined || now[key] !== before[key] ? now[key] : undefined);
+  return {
+    parent: input.parent !== undefined ? input.parent : changed("parent"),
+    position: input.position !== undefined ? input.position : changed("position"),
+    group: input.group !== undefined ? input.group : changed("group"),
+  };
+}
+
 function uniqueSlug(ctx: ServiceContext, wanted: string | undefined, title: string): string {
   if (wanted) {
     const slug = wanted.trim().toLowerCase();
@@ -338,6 +367,9 @@ async function writeVersion(
   authorName: string,
   previous: Version | null,
 ): Promise<PublishResult> {
+  // A subpage is in its tree's project.
+  const inTree = treeProject(ctx, artifact);
+  if (inTree !== undefined) meta = { ...meta, project: inTree };
   const number = artifact.currentVersion + 1;
   const contentHash = hashContent(artifact.kind, content.source, content.files);
   const textBytes =
@@ -465,6 +497,13 @@ async function writeVersion(
     resetLiveDocument(ctx, artifact.slug, content.source, number);
   }
   grewBy("database", textBytes);
+  if (artifact.parentId) {
+    // A new version brings a subpage back from the archive with the pages above it,
+    // and a tree that changed anywhere counts as updated in the library.
+    restoreWithParents(ctx, artifact);
+    const top = ancestorsOf(ctx, artifact)[0];
+    if (top) ctx.db.prepare("UPDATE artifacts SET updated_at = ? WHERE id = ? AND updated_at < ?").run(stamp, top.id, stamp);
+  }
 
   return {
     slug: artifact.slug,
@@ -479,11 +518,20 @@ async function writeVersion(
   };
 }
 
-export async function publishArtifact(ctx: ServiceContext, input: PublishInput): Promise<PublishResult> {
+/** `by`: a page someone made on the site rather than an agent, such as a subpage added from the contents list. */
+export async function publishArtifact(
+  ctx: ServiceContext,
+  input: PublishInput,
+  by: { kind: AuthorKind; name: string } = { kind: "agent", name: input.agent?.name ?? "agent" },
+): Promise<PublishResult> {
   const kind = (input.kind ?? "markdown") as Kind;
   if (!KINDS.includes(kind)) throw new ValidationError(`kind must be one of ${KINDS.join(", ")}`);
   const content = validateContent(kind, input);
   const meta = resolveMeta(ctx, kind, input, content.source);
+  const place = resolvePlacement(kind, input, content.source);
+  const parentId = checkPlacement(ctx, null, place);
+  // A subpage is in its tree's project.
+  if (parentId) meta.project = treeProject(ctx, { parentId }) ?? null;
   const slug = uniqueSlug(ctx, input.slug, meta.title);
 
   const stamp = now();
@@ -512,9 +560,13 @@ export async function publishArtifact(ctx: ServiceContext, input: PublishInput):
       }),
     );
 
-  const artifact = requireArtifact(ctx, slug);
+  let artifact = requireArtifact(ctx, slug);
   try {
-    return await writeVersion(ctx, artifact, input, content, meta, "agent", input.agent?.name ?? "agent", null);
+    if (parentId) {
+      placePage(ctx, artifact, place);
+      artifact = requireArtifact(ctx, slug);
+    }
+    return await writeVersion(ctx, artifact, input, content, meta, by.kind, by.name, null);
   } catch (err) {
     // A first version that never lands would leave an artifact with no content
     // and its slug taken, so undo the row before reporting the failure.
@@ -561,16 +613,13 @@ async function updateNow(ctx: ServiceContext, slug: string, input: UpdateInput):
   const previous = requireVersion(ctx, artifact);
   const content = validateContent(artifact.kind, input, previous);
   const meta = resolveMeta(ctx, artifact.kind, input, content.source, artifact, previous.source);
-  return writeVersion(
-    ctx,
-    artifact,
-    input,
-    content,
-    meta,
-    "agent",
-    input.agent?.name ?? artifact.agentName ?? "agent",
-    previous,
-  );
+  // Checked now, placed once the version is written, so a failed write moves nothing.
+  const place = resolvePlacement(artifact.kind, input, content.source, previous.source);
+  checkPlacement(ctx, artifact, place);
+  assertAgentMayMove(ctx, artifact, place);
+  const result = await writeVersion(ctx, artifact, input, content, meta, "agent", input.agent?.name ?? artifact.agentName ?? "agent", previous);
+  placePage(ctx, requireArtifact(ctx, slug), place);
+  return result;
 }
 
 type HumanEdit = {
@@ -597,16 +646,11 @@ async function humanVersionNow(ctx: ServiceContext, slug: string, input: HumanEd
   const previous = requireVersion(ctx, artifact);
   const content = validateContent(artifact.kind, input, previous);
   const meta = resolveMeta(ctx, artifact.kind, { title: artifact.title }, content.source, artifact, previous.source);
-  return writeVersion(
-    ctx,
-    artifact,
-    { message: input.message },
-    content,
-    meta,
-    "human",
-    input.authorName || "operator",
-    previous,
-  );
+  const place = resolvePlacement(artifact.kind, {}, content.source, previous.source);
+  checkPlacement(ctx, artifact, place);
+  const result = await writeVersion(ctx, artifact, { message: input.message }, content, meta, "human", input.authorName || "operator", previous);
+  placePage(ctx, requireArtifact(ctx, slug), place);
+  return result;
 }
 
 /**

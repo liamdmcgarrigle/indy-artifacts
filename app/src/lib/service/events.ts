@@ -49,14 +49,19 @@ export interface ListEventsOptions {
   after?: number;
   limit?: number;
   slug?: string;
+  /** Several pages at once, such as every page in a tree. */
+  slugs?: string[];
   undeliveredOnly?: boolean;
 }
 
 /** The newest event on an artifact, so a wait starts after everything already there. */
-export function latestEventId(ctx: ServiceContext, slug: string): number {
+export function latestEventId(ctx: ServiceContext, slug: string | string[]): number {
+  const slugs = Array.isArray(slug) ? slug : [slug];
   const row = ctx.db
-    .prepare("SELECT MAX(e.id) AS id FROM events e JOIN artifacts a ON a.id = e.artifact_id WHERE a.slug = ?")
-    .get(slug) as { id: number | null } | undefined;
+    .prepare(
+      "SELECT MAX(e.id) AS id FROM events e JOIN artifacts a ON a.id = e.artifact_id WHERE a.slug IN (SELECT value FROM json_each(?))",
+    )
+    .get(JSON.stringify(slugs)) as { id: number | null } | undefined;
   return Number(row?.id ?? 0);
 }
 
@@ -68,6 +73,10 @@ export function listEvents(ctx: ServiceContext, opts: ListEventsOptions = {}): {
   if (opts.slug) {
     where.push("a.slug = :slug");
     params.slug = opts.slug;
+  }
+  if (opts.slugs) {
+    where.push("a.slug IN (SELECT value FROM json_each(:slugs))");
+    params.slugs = JSON.stringify(opts.slugs);
   }
   if (opts.undeliveredOnly) where.push("e.delivered_at IS NULL");
 

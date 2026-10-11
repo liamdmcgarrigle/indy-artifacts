@@ -1,6 +1,7 @@
 import { bind } from "../db/index";
 import type { ServiceContext } from "./context";
 import { requireArtifact } from "./artifacts";
+import { ancestorsOf, restoreWithParents, rootIdOf, setTreeArchived, subtreeIds, treeCounts } from "./tree";
 import type { Kind } from "./types";
 import { MARK_CLOSE, MARK_OPEN } from "./search-marks";
 
@@ -26,7 +27,8 @@ export type Reason =
   | { kind: "reply"; who: string; excerpt: string }
   | { kind: "live"; who: string }
   | { kind: "unsent"; count: number }
-  | { kind: "new"; who: string; version: number; message: string | null }
+  /** `pages`: new versions across this many pages of one tree, folded into the newest. */
+  | { kind: "new"; who: string; version: number; message: string | null; pages?: number }
   | { kind: "visitors"; count: number };
 
 export interface LibraryRow {
@@ -50,6 +52,11 @@ export interface LibraryRow {
   shape: ShapeToken[];
   /** In a collapsed list, how many pages of this series the row stands for. */
   seriesCount: number;
+  /** For a top page with subpages: how many pages are under it, and how many of them you have not seen. */
+  subpages: number;
+  subpagesUnseen: number;
+  /** For a subpage shown on its own (pinned, needs you, search): the titles above it, top page first. */
+  path: string[];
 }
 
 export interface NeedsYouRow extends LibraryRow {
@@ -164,7 +171,33 @@ function toRow(row: Row): LibraryRow {
     live: isLive(row) ? String(row.live_by) : null,
     shape: shapeOf(String(row.kind) as Kind, (row.source as string | null) ?? null),
     seriesCount: 1,
+    subpages: 0,
+    subpagesUnseen: 0,
+    path: [],
   };
+}
+
+/**
+ * Fill in what the tree adds to rows: a top page's count of subpages (and
+ * whether any is new to you), and a subpage's path. Rows carry their ids.
+ */
+function withTrees<T extends LibraryRow>(ctx: ServiceContext, rows: (T & { _id: string; _parent: string | null })[]): T[] {
+  const counts = treeCounts(ctx, rows.filter((r) => !r._parent).map((r) => r._id));
+  return rows.map(({ _id, _parent, ...rest }) => {
+    const row = rest as unknown as T;
+    const c = counts.get(_id);
+    if (c && c.pages) {
+      row.subpages = c.pages;
+      row.subpagesUnseen = c.unseen;
+      row.unseen = row.unseen || c.unseen > 0;
+    }
+    if (_parent) row.path = ancestorsOf(ctx, { parentId: _parent }).map((a) => a.title);
+    return row;
+  });
+}
+
+function withIds(row: Row): LibraryRow & { _id: string; _parent: string | null } {
+  return { ...toRow(row), _id: String(row.id), _parent: (row.parent_id as string | null) ?? null };
 }
 
 /**
@@ -197,8 +230,9 @@ export function listLibrary(ctx: ServiceContext, filter: LibraryFilter, limit = 
   let where = "";
   const params: Record<string, unknown> = { limit: cap };
   switch (filter.view) {
+    // A tree is one row, its top page; the page counts what is under it.
     case "recent":
-      where = "WHERE a.archived_at IS NULL ORDER BY a.updated_at DESC";
+      where = "WHERE a.archived_at IS NULL AND a.parent_id IS NULL ORDER BY a.updated_at DESC";
       break;
     case "pinned":
       where = "WHERE a.pinned_at IS NOT NULL ORDER BY a.pinned_at DESC";
@@ -208,10 +242,12 @@ export function listLibrary(ctx: ServiceContext, filter: LibraryFilter, limit = 
       params.since = new Date(Date.now() - LIVE_WINDOW_MS).toISOString();
       break;
     case "archive":
-      where = "WHERE a.archived_at IS NOT NULL ORDER BY a.updated_at DESC";
+      // A tree archived together shows as its top page; a subpage archived on its own shows itself.
+      where = `WHERE a.archived_at IS NOT NULL AND (a.parent_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM artifacts p WHERE p.id = a.parent_id AND p.archived_at IS NOT NULL)) ORDER BY a.updated_at DESC`;
       break;
     case "project":
-      where = `WHERE a.project = :name${filter.branch ? " AND a.branch = :branch" : ""} ORDER BY a.archived_at IS NOT NULL, a.updated_at DESC`;
+      where = `WHERE a.project = :name AND a.parent_id IS NULL${filter.branch ? " AND a.branch = :branch" : ""} ORDER BY a.archived_at IS NOT NULL, a.updated_at DESC`;
       params.name = filter.name;
       if (filter.branch) params.branch = filter.branch;
       break;
@@ -220,7 +256,7 @@ export function listLibrary(ctx: ServiceContext, filter: LibraryFilter, limit = 
       params.name = filter.name;
       break;
   }
-  const rows = (ctx.db.prepare(`${baseQuery(where)} LIMIT :limit`).all(bind(params)) as Row[]).map(toRow);
+  const rows = withTrees(ctx, (ctx.db.prepare(`${baseQuery(where)} LIMIT :limit`).all(bind(params)) as Row[]).map(withIds));
   return filter.view === "recent" || filter.view === "project" ? collapseSeries(rows) : rows;
 }
 
@@ -249,9 +285,9 @@ export function needsYou(ctx: ServiceContext, opts: { countOnly?: boolean } = {}
     .all() as Row[];
   const visitorsBy = new Map(visitors.map((r) => [String(r.artifact_id), Number(r.n)]));
 
-  const out: (NeedsYouRow & { rank: number })[] = [];
+  const out: (NeedsYouRow & { rank: number; _id: string; _parent: string | null })[] = [];
   for (const row of rows) {
-    const base = toRow(row);
+    const base = withIds(row);
     const seenAt = String(row.seen_at ?? "");
     const reply = replyBy.get(String(row.id));
     const waiting = visitorsBy.get(String(row.id)) ?? 0;
@@ -286,18 +322,40 @@ export function needsYou(ctx: ServiceContext, opts: { countOnly?: boolean } = {}
   }
   out.sort((a, b) => a.rank - b.rank || (a.at < b.at ? 1 : -1));
   // New runs of a series fold into the newest one: "Nightly backup, 3 new".
+  // So do new versions across one tree: a course published at once is one row.
   const newest = new Map<string, NeedsYouRow & { rank: number }>();
+  const treeOfRow = new Map<string, string>();
+  const rootOf = (row: { _id: string; _parent: string | null }) => {
+    if (!row._parent) return row._id;
+    let root = treeOfRow.get(row._id);
+    if (!root) {
+      root = ancestorsOf(ctx, { parentId: row._parent })[0]?.id ?? row._id;
+      treeOfRow.set(row._id, root);
+    }
+    return root;
+  };
   const folded = out.filter((row) => {
-    if (row.reason.kind !== "new" || !row.series) return true;
-    const first = newest.get(row.series);
+    if (row.reason.kind !== "new") return true;
+    const key = row.series ? `series:${row.series}` : row._parent || subtreeIds(ctx, row._id).length > 1 ? `tree:${rootOf(row)}` : null;
+    if (!key) return true;
+    const first = newest.get(key);
     if (!first) {
-      newest.set(row.series, row);
+      newest.set(key, row);
       return true;
     }
-    first.seriesCount += 1;
+    if (key.startsWith("series:")) first.seriesCount += 1;
+    else if (first.reason.kind === "new") first.reason = { ...first.reason, pages: (first.reason.pages ?? 1) + 1 };
     return false;
   });
-  return folded.map(({ rank: _rank, ...rest }) => rest);
+  // Several pages of one tree new at once: the row opens the tree at its top page.
+  const pageOf = new Map(rows.map((r) => [String(r.id), r]));
+  for (const row of folded) {
+    if (row.reason.kind !== "new" || !row.reason.pages || row.reason.pages < 2 || !row._parent) continue;
+    const top = pageOf.get(rootOf(row));
+    if (!top) continue;
+    Object.assign(row, { slug: String(top.slug), title: String(top.title), _id: String(top.id), _parent: null });
+  }
+  return withTrees(ctx, folded.map(({ rank: _rank, ...rest }) => rest));
 }
 
 /** A project's branches, busiest first; the default branches sort to the top. */
@@ -305,7 +363,7 @@ export function branchesOf(ctx: ServiceContext, project: string): { name: string
   return (
     ctx.db
       .prepare(
-        `SELECT branch AS name, COUNT(*) AS count FROM artifacts WHERE project = ? AND branch IS NOT NULL
+        `SELECT branch AS name, COUNT(*) AS count FROM artifacts WHERE project = ? AND branch IS NOT NULL AND parent_id IS NULL
           GROUP BY branch ORDER BY branch IN ('main', 'master') DESC, MAX(updated_at) DESC`,
       )
       .all(project) as Row[]
@@ -319,14 +377,17 @@ export function sidebarCounts(ctx: ServiceContext): SidebarCounts {
   const since = new Date(Date.now() - LIVE_WINDOW_MS).toISOString();
   return {
     needsYou: needsYou(ctx, { countOnly: true }).length,
-    recent: one("SELECT COUNT(*) AS n FROM artifacts WHERE archived_at IS NULL"),
+    recent: one("SELECT COUNT(*) AS n FROM artifacts WHERE archived_at IS NULL AND parent_id IS NULL"),
     pinned: one("SELECT COUNT(*) AS n FROM artifacts WHERE pinned_at IS NOT NULL"),
     live: one("SELECT COUNT(*) AS n FROM artifacts WHERE live_by IS NOT NULL AND live_at > ?", [since]),
-    archived: one("SELECT COUNT(*) AS n FROM artifacts WHERE archived_at IS NOT NULL"),
+    archived: one(
+      `SELECT COUNT(*) AS n FROM artifacts a WHERE a.archived_at IS NOT NULL AND (a.parent_id IS NULL OR NOT EXISTS (
+         SELECT 1 FROM artifacts p WHERE p.id = a.parent_id AND p.archived_at IS NOT NULL))`,
+    ),
     projects: (
       ctx.db
         .prepare(
-          "SELECT project AS name, COUNT(*) AS count FROM artifacts WHERE project IS NOT NULL GROUP BY project ORDER BY MAX(updated_at) DESC",
+          "SELECT project AS name, COUNT(*) AS count FROM artifacts WHERE project IS NOT NULL AND parent_id IS NULL GROUP BY project ORDER BY MAX(updated_at) DESC",
         )
         .all() as Row[]
     ).map((r) => ({ name: String(r.name), count: Number(r.count), branches: branchesOf(ctx, String(r.name)) })),
@@ -354,14 +415,22 @@ export function sweepArchive(ctx: ServiceContext, force = false): number {
   if (!force && Date.now() - lastSweep < 60 * 60 * 1000) return 0;
   lastSweep = Date.now();
   const cutoff = new Date(Date.now() - ARCHIVE_AFTER_DAYS * 86400_000).toISOString();
-  const info = ctx.db
+  // A tree goes as one: its top page, when nothing anywhere in the tree moved
+  // or is pinned or has an open thread, and then everything under it.
+  const idle = ctx.db
     .prepare(
-      `UPDATE artifacts SET archived_at = :now
-        WHERE archived_at IS NULL AND pinned_at IS NULL AND updated_at < :cutoff
-          AND NOT EXISTS (SELECT 1 FROM comments c WHERE c.artifact_id = artifacts.id AND c.status = 'open')`,
+      `WITH RECURSIVE t(root, id, d) AS (
+         SELECT id, id, 0 FROM artifacts WHERE parent_id IS NULL AND archived_at IS NULL
+         UNION ALL SELECT t.root, a.id, t.d + 1 FROM artifacts a JOIN t ON a.parent_id = t.id WHERE t.d < 10
+       )
+       SELECT t.root FROM t JOIN artifacts a ON a.id = t.id
+        GROUP BY t.root
+       HAVING MAX(a.updated_at) < :cutoff AND MAX(a.pinned_at IS NOT NULL) = 0
+          AND NOT EXISTS (SELECT 1 FROM comments c JOIN t u ON u.id = c.artifact_id WHERE u.root = t.root AND c.status = 'open')`,
     )
-    .run(bind({ now: new Date().toISOString(), cutoff }));
-  return Number(info.changes);
+    .all(bind({ cutoff })) as Row[];
+  for (const r of idle) setTreeArchived(ctx, { id: String(r.root) }, true);
+  return idle.length;
 }
 
 export function markSeen(ctx: ServiceContext, slug: string): void {
@@ -379,14 +448,18 @@ export function setOrganisation(
   slug: string,
   input: { pinned?: boolean; archived?: boolean; project?: string | null; series?: string | null },
 ): void {
-  requireArtifact(ctx, slug);
+  const artifact = requireArtifact(ctx, slug);
   const stamp = new Date().toISOString();
   if (input.pinned !== undefined)
     ctx.db.prepare("UPDATE artifacts SET pinned_at = ? WHERE slug = ?").run(input.pinned ? stamp : null, slug);
-  if (input.archived !== undefined)
-    ctx.db.prepare("UPDATE artifacts SET archived_at = ? WHERE slug = ?").run(input.archived ? stamp : null, slug);
-  if (input.project !== undefined)
-    ctx.db.prepare("UPDATE artifacts SET project = ? WHERE slug = ?").run(input.project?.trim().slice(0, 80) || null, slug);
+  // Archiving, restoring and moving to a project take everything under the page along.
+  if (input.archived !== undefined) setTreeArchived(ctx, artifact, input.archived);
+  if (input.archived === false) restoreWithParents(ctx, artifact);
+  // A tree is in one project, so a project set on any page of it moves the whole tree.
+  if (input.project !== undefined) {
+    const set = ctx.db.prepare("UPDATE artifacts SET project = ? WHERE id = ?");
+    for (const id of subtreeIds(ctx, rootIdOf(ctx, artifact))) set.run(input.project?.trim().slice(0, 80) || null, id);
+  }
   if (input.series !== undefined)
     ctx.db.prepare("UPDATE artifacts SET series = ? WHERE slug = ?").run(input.series?.trim().slice(0, 80) || null, slug);
 }
@@ -394,8 +467,9 @@ export function setOrganisation(
 // ------------------------------------------------------------ search
 
 export interface SearchResult {
-  pages: { slug: string; title: string; project: string | null; series: string | null; updatedAt: string; kind: Kind }[];
-  hits: { slug: string; title: string; project: string | null; snippet: string; version: number }[];
+  /** `path`: for a subpage, the titles above it, top page first. */
+  pages: { slug: string; title: string; project: string | null; series: string | null; updatedAt: string; kind: Kind; path: string[] }[];
+  hits: { slug: string; title: string; project: string | null; snippet: string; version: number; path: string[] }[];
 }
 
 
@@ -420,7 +494,7 @@ export function search(ctx: ServiceContext, input: string, opts: { project?: str
 
   const pages = ctx.db
     .prepare(
-      `SELECT a.slug, a.title, a.project, a.series, a.updated_at, a.kind FROM search s
+      `SELECT a.slug, a.title, a.project, a.series, a.updated_at, a.kind, a.parent_id FROM search s
          JOIN artifacts a ON a.id = s.artifact_id
         WHERE search MATCH '{title description} : (' || :q || ')' ${projectClause}
         ORDER BY bm25(search), a.updated_at DESC LIMIT :limit`,
@@ -429,7 +503,7 @@ export function search(ctx: ServiceContext, input: string, opts: { project?: str
 
   const hits = ctx.db
     .prepare(
-      `SELECT a.slug, a.title, a.project, a.current_version,
+      `SELECT a.slug, a.title, a.project, a.current_version, a.parent_id,
               snippet(search, 3, :open, :close, '…', 14) AS snippet
          FROM search s JOIN artifacts a ON a.id = s.artifact_id
         WHERE search MATCH 'body : (' || :q || ')' ${projectClause}
@@ -437,6 +511,7 @@ export function search(ctx: ServiceContext, input: string, opts: { project?: str
     )
     .all(bind({ ...base, open: MARK_OPEN, close: MARK_CLOSE })) as Row[];
 
+  const pathOf = (r: Row) => (r.parent_id ? ancestorsOf(ctx, { parentId: String(r.parent_id) }).map((a) => a.title) : []);
   return {
     pages: pages.map((r) => ({
       slug: String(r.slug),
@@ -445,6 +520,7 @@ export function search(ctx: ServiceContext, input: string, opts: { project?: str
       series: (r.series as string | null) ?? null,
       updatedAt: String(r.updated_at),
       kind: String(r.kind) as Kind,
+      path: pathOf(r),
     })),
     hits: hits.map((r) => ({
       slug: String(r.slug),
@@ -452,6 +528,7 @@ export function search(ctx: ServiceContext, input: string, opts: { project?: str
       project: (r.project as string | null) ?? null,
       snippet: String(r.snippet).replace(/\s+/g, " ").trim(),
       version: Number(r.current_version),
+      path: pathOf(r),
     })),
   };
 }

@@ -367,4 +367,12 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE comments ADD COLUMN endorsed_at TEXT;
   UPDATE comments SET visitor_verified = 1 WHERE author_kind = 'visitor' AND visitor_email IS NOT NULL;
   `,
+  // 9: subpages. A page can sit under another one (see lib/service/tree.ts):
+  // its place among its siblings, and the named group it is listed under.
+  `
+  ALTER TABLE artifacts ADD COLUMN parent_id TEXT REFERENCES artifacts(id) ON DELETE SET NULL;
+  ALTER TABLE artifacts ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE artifacts ADD COLUMN nav_group TEXT;
+  CREATE INDEX idx_artifacts_parent ON artifacts (parent_id, position);
+  `,
 ];
