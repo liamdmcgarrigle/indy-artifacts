@@ -963,8 +963,11 @@ export function ArtifactView(props: ArtifactViewProps) {
 
   function commentOnBlock(event: React.MouseEvent) {
     if (editing || !canComment) return;
-    // Two quick taps on a checkbox are two ticks, not a comment.
-    if ((event.target as HTMLElement).closest?.(".art-task__hit, .art-tick-by")) return;
+    // Two quick taps on a checkbox are two ticks, not a comment; two on a button are two presses.
+    if ((event.target as HTMLElement).closest?.(".art-task__hit, .art-tick-by, button, a, input, textarea, select, label")) return;
+    // A double click on words selects a word, the way it does everywhere else.
+    // The selection gets its own Comment button, so the comment is on the word.
+    if (isOverText(event.clientX, event.clientY)) return;
     const block = blockOf(event.target as Node);
     if (!block) return;
     setActiveId(null);

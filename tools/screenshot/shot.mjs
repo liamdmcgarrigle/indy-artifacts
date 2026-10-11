@@ -17,6 +17,7 @@
  *     "mobile": true,                      // touch, no hover (use with width 390)
  *     "steps": [                           // optional interactions
  *       { "click": ".pin" },
+ *       { "dblclick": "p" },                // or { "dblclickAt": [x, y] }
  *       { "hover": ".btn" },
  *       { "press": "c" },
  *       { "type": ["textarea", "hello"] },
@@ -83,6 +84,8 @@ for (const shot of Array.isArray(shots) ? shots : [shots]) {
 
     for (const step of shot.steps ?? []) {
       if (step.click) await page.click(step.click, { timeout: 5000 });
+      if (step.dblclick) await page.dblclick(step.dblclick, { timeout: 5000 });
+      if (step.dblclickAt) await page.mouse.dblclick(step.dblclickAt[0], step.dblclickAt[1]);
       if (step.hover) await page.hover(step.hover, { timeout: 5000 });
       if (step.move) await page.mouse.move(step.move[0], step.move[1], { steps: 4 });
       if (step.tap) await page.touchscreen.tap(step.tap[0], step.tap[1]);
