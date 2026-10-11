@@ -33,6 +33,7 @@ import { FormProvider } from "./forms/FormState";
 import { FormBar } from "./forms/FormBar";
 import { ShareDialog } from "./viewer/ShareDialog";
 import { primitivesUrl } from "@/lib/primitives";
+import { copyText } from "@/lib/clipboard";
 import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
 import { IDENTITY_HEADER, IdentityDialog, renewIdentity, storedIdentity, storeIdentity, type VisitorIdentity } from "./share/IdentityDialog";
 import { createTickStore } from "@/lib/doc/tasks-view";
@@ -947,6 +948,18 @@ export function ArtifactView(props: ArtifactViewProps) {
     return null;
   }
 
+  /** A click on a bit of inline code copies it: a command or a path, ready to paste. */
+  function onContentClick(event: React.MouseEvent) {
+    if (editing || tool || event.detail > 1) return;
+    const code = (event.target as HTMLElement).closest?.("code");
+    if (!code || code.closest("pre, a") || !contentRef.current?.contains(code)) return;
+    // Dragging across the words selects them; only a plain click copies.
+    if (window.getSelection()?.isCollapsed === false) return;
+    const text = code.textContent ?? "";
+    if (!text.trim()) return;
+    void copyText(text).then((ok) => ok && setNotice({ kind: "good", text: `Copied ${truncate(text, 48)}` }));
+  }
+
   function commentOnBlock(event: React.MouseEvent) {
     if (editing || !canComment) return;
     // Two quick taps on a checkbox are two ticks, not a comment.
@@ -1447,6 +1460,7 @@ export function ArtifactView(props: ArtifactViewProps) {
             className="doc"
             ref={contentRef}
             onMouseUp={onContentMouseUp}
+            onClick={onContentClick}
             onPointerDown={onPressStart}
             onPointerMove={onPressMove}
             onPointerUp={onPressEnd}

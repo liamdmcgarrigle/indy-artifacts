@@ -228,6 +228,60 @@
   border-radius: 0;
 }
 
+/* A code block on a page being read: the block, and a button that copies it.
+   The button shows on hover or focus, and always where there is no hover. */
+.art-code {
+  position: relative;
+  margin: 1.4em 0;
+}
+
+.art-code > pre {
+  margin: 0;
+}
+
+.art-code__copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 9px;
+  font-family: var(--art-font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--art-text-muted);
+  background: var(--art-surface);
+  border: 1px solid var(--art-border);
+  border-radius: var(--art-radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.art-code:hover .art-code__copy,
+.art-code__copy:focus-visible,
+.art-code__copy.is-done {
+  opacity: 1;
+}
+
+.art-code__copy:hover {
+  color: var(--art-text);
+}
+
+.art-code__copy.is-done {
+  color: var(--art-good);
+}
+
+/* Always shown on a touch screen, so the code starts below it. */
+@media (hover: none) {
+  .art-code__copy {
+    top: 6px;
+    opacity: 1;
+  }
+
+  .art-code > pre {
+    padding-top: 40px;
+  }
+}
+
 /* A chart, table or embed reaches the page inside the <pre> the pipeline emits
    for the fence it was written as. The element inside draws the container, so
    the wrapper sheds its code-block skin. Without this every one of them sits in

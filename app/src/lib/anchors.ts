@@ -200,6 +200,7 @@ export function kindName(el: HTMLElement): string {
   if (el.matches("pre:has(> art-chart)")) return "chart";
   if (el.matches("pre:has(> art-table)")) return "table";
   if (el.tagName === "ART-KPIS") return "row of tiles";
+  if (el.classList.contains("art-code")) return "code block";
   return KIND_NAMES[el.tagName] ?? "block";
 }
 

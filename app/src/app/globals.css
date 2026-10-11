@@ -1044,6 +1044,11 @@ kbd {
   white-space: nowrap;
 }
 
+/* Inline code on a page being read copies on a click. */
+.doc .art-content:not(.art-content--editing) :not(pre) > code {
+  cursor: copy;
+}
+
 /* ---------- toast ---------- */
 
 .toast {
