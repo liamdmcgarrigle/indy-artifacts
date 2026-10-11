@@ -425,3 +425,12 @@ describe("leading blank lines", () => {
     }
   });
 });
+
+describe("subpages", () => {
+  it("round-trips ::pages and models it as its own block", () => {
+    const md = "---\ntitle: Course\n---\n\nThe modules:\n\n::pages{depth=2}\n";
+    const doc = markdownToDoc(md);
+    expect(docToMarkdown(doc)).toBe(md);
+    expect((doc.content ?? []).map((n) => n.type)).toEqual(["paragraph", "pages"]);
+  });
+});

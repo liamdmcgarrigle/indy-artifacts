@@ -68,6 +68,14 @@ Then tell the operator:
 - the URL, in full, on its own line;
 - in one line, what is on the page, so they know whether to look now.
 
+## Big results: a tree of pages
+
+When a result is too big for one page (a course, a handbook, a report whose detail
+runs to several sections), publish it as a tree of pages rather than one long page or
+several pages that link to each other by hand. Indy draws the breadcrumbs, the contents
+list and previous and next, and the library shows the tree as one row. Read the
+`multipage` skill before you plan one. Keep a short report on one page.
+
 ## A theme that matches the project
 
 Pages take their look from their project's theme. The first time you publish for a

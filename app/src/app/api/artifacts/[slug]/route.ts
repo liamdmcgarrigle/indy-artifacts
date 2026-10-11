@@ -1,5 +1,7 @@
 import { setOrganisation } from "@/lib/service/library";
-import { requireMember } from "@/lib/auth/access";
+import { checkPlacement, placePage, type Placement } from "@/lib/service/tree";
+import { ValidationError } from "@/lib/service/errors";
+import { requireMember, requireOwner } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { createHumanVersion, listVersions, requireArtifact, requireVersion, updateArtifact } from "@/lib/service/artifacts";
 import { countUnsent } from "@/lib/service/comments";
@@ -59,19 +61,34 @@ export async function PUT(request: Request, { params }: Params) {
   }
 }
 
-/** Organisation only: pin, archive, move to a project or series. Never content. */
+/** Organisation only: pin, archive, move to a project or series, or to another place in a tree. Never content. */
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const ctx = getContext();
     requireMember(ctx, request);
     const { slug } = await params;
     const input = await body(request);
+    // Where it sits in a tree: under another page (null for a page of its own), its place, its group.
+    // Only the owner moves pages: an agent moving one under a shared page would make it public.
+    const placing = input.parent !== undefined || input.position !== undefined || input.group !== undefined;
+    let place: Placement | undefined;
+    if (placing) {
+      requireOwner(ctx, request);
+      const text = (v: unknown, name: string) => {
+        if (v === undefined || v === null || typeof v === "string") return v as string | null | undefined;
+        throw new ValidationError(`${name} must be text or null`);
+      };
+      if (input.position !== undefined && typeof input.position !== "number") throw new ValidationError("position must be a number");
+      place = { parent: text(input.parent, "parent"), position: input.position as number | undefined, group: text(input.group, "group") };
+      checkPlacement(ctx, requireArtifact(ctx, slug), place);
+    }
     setOrganisation(ctx, slug, {
       pinned: typeof input.pinned === "boolean" ? input.pinned : undefined,
       archived: typeof input.archived === "boolean" ? input.archived : undefined,
       project: input.project === undefined ? undefined : (input.project as string | null),
       series: input.series === undefined ? undefined : (input.series as string | null),
     });
+    if (place) placePage(ctx, requireArtifact(ctx, slug), place);
     return json({ artifact: requireArtifact(ctx, slug) });
   } catch (err) {
     return fail(err);

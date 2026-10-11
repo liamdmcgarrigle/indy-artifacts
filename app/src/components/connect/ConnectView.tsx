@@ -348,8 +348,8 @@ export function ConnectView({
         {agent !== "other" ? (
           <Step n={3} title="Add the Indy plugin (optional)">
             <Note>
-              Two skills, one for publishing pages and one for picking up your comments, and a one-line reminder at the start
-              of each session that Indy is there. The connection above works without it.
+              Skills for publishing pages, charts, trees of pages, and Storybook stories, and for picking up your comments, plus
+              a short reminder at the start of each session that Indy is there. The connection above works without it.
             </Note>
             <Command
               code={

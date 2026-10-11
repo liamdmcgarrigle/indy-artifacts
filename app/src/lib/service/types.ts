@@ -71,6 +71,12 @@ export interface PublishInput {
   series?: string;
   /** The git branch the agent is on, e.g. feat/share-links. */
   branch?: string;
+  /** The slug of the page this one sits under; null takes it out of its tree. */
+  parent?: string | null;
+  /** Its place among the parent's pages, from 0; the end when left out. */
+  position?: number;
+  /** A heading it is listed under among its siblings, such as "For authors"; null for none. */
+  group?: string | null;
   description?: string;
   tags?: string[];
   source?: string;
@@ -107,6 +113,10 @@ export interface Artifact {
   seenAt: string | null;
   liveBy: string | null;
   liveAt: string | null;
+  /** The page this one sits under, by id, when it is a subpage. */
+  parentId: string | null;
+  position: number;
+  group: string | null;
 }
 
 export interface Version {

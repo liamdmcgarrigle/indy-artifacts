@@ -139,6 +139,8 @@ function block(node: Md, ctx: Ctx, parent?: string): JSONContent {
       return directive(node, ctx, parent);
     case "leafDirective":
       if (node.name === "field" && !node.children?.length) return { type: "field", attrs: { attributes: { ...(node.attributes ?? {}) } } };
+      // A label on ::pages has no use; it is dropped rather than turning the block into raw HTML.
+      if (node.name === "pages") return { type: "pages", attrs: { attributes: { ...(node.attributes ?? {}) } } };
       throw new Unmodelled(`leaf directive ${node.name}`);
     default:
       throw new Unmodelled(node.type);

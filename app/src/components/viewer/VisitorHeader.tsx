@@ -1,13 +1,15 @@
 "use client";
 
-import { MessageSquare, MessageSquarePlus } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, MessageSquare, MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SackMark } from "@/components/indy/brand";
 import { cn } from "@/lib/utils";
 
 /**
- * The bar over a shared page. A visitor has one page and nothing else, so it
- * says whose page it is and, when the link allows, offers comments.
+ * The bar over a shared page. A visitor has the shared page and the pages
+ * under it, nothing else, so it says whose page it is, the way back up the
+ * tree, and, when the link allows, offers comments.
  */
 export function VisitorHeader({
   title,
@@ -17,8 +19,14 @@ export function VisitorHeader({
   onThreads,
   onComment,
   as,
+  trail = [],
+  pages,
 }: {
   title: string;
+  /** The pages above this one in the shared tree, top first. */
+  trail?: { title: string; href: string }[];
+  /** The button that shows the tree's pages. */
+  pages?: React.ReactNode;
   sharedBy: string | null;
   /** Thread count, or null when comments are off on this link. */
   threads: number | null;
@@ -30,11 +38,31 @@ export function VisitorHeader({
 }) {
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-hairline bg-background px-3 md:h-[52px] md:bg-background/92 md:px-4 md:backdrop-blur">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-raised text-sand">
+      {trail.length ? (
+        // In a tree, the mark steps back to the page above, as the arrow does for the owner.
+        <Link
+          href={trail[trail.length - 1].href}
+          aria-label={`Back to ${trail[trail.length - 1].title}`}
+          className="flex size-10 shrink-0 items-center justify-center rounded-lg text-fg-2 hover:bg-raised hover:text-foreground md:hidden"
+        >
+          <ArrowLeft className="size-5" />
+        </Link>
+      ) : null}
+      <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg bg-raised text-sand", trail.length && "max-md:hidden")}>
         <SackMark size={13} />
       </span>
       <span className="flex min-w-0 flex-col leading-tight">
-        <span className="truncate text-[14px] font-medium text-foreground">{title}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-[14px]">
+          {trail.map((t) => (
+            <span key={t.href} className="flex min-w-0 shrink items-center gap-1.5 max-md:hidden">
+              <Link href={t.href} className="max-w-[180px] truncate text-fg-2 hover:text-foreground">
+                {t.title}
+              </Link>
+              <span className="text-faint">›</span>
+            </span>
+          ))}
+          <span className="truncate font-medium text-foreground">{title}</span>
+        </span>
         {sharedBy || as ? (
           <span className="truncate text-[12px] text-muted-foreground">
             {[sharedBy ? `Shared by ${sharedBy}` : "", as ? `you're ${as}` : ""].filter(Boolean).join(" · ")}
@@ -42,6 +70,7 @@ export function VisitorHeader({
         ) : null}
       </span>
       <span className="ml-auto flex shrink-0 items-center gap-1">
+        {pages}
         {threads !== null ? (
           <Button
             variant="ghost"

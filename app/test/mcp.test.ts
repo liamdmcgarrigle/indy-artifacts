@@ -78,6 +78,7 @@ describe("mcp endpoint", () => {
       "artifact_get",
       "artifact_list",
       "artifact_publish",
+      "artifact_publish_tree",
       "artifact_reply",
       "artifact_resolve",
       "artifact_responses",
@@ -89,6 +90,7 @@ describe("mcp endpoint", () => {
       "artifact_theme_set",
       "artifact_themes",
       "artifact_tick",
+      "artifact_tree",
       "artifact_type",
       "artifact_update",
       "artifact_wait",
@@ -189,6 +191,35 @@ describe("mcp endpoint", () => {
 
     await callTool("artifact_resolve", { comment_id: comment.id });
     expect(textOf(await callTool("artifact_get", { slug: "mcp-demo" }))).not.toContain("waiting for an answer");
+  });
+
+  it("publishes a tree, reads it back, and hears about comments on any page in it", async () => {
+    const md = (title: string) => `---\ntitle: ${title}\n---\n\nText.\n`;
+    const published = await callTool("artifact_publish_tree", {
+      project: "mcp-course",
+      pages: [
+        { slug: "mcp-course", source: md("Course") },
+        { slug: "mcp-mod-1", parent: "mcp-course", source: md("Module 1") },
+        { slug: "mcp-les-1", parent: "mcp-mod-1", source: md("Lesson 1") },
+        { slug: "mcp-plan", parent: "mcp-course", group: "For authors", source: md("Plan") },
+      ],
+    });
+    expect(textOf(published)).toContain("4 pages: 4 new, 0 updated, 0 unchanged");
+    expect(textOf(published)).toContain("    - Lesson 1 (mcp-les-1, v1)");
+
+    const tree = await callTool("artifact_tree", { slug: "mcp-les-1" });
+    expect(textOf(tree)).toContain("Lesson 1 (mcp-les-1, v1) (new to the operator) ← this page");
+    expect((jsonOf(tree) as { top: string }).top).toBe("mcp-course");
+
+    const got = jsonOf(await callTool("artifact_get", { slug: "mcp-mod-1" })) as Record<string, unknown>;
+    expect(got).toMatchObject({ parent: "mcp-course", path: ["Course"], subpages: 1, tree_top: "mcp-course" });
+
+    const { createComment } = await import("@/lib/service/comments");
+    const { getContext } = await import("@/lib/service/context");
+    createComment(getContext(), "mcp-les-1", { body: "typo here", authorName: "liam", anchor: null });
+    expect(jsonOf(await callTool("artifact_comments", { slug: "mcp-course" }))).toHaveLength(0);
+    const all = jsonOf(await callTool("artifact_comments", { slug: "mcp-course", tree: true })) as { page: string; body: string }[];
+    expect(all).toEqual([expect.objectContaining({ page: "mcp-les-1", body: "typo here" })]);
   });
 
   it("wait returns promptly when there is nothing new", async () => {

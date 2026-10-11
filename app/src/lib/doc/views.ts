@@ -6,6 +6,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { Placeholder, UndoRedo, Dropcursor, Gapcursor } from "@tiptap/extensions";
 import { docExtensions, type DocOptions } from "./schema";
 import { ChoiceView, FieldView, OptionView } from "@/components/forms/NodeViews";
+import { PagesView } from "@/components/viewer/PagesView";
 import type * as EditViews from "@/components/editor/edit-views";
 import { taskItemView, TickDecorations, wireRawTasks, type TickStore } from "./tasks-view";
 import { copyText } from "@/lib/clipboard";
@@ -409,6 +410,8 @@ export function viewExtensions(options: ViewOptions = {}): AnyExtension[] {
       // page must not turn a tap on a radio button into a selection.
       case "field":
         return ext.extend({ addNodeView: () => ReactNodeViewRenderer(FieldView, own) });
+      case "pages":
+        return ext.extend({ addNodeView: () => ReactNodeViewRenderer(PagesView, own) });
       case "choice":
         return ext.extend({ addNodeView: () => ReactNodeViewRenderer(ChoiceView, editing ? {} : own) });
       case "option":

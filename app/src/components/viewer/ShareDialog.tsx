@@ -26,6 +26,10 @@ interface ShareState {
   privateUrl: string;
   emailGate: boolean;
   currentVersion: number;
+  /** How many pages sit under this one; its link opens them too. */
+  subpages?: number;
+  /** A link on a page above that already shares this one. */
+  through?: { title: string; url: string; mode: "link" | "email" } | null;
 }
 
 const MODES: { mode: Mode; icon: typeof Lock; name: string; desc: string }[] = [
@@ -183,7 +187,17 @@ export function ShareDialog({
             )}
           </button>
         </div>
-        {state?.mode === "private" ? <p className="share__note">This link only works for you. Pick who else can open it above.</p> : null}
+        {state?.mode === "private" && !state.through ? <p className="share__note">This link only works for you. Pick who else can open it above.</p> : null}
+        {state?.mode === "private" && state.through ? (
+          <p className="share__note">
+            Already shared as part of “{state.through.title}”, at {state.through.url.replace(/^https?:\/\//, "")}
+          </p>
+        ) : null}
+        {state?.subpages ? (
+          <p className="share__note">
+            {shared ? "The link also opens" : "A link here would also open"} the {state.subpages} page{state.subpages === 1 ? "" : "s"} under this one.
+          </p>
+        ) : null}
         {storybooks.length ? (
           <p className="share__note">
             This page shows stories from the {storybooks.join(" and ")} Storybook{storybooks.length > 1 ? "s" : ""}. Anyone who can open it can also load the other stories in

@@ -8,11 +8,12 @@ import { NotFoundError, ServiceError, ValidationError } from "./errors";
 import { requireArtifact } from "./artifacts";
 import { recordEvent } from "./events";
 import { getSettings } from "./settings";
+import { ancestorsOf, subtreeIds } from "./tree";
 import type { Artifact } from "./types";
 
 /**
- * Sharing, one link per page. A page is private until the owner turns a link
- * on; the link is either open to anyone who has it, or asks for an emailed
+ * Sharing, one link per page, covering that page and every page under it. A
+ * page is private until the owner turns a link on; the link is either open to anyone who has it, or asks for an emailed
  * code first. Turning it off revokes the link, and a new link retires the
  * old token while keeping its settings.
  */
@@ -75,8 +76,21 @@ export function activeLink(ctx: ServiceContext, slug: string): ShareLink | null 
   return rows.map(toLink).find(live) ?? null;
 }
 
-export function shareUrl(link: ShareLink): string {
-  return `${config().url}/s/${link.token}`;
+export function shareUrl(link: ShareLink, page?: string): string {
+  return `${config().url}/s/${link.token}${page ? `/p/${page}` : ""}`;
+}
+
+/**
+ * The link through which a page above this one shares it, nearest first, and
+ * the address of this page under that link.
+ */
+export function linkThrough(ctx: ServiceContext, artifact: Artifact): { link: ShareLink; slug: string; title: string; url: string } | null {
+  if (!artifact.parentId) return null;
+  for (const above of ancestorsOf(ctx, artifact).reverse()) {
+    const link = activeLink(ctx, above.slug);
+    if (link) return { link, slug: above.slug, title: above.title, url: shareUrl(link, artifact.slug) };
+  }
+  return null;
 }
 
 function expiryFor(expiry: Expiry | undefined, current: string | null): string | null {
@@ -184,6 +198,25 @@ export function resolveShare(ctx: ServiceContext, token: string): Share {
   const artifact = ctx.db.prepare("SELECT slug FROM artifacts WHERE id = ?").get(String(row.artifact_id)) as Row | undefined;
   if (!artifact) throw new NotFoundError("this page is gone");
   return { link, artifact: requireArtifact(ctx, String(artifact.slug)) };
+}
+
+/**
+ * A page a link covers: the shared page or one under it. Anything else is not
+ * shared, and says so the same way a missing page does.
+ */
+export function sharedPage(ctx: ServiceContext, share: Share, slug: string): Artifact {
+  if (slug === share.artifact.slug) return share.artifact;
+  const page = ctx.db.prepare("SELECT id FROM artifacts WHERE slug = ?").get(slug) as Row | undefined;
+  if (!page || !subtreeIds(ctx, share.artifact.id).includes(String(page.id))) throw new NotFoundError("this link does not open that page");
+  const artifact = requireArtifact(ctx, slug);
+  // An archived page, or one under an archived page, is out of the way through the tree, and out of the link.
+  if (!share.artifact.archivedAt) {
+    const between = ancestorsOf(ctx, artifact).map((a) => a.id);
+    const below = between.slice(between.indexOf(share.artifact.id) + 1);
+    const archived = ctx.db.prepare("SELECT 1 FROM artifacts WHERE id = ? AND archived_at IS NOT NULL");
+    if (artifact.archivedAt || below.some((id) => archived.get(id))) throw new NotFoundError("this link does not open that page");
+  }
+  return artifact;
 }
 
 export function recordOpen(ctx: ServiceContext, link: ShareLink, who: string | null): void {

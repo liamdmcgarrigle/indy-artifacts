@@ -15,6 +15,7 @@ plugin/
   skills/publish/reference.md   every block, one example each; the server serves the same file
   skills/feedback/              pick up the operator's comments on this project's pages
   skills/charts/                which chart fits the data, and when a table or counters fit better
+  skills/multipage/             when a result becomes a tree of pages, and how to publish and keep one
 ```
 
 The marketplace is `.claude-plugin/marketplace.json` at the repository root. Codex reads the same
@@ -28,7 +29,7 @@ codex plugin marketplace add liamdmcgarrigle/indy-artifacts && codex plugin add 
 ## What each part is for
 
 The session-start hook prints a short list: Indy is set up, publish results that read better as pages,
-what it can do (pages, checklists, forms, comments, stories, share links, live typing), and where the
+what it can do (pages, checklists, forms, comments, trees of pages, stories, share links, live typing), and where the
 details are. It makes no network call and costs about 250 tokens. It runs
 on startup, `/clear` and compaction, but not on resume, where the list is already in the
 conversation. Codex asks once before it runs a plugin's hook; `/hooks` shows it.
@@ -38,6 +39,8 @@ the link, handle comments, and merge the operator's edits instead of overwriting
 for "I left some notes": it finds this project's pages with open comments and works through them.
 The operator can also run it as `/indy:feedback`. `charts` is the judgment behind the chart syntax:
 which type fits the data and the reader's question, and how to make it honest and readable on a phone.
+`multipage` is for results too big for one page: when to split into subpages, how to plan the tree,
+publishing it in one call, and collecting comments from every page in it.
 
 The plugin ships no MCP server. Codex reads a server's URL literally, and in Claude Code a
 plugin's fixed `Authorization` header gets in the way of signing in through the browser. So each
