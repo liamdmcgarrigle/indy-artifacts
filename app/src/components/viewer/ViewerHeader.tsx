@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Check, GitBranch, History, ListChecks, ChevronDown, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Send, Share2, Globe, AtSign } from "lucide-react";
+import { ArrowLeft, Check, GitBranch, History, ListChecks, ChevronDown, ChevronUp, Columns2, MessageSquare, MoreHorizontal, Pencil, Share2, Globe, AtSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -201,8 +201,8 @@ export function ViewerHeader({
           <ShareButton sharing={sharing} onShare={onShare} />
         ) : null}
         {unsent ? (
-          <Button size="sm" className="h-10 gap-1.5 px-3 md:h-8" onClick={onSend} aria-label="Send to agent">
-            <Send className="size-4 md:size-3.5" /> <span className="max-md:hidden">Send to agent</span>
+          <Button size="sm" className="h-10 gap-1.5 px-3 md:h-8" onClick={onSend} aria-label="Mark ready for the agent">
+            <Check className="size-4 md:size-3.5" /> <span className="max-md:hidden">Mark ready</span>
             <span className="font-mono text-[11px] opacity-70">{unsent}</span>
           </Button>
         ) : null}

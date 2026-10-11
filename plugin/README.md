@@ -43,8 +43,10 @@ The plugin ships no MCP server. Codex reads a server's URL literally, and in Cla
 plugin's fixed `Authorization` header gets in the way of signing in through the browser. So each
 agent adds the server itself, by OAuth or with a token, and the plugin only adds knowledge.
 
-Comments don't arrive by themselves. The agent collects them with `artifact_wait` when you said
-you would review now, or when you ask with the feedback skill.
+Comments don't interrupt the agent. It can read every open comment as soon as you write it,
+and Mark ready on the page tells it you are done: an agent in `artifact_wait`, or an Orca
+terminal, hears about it right away; any other agent picks the comments up next time it checks
+the page or when you ask with the feedback skill.
 
 ## Changing the plugin
 

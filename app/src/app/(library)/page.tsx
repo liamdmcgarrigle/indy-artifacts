@@ -19,7 +19,7 @@ export default async function NeedsYouPage() {
     <>
       <ViewHeader
         title="Needs you"
-        subtitle="Replies, unsent comments, new versions and pages being written"
+        subtitle="Replies, comments not marked ready, new versions, and pages being written"
         actions={inbox.length ? <MarkAllSeen /> : null}
       />
       {nothing ? (
@@ -35,7 +35,7 @@ export default async function NeedsYouPage() {
                 rows: inbox,
                 empty: (
                   <EmptyState compact title="You are all caught up">
-                    New pages, agent replies and comments you have not sent show up here.
+                    New pages, agent replies, and comments you have not marked ready show up here.
                   </EmptyState>
                 ),
               },

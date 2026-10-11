@@ -1,7 +1,7 @@
 import type { Artifact } from "./types";
 
 /**
- * Who would hear the operator press "Send to agent" right now.
+ * Who would hear the operator press "Mark ready" right now.
  *
  * Nothing here is stored: it is what this server process has seen in the last
  * moments. An agent in artifact_wait is listening, and so is one that has just

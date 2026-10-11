@@ -42,7 +42,7 @@ function reasonText(r: Reason, row: LibraryRow): string {
     case "live":
       return `${r.who} is writing this page now`;
     case "unsent":
-      return `${r.count} comment${r.count === 1 ? "" : "s"} you have not sent yet`;
+      return `${r.count} comment${r.count === 1 ? "" : "s"} not marked ready`;
     case "visitors":
       return `${r.count} from visitors for you to look at`;
     case "new":
