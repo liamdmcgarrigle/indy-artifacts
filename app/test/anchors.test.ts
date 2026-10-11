@@ -2,12 +2,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   anchorForBlock,
+  anchorFromSelection,
   blockElement,
   blockOf,
   blockText,
   describeAnchor,
   linesOf,
   locateContext,
+  rangeForAnchor,
   resolveAnchor,
   spotFor,
   spreadPins,
@@ -93,6 +95,32 @@ describe("resolveAnchor", () => {
     expect(resolved.rect.left).toBe(110);
     expect(resolved.rect.top).toBe(45);
     expect(resolved.exact).toBe(true);
+  });
+});
+
+describe("a selection across blocks", () => {
+  function select(from: Node, fromOffset: number, to: Node, toOffset: number) {
+    const range = document.createRange();
+    range.setStart(from, fromOffset);
+    range.setEnd(to, toOffset);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+  }
+
+  it("anchors on the first block with lines running to the last", () => {
+    const b1 = blockElement(root, "b1")!;
+    const b3 = blockElement(root, "b3")!;
+    select(b1.lastChild!, 1, b3.firstChild!, 6);
+    const anchor = anchorFromSelection(root)!;
+    expect(anchor).toMatchObject({ type: "range", block: "b1", lines: [3, 11] });
+    expect(anchor.quote!.startsWith("errors under")).toBe(true);
+    expect(anchor.quote!.endsWith("Second")).toBe(true);
+  });
+
+  it("finds and lights the whole span again, line breaks and all", () => {
+    const anchor: Anchor = { type: "range", block: "b1", quote: "under /var/lib.\n\nSecond paragraph", start: 30, end: 40 };
+    expect(rangeForAnchor(root, anchor)!.toString().replace(/\s+/g, " ")).toBe("under /var/lib. Second paragraph");
+    expect(resolveAnchor(root, anchor)?.exact).toBe(true);
   });
 });
 

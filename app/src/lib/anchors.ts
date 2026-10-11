@@ -119,22 +119,35 @@ export function anchorFromSelection(root: HTMLElement): Anchor | null {
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
   const range = selection.getRangeAt(0);
   if (!root.contains(range.commonAncestorContainer)) return null;
-
-  const block = blockOf(range.startContainer);
-  if (!block || !root.contains(block)) return null;
-
-  const start = offsetIn(block, range.startContainer, range.startOffset);
-  const end = offsetIn(block, range.endContainer, range.endOffset);
   const quote = selection.toString().trim();
-  if (start === null || end === null || !quote) return null;
+  if (!quote) return null;
+
+  // The first and last letters selected. A selection that runs from one block
+  // into the next, or starts in the gap between two, still has those.
+  const texts = textNodes(root).filter((t) => t.data.trim() && range.intersectsNode(t));
+  if (!texts.length) return null;
+  const first = texts[0];
+  const last = texts[texts.length - 1];
+  const block = blockOf(first);
+  const endBlock = blockOf(last);
+  if (!block || !endBlock) return null;
+
+  const from = offsetIn(block, first, first === range.startContainer ? range.startOffset : 0);
+  if (from === null) return null;
+  // Across blocks the anchor lives on the first one; its quote finds the rest,
+  // and its lines run to the end of the last, which is what the agent reads.
+  const to = endBlock === block ? offsetIn(block, last, last === range.endContainer ? range.endOffset : last.data.length) : blockText(block).length;
+  if (to === null) return null;
+  const lines = linesOf(block);
+  const endLines = linesOf(endBlock);
 
   return {
     type: "range",
     block: block.getAttribute("data-block")!,
-    lines: linesOf(block),
+    lines: lines && endLines ? [Math.min(lines[0], endLines[0]), Math.max(lines[1], endLines[1])] : lines,
     quote: quote.slice(0, 2000),
-    start: Math.min(start, end),
-    end: Math.max(start, end),
+    start: Math.min(from, to),
+    end: Math.max(from, to),
   };
 }
 
@@ -396,12 +409,18 @@ export function resolveAnchor(root: HTMLElement, anchor: Anchor): Resolved | nul
   const block = anchor.block ? blockElement(root, anchor.block) : null;
 
   if (anchor.type === "range" && anchor.quote) {
-    const search = block ?? root;
-    const found = findQuote(search, anchor.quote, anchor.start);
-    if (found) return { rect: found, exact: true };
-    if (search !== root) {
-      const anywhere = findQuote(root, anchor.quote);
-      if (anywhere) return { rect: anywhere, exact: false };
+    // The words as they were first, in the stored block and then the whole
+    // page (words selected across blocks are only found there), before any
+    // guess at words that were edited since.
+    for (const fuzzy of [false, true]) {
+      for (const scope of block ? [block, root] : [root]) {
+        const at = locateQuote(scope, anchor.quote, scope === block ? anchor.start : undefined, fuzzy);
+        const rect = at ? rectOfRange(scope, at.from, at.to) : null;
+        if (!at || !rect) continue;
+        // Still exactly where it was if it starts in the stored block.
+        const exact = scope === block || !!block?.contains(positionAt(root, at.from + 1)?.node ?? null);
+        return { rect, exact };
+      }
     }
   }
 
@@ -449,7 +468,7 @@ export function resolveAnchor(root: HTMLElement, anchor: Anchor): Resolved | nul
 }
 
 /** Where the stored quote sits in a block's text, as character offsets. */
-function locateQuote(scope: HTMLElement, quote: string, near?: number): { from: number; to: number } | null {
+function locateQuote(scope: HTMLElement, quote: string, near?: number, fuzzy = true): { from: number; to: number } | null {
   const text = blockText(scope);
   if (!text) return null;
 
@@ -462,6 +481,11 @@ function locateQuote(scope: HTMLElement, quote: string, near?: number): { from: 
     return { from: index, to: index + candidate.length };
   }
 
+  // A quote that runs across blocks has line breaks the page's text does not.
+  const loose = looseIndex(text, quote);
+  if (loose) return loose;
+
+  if (!fuzzy) return null;
   // The quoted words were edited. Keep the part that survived: the longest
   // prefix of the selection still on the page marks roughly the same spot.
   const trimmed = quote.trim();
@@ -470,6 +494,21 @@ function locateQuote(scope: HTMLElement, quote: string, near?: number): { from: 
     if (index !== -1) return { from: index, to: index + length };
   }
   return null;
+}
+
+/** Find a quote ignoring whitespace, as offsets into the original text. */
+function looseIndex(text: string, quote: string): { from: number; to: number } | null {
+  const needle = quote.replace(/\s+/g, "");
+  if (!needle) return null;
+  const map: number[] = [];
+  let flat = "";
+  for (let i = 0; i < text.length; i++) {
+    if (/\s/.test(text[i])) continue;
+    map.push(i);
+    flat += text[i];
+  }
+  const at = flat.indexOf(needle);
+  return at === -1 ? null : { from: map[at], to: map[at + needle.length - 1] + 1 };
 }
 
 const MIN_MATCH = 12;
@@ -520,11 +559,6 @@ export function locateContext(
   return null;
 }
 
-function findQuote(scope: HTMLElement, quote: string, near?: number): DOMRect | null {
-  const at = locateQuote(scope, quote, near);
-  return at ? rectOfRange(scope, at.from, at.to) : null;
-}
-
 /**
  * A live Range over the text a comment points at, for the CSS Custom Highlight
  * API. Only range anchors light up; a point anchor has nothing to paint.
@@ -532,10 +566,12 @@ function findQuote(scope: HTMLElement, quote: string, near?: number): DOMRect | 
 export function rangeForAnchor(root: HTMLElement, anchor: Anchor): Range | null {
   if (anchor.type !== "range" || !anchor.quote) return null;
   const block = anchor.block ? blockElement(root, anchor.block) : null;
-  for (const scope of [block, root]) {
-    if (!scope) continue;
-    const at = locateQuote(scope, anchor.quote, scope === block ? anchor.start : undefined);
-    if (at) return makeRange(scope, at.from, at.to);
+  for (const fuzzy of [false, true]) {
+    for (const scope of [block, root]) {
+      if (!scope) continue;
+      const at = locateQuote(scope, anchor.quote, scope === block ? anchor.start : undefined, fuzzy);
+      if (at) return makeRange(scope, at.from, at.to);
+    }
   }
   return null;
 }
