@@ -914,7 +914,9 @@ export function ArtifactView(props: ArtifactViewProps) {
 
     if (tool) {
       const el = pickTarget(content, document.elementFromPoint(event.clientX, event.clientY));
-      const anchor = el ? anchorFromPick(content, el, event.clientX, event.clientY) : anchorFromPoint(content, event.clientX, event.clientY);
+      // On words, the caret between two letters; anywhere else, exactly where the click was.
+      const caret = isOverText(event.clientX, event.clientY);
+      const anchor = el ? anchorFromPick(content, el, event.clientX, event.clientY, { caret }) : anchorFromPoint(content, event.clientX, event.clientY);
       setTool(false);
       setFramePicking(false);
       setPick(null);
@@ -984,10 +986,21 @@ export function ArtifactView(props: ArtifactViewProps) {
     // A double click on words selects a word, the way it does everywhere else.
     // The selection gets its own Comment button, so the comment is on the word.
     if (isOverText(event.clientX, event.clientY)) return;
+    const content = contentRef.current;
     const block = blockOf(event.target as Node);
-    if (!block) return;
+    if (!content || !block) return;
+    // The comment goes where the double click was, not the middle of the block,
+    // so the pin shows the spot and the anchor tells the agent where it is.
+    const { clientX: x, clientY: y } = event;
+    const el = pickTarget(content, event.target as HTMLElement);
+    const r = block.getBoundingClientRect();
+    const anchor =
+      (el ? anchorFromPick(content, el, x, y, { caret: false }) : null) ??
+      anchorForBlock(block, { x: r.width ? (x - r.left) / r.width : 0.5, y: r.height ? (y - r.top) / r.height : 0.5 });
+    window.getSelection()?.removeAllRanges();
+    setBubble(null);
     setActiveId(null);
-    setDraft({ anchor: anchorForBlock(block), body: "", notify: false });
+    setDraft({ anchor, body: "", notify: false });
   }
 
   function openThread(thread: ThreadView) {
