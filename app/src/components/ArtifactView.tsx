@@ -835,18 +835,24 @@ export function ArtifactView(props: ArtifactViewProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleTool, setFramePicking, goNav, goVersion, router]);
 
-  // A click outside the open card closes it. The draft composer stays put, so a
-  // half-typed comment is never thrown away by a stray click.
+  // A click or tap outside the open card closes it, and an empty draft with it.
+  // A draft with words in it stays put, so a half-typed comment is never thrown
+  // away by a stray tap. Pointer events, because a phone's long-press to select
+  // other words fires no mousedown.
+  const draftEmpty = useRef(true);
+  draftEmpty.current = !draft?.body.trim();
   useEffect(() => {
-    function onDown(event: MouseEvent) {
+    function onDown(event: PointerEvent) {
       const el = event.target as HTMLElement | null;
       if (!el) return;
       if (el.closest(".pop") || el.closest(".pin") || el.closest(".panel") || el.closest(".panel-btn")) return;
+      if (el.closest(".selcomment, .bubble, .touchbar, [role=dialog]")) return;
       setActiveId(null);
       setPanel("none");
+      if (draftEmpty.current) setDraft(null);
     }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
   }, []);
 
   // ---- press and hold -------------------------------------------------------
@@ -1741,7 +1747,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         </div>
       </main>
 
-      {hoverless && !editing && canComment && selected && !draft ? (
+      {hoverless && !editing && canComment && selected && !draft?.body.trim() ? (
         <button
           className="btn btn--primary selcomment"
           style={{ top: selected.top, left: selected.left }}
