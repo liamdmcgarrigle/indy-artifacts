@@ -26,6 +26,8 @@ import { artifactUrl, type ServiceContext } from "../service/context";
 import { ServiceError, ValidationError } from "../service/errors";
 import { KINDS, LIMITS, type Kind, type PublishInput, type UpdateInput } from "../service/types";
 import { beginWait } from "../service/listeners";
+import { ancestorsOf, MAX_DEPTH, subtreeIds, treeOf, type Tree } from "../service/tree";
+import { publishTree, TREE_LIMITS, type TreePageInput } from "../service/publish-tree";
 
 export const REFERENCE_URI = "indy://reference";
 
@@ -76,6 +78,13 @@ export const PUBLISH_SHAPE = {
   project: z.string().max(80).optional().describe("the repository or product this is about, usually the git repo's folder name"),
   series: z.string().max(80).optional().describe("for recurring pages (nightly runs, weekly reports): the same name each time groups them"),
   branch: z.string().max(120).optional().describe("the git branch you are working on (git branch --show-current); pass it whenever you are in a repository"),
+  parent: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(`makes this a subpage: the slug of the page it sits under (null makes it a top page again). Trees go ${MAX_DEPTH} levels below their top page at most`),
+  position: z.number().int().min(0).optional().describe("its place among the parent's subpages, from 0; the end when left out"),
+  group: z.string().max(60).nullable().optional().describe('a heading it is listed under among its siblings, such as "For authors"'),
   description: z.string().max(400).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
   source: z.string().optional().describe("markdown or a complete html document"),
@@ -108,6 +117,48 @@ function summarise(result: {
       ].join("\n"),
     );
   return lines.join("\n");
+}
+
+/** A tree as an indented outline, for an agent to read. */
+function treeText(tree: Tree, here?: string): string {
+  return tree.nodes
+    .map((n) => {
+      const marks = [n.group ? `[${n.group}]` : "", n.unseen ? "(new to the operator)" : "", n.slug === here ? "← this page" : ""].filter(Boolean).join(" ");
+      return `${"  ".repeat(n.depth)}- ${n.title} (${n.slug}, v${n.currentVersion})${marks ? ` ${marks}` : ""}`;
+    })
+    .join("\n");
+}
+
+/** Where a page sits, for artifact_get: its parent, its place, and how many pages are under it. */
+function treeFields(ctx: ServiceContext, artifact: ReturnType<typeof requireArtifact>) {
+  const parents = ancestorsOf(ctx, artifact);
+  const tree = treeOf(ctx, artifact);
+  if (!tree) return {};
+  const at = tree.nodes.findIndex((n) => n.slug === artifact.slug);
+  const below = tree.nodes.slice(at + 1).findIndex((n) => n.depth <= tree.nodes[at].depth);
+  return {
+    parent: parents.at(-1)?.slug ?? null,
+    path: parents.map((p) => p.title),
+    group: artifact.group,
+    subpages: below === -1 ? tree.nodes.length - at - 1 : below,
+    tree_top: tree.root.slug,
+  };
+}
+
+/** The slugs an agent means: one page, or with tree, the page and everything under it. */
+function slugsFor(ctx: ServiceContext, slug: string, tree: boolean): string[] {
+  const artifact = requireArtifact(ctx, slug);
+  if (!tree) return [artifact.slug];
+  const found = treeOf(ctx, artifact);
+  if (!found) return [artifact.slug];
+  // From this page down: a lesson's tree is the lesson and its own subpages.
+  const start = found.nodes.findIndex((n) => n.slug === artifact.slug);
+  const out = [found.nodes[start]];
+  for (const n of found.nodes.slice(start + 1)) {
+    if (n.depth <= found.nodes[start].depth) break;
+    out.push(n);
+  }
+  return out.map((n) => n.slug);
 }
 
 export interface ToolDef {
@@ -213,6 +264,105 @@ function toolList(ctx: ServiceContext): ToolDef[] {
       },
     },
     {
+      name: "artifact_publish_tree",
+      config: {
+        title: "Publish a tree of pages",
+        description:
+          `Indy: publish or update many pages at once as one tree, such as a course with modules and lessons, or a report with appendices. Each page names its parent (another page in the call, or one already published); siblings are kept in the order you list them. The page with no parent is the top page: the library shows the tree as that one row, and every page gets breadcrumbs, a contents list, and previous and next links. Every page is checked before any is written, and a page whose content has not changed keeps its version, so you can send the whole tree again after editing one page. A page someone edited on the site needs its expected_version, or nothing is written. Up to ${TREE_LIMITS.pages} pages; trees go ${MAX_DEPTH} levels below the top page.`,
+        inputSchema: z.object({
+          pages: z
+            .array(
+              z.object({
+                slug: z.string().describe("required: the page's url segment, which also names it as a parent"),
+                parent: z.string().nullable().optional().describe("the slug of the page this one sits under; leave it out for the top page"),
+                title: z.string().max(LIMITS.titleChars).optional(),
+                kind: z.enum(KINDS as [Kind, ...Kind[]]).optional(),
+                source: z.string().optional(),
+                files: z.record(z.string(), z.string()).optional(),
+                description: z.string().max(400).optional(),
+                group: z.string().max(60).nullable().optional().describe('a heading it is listed under among its siblings, such as "For authors"'),
+                position: z.number().int().min(0).optional(),
+                assets: assetsSchema,
+                expected_version: z.number().int().positive().optional().describe("for a page that exists and a person edited: the version you last read"),
+              }),
+            )
+            .min(1)
+            .max(TREE_LIMITS.pages),
+          project: PUBLISH_SHAPE.project,
+          branch: PUBLISH_SHAPE.branch,
+          series: PUBLISH_SHAPE.series,
+          theme: PUBLISH_SHAPE.theme,
+          message: PUBLISH_SHAPE.message,
+          agent: agentSchema,
+        }),
+      },
+      run: async (args) => {
+        try {
+          const pages = (args.pages as (Record<string, unknown> & { slug: string })[]).map(({ expected_version, ...page }) => ({
+            ...page,
+            ...(expected_version !== undefined ? { expectedVersion: Number(expected_version) } : {}),
+          })) as TreePageInput[];
+          const results = await publishTree(ctx, {
+            pages,
+            shared: {
+              project: args.project as string | undefined,
+              branch: args.branch as string | undefined,
+              series: args.series as string | undefined,
+              theme: args.theme as string | undefined,
+              message: args.message as string | undefined,
+              agent: args.agent as PublishInput["agent"],
+            },
+          });
+          const count = (a: string) => results.filter((r) => r.action === a).length;
+          const warned = results.filter((r) => r.warnings.length);
+          const top = results.find((r) => !requireArtifact(ctx, r.slug).parentId) ?? results[0];
+          const tree = treeOf(ctx, requireArtifact(ctx, top.slug));
+          const lines = [
+            `Published ${results.length} page${results.length === 1 ? "" : "s"}: ${count("created")} new, ${count("updated")} updated, ${count("unchanged")} unchanged. Top page: ${top.url}`,
+            ...warned.map((r) => `${r.slug}: these parts show wrong; fix them with artifact_update:\n${r.warnings.map((w) => `  line ${w.line}: ${w.message}`).join("\n")}`),
+            ...results.filter((r) => r.droppedTicks?.length).map((r) => `${r.slug}: this version loses ${r.droppedTicks!.length} ticked item(s); put their words back to keep the ticks.`),
+            tree ? `\n${treeText(tree)}` : "",
+          ];
+          return ok(lines.filter(Boolean).join("\n"), results);
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
+      name: "artifact_tree",
+      config: {
+        title: "Read a tree of pages",
+        description:
+          "Indy: the tree a page belongs to, as an outline: every page's title, slug, version, open comments and where it sits. Use it before changing a course or a report with subpages, and pass tree: true to artifact_comments or artifact_wait to hear about every page in it.",
+        inputSchema: z.object({ slug: z.string().describe("any page in the tree") }),
+      },
+      run: async (args) => {
+        try {
+          const artifact = requireArtifact(ctx, String(args.slug));
+          const tree = treeOf(ctx, artifact);
+          if (!tree) return ok(`"${artifact.title}" has no subpages and no parent: it is a page on its own.`, { pages: [] });
+          const threads = ctx.db.prepare("SELECT COUNT(*) AS n FROM comments WHERE artifact_id = ? AND parent_id IS NULL AND status = 'open'");
+          const open = new Map(tree.nodes.map((n) => [n.slug, Number((threads.get(n.id) as { n: number }).n)]));
+          return ok(`${tree.nodes.length} pages under "${tree.root.title}" (${tree.root.slug}):\n${treeText(tree, artifact.slug)}`, {
+            top: tree.root.slug,
+            pages: tree.nodes.map((n) => ({
+              slug: n.slug,
+              title: n.title,
+              parent: n.parentSlug,
+              depth: n.depth,
+              group: n.group,
+              version: n.currentVersion,
+              open_comments: open.get(n.slug) ?? 0,
+              url: artifactUrl(ctx, n.slug),
+            })),
+          });
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    },
+    {
       name: "artifact_get",
       config: {
         title: "Read an artifact",
@@ -243,6 +393,7 @@ function toolList(ctx: ServiceContext): ToolDef[] {
               theme: artifact.theme,
               project: artifact.project,
               url: artifactUrl(ctx, artifact.slug),
+              ...treeFields(ctx, artifact),
               current_version: artifact.currentVersion,
               version: version.number,
               author_kind: version.authorKind,
@@ -371,20 +522,23 @@ function toolList(ctx: ServiceContext): ToolDef[] {
         inputSchema: z.object({
           slug: z.string(),
           status: z.enum(["open", "resolved", "all"]).optional().describe("defaults to open"),
+          tree: z.boolean().optional().describe("also every page under this one; each thread then says which page it is on"),
         }),
       },
       run: async (args) => {
         try {
-          const threads = listComments(ctx, String(args.slug), {
-            status: (args.status as "open" | "resolved" | "all") ?? "open",
-            audience: "agent",
-          });
+          const slugs = slugsFor(ctx, String(args.slug), args.tree === true);
+          const threads = slugs.flatMap((slug) =>
+            listComments(ctx, slug, { status: (args.status as "open" | "resolved" | "all") ?? "open", audience: "agent" }).map((t) => ({ ...t, page: slug })),
+          );
           const artifact = requireArtifact(ctx, String(args.slug));
           const flagged = threads.reduce((n, t) => n + [t, ...t.replies].filter((c) => needsOperatorOk(c, t)).length, 0);
           const waiting = threads.filter((t) => t.status === "open" && t.authorKind === "human" && t.sentAt === null).length;
           return ok(
             [
-              `${threads.length} ${args.status ?? "open"} thread${threads.length === 1 ? "" : "s"} on "${artifact.title}" (current version ${artifact.currentVersion}).`,
+              slugs.length > 1
+                ? `${threads.length} ${args.status ?? "open"} thread${threads.length === 1 ? "" : "s"} across "${artifact.title}" and the ${slugs.length - 1} page${slugs.length === 2 ? "" : "s"} under it. Each thread's page is its slug; anchors refer to that page's source.`
+                : `${threads.length} ${args.status ?? "open"} thread${threads.length === 1 ? "" : "s"} on "${artifact.title}" (current version ${artifact.currentVersion}).`,
               waiting ? `${waiting} not marked ready yet: the operator may still be adding to ${waiting === 1 ? "it" : "them"}.` : "",
               flagged ? `${flagged} comment${flagged === 1 ? " is" : "s are"} marked needs_operator_ok. ${OPERATOR_OK_NOTE}` : "",
             ]
@@ -392,6 +546,7 @@ function toolList(ctx: ServiceContext): ToolDef[] {
               .join(" "),
             threads.map((t) => ({
               id: t.id,
+              ...(slugs.length > 1 ? { page: t.page } : {}),
               author: t.authorName,
               author_kind: t.authorKind,
               untrusted: t.authorKind === "visitor",
@@ -535,27 +690,28 @@ function toolList(ctx: ServiceContext): ToolDef[] {
           slug: z.string(),
           after: z.number().int().min(0).optional().describe("event id from a previous call"),
           timeout_s: z.number().int().min(1).max(LIMITS.waitSeconds).optional(),
+          tree: z.boolean().optional().describe("wait on this page and every page under it; each event names its page"),
         }),
       },
       run: async (args) => {
         try {
           const slug = String(args.slug);
-          requireArtifact(ctx, slug);
+          const slugs = slugsFor(ctx, slug, args.tree === true);
           const timeoutMs = (args.timeout_s ? Number(args.timeout_s) : 30) * 1000;
-          let after = args.after !== undefined ? Number(args.after) : latestEventId(ctx, slug);
+          let after = args.after !== undefined ? Number(args.after) : latestEventId(ctx, slugs);
           const deadline = Date.now() + timeoutMs;
           // The page's Send panel tells the operator an agent is listening.
-          const done = beginWait(slug);
+          const done = slugs.map((s) => beginWait(s));
           try {
             for (;;) {
-              const { events, lastId } = listEvents(ctx, { slug, after });
+              const { events, lastId } = listEvents(ctx, { slugs, after });
               if (events.length) return ok(`${events.length} event(s) on "${slug}".`, { events, last_id: lastId });
               if (Date.now() >= deadline) return ok(`No feedback on "${slug}" within the timeout.`, { events: [], last_id: lastId });
               after = lastId;
               await sleep(1000);
             }
           } finally {
-            done();
+            done.forEach((d) => d());
           }
         } catch (err) {
           return fail(err);
@@ -811,7 +967,10 @@ function toolList(ctx: ServiceContext): ToolDef[] {
           );
           const shows = link.pinnedVersion ? `version ${link.pinnedVersion} only` : "the latest version";
           return ok(
-            `Shared "${slug}": ${link.url}\nAnyone ${link.mode === "email" ? "who confirms their email" : "with the link"} can open it until ${link.expiresAt}. It shows ${shows}; visitor comments are ${link.allowComments ? "on" : "off"}. The operator sees this link and your reason in the Share dialog and can revoke it there.`,
+            `Shared "${slug}": ${link.url}\nAnyone ${link.mode === "email" ? "who confirms their email" : "with the link"} can open it until ${link.expiresAt}. It shows ${shows}; visitor comments are ${link.allowComments ? "on" : "off"}.${(() => {
+              const under = subtreeIds(ctx, requireArtifact(ctx, slug).id).length - 1;
+              return under ? ` It also opens the ${under} page${under === 1 ? "" : "s"} under this one, at their latest versions.` : "";
+            })()} The operator sees this link and your reason in the Share dialog and can revoke it there.`,
             {
               url: link.url,
               mode: link.mode,

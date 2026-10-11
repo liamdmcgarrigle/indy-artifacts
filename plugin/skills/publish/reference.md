@@ -23,6 +23,8 @@ project: nightly-backups          # the repository's folder name; also picks the
 theme: graphite                   # optional; leave it out to follow the project's theme
 description: Nightly run summary  # optional one-liner in the index
 tags: [backup, nightly]           # optional
+parent: backup-overview           # optional: makes this a subpage of that page (see Subpages)
+group: Appendix                   # optional: a heading it is listed under among its siblings
 ---
 ```
 
@@ -576,6 +578,49 @@ images as it stores them.
 
 A block that fails to parse does not fail the publish: it renders an error box on the
 page and comes back in `warnings` with a line number.
+
+## Subpages
+
+A page can sit under another page, and a set of pages becomes a tree: a course with
+modules and lessons, or a report with its appendices. Each page in a tree is a whole
+page, with its own URL, versions, comments, ticks and form answers. The tree adds the
+way through it:
+
+- breadcrumbs in the header, and previous and next at the foot of every page;
+- a contents list of the whole tree, open beside the page for a big tree and behind a
+  "Pages" button for a small one;
+- one row in the library, the top page, with a count of the pages under it;
+- a share link on a page opens that page and everything under it.
+
+Put a page under another with `parent` (a slug), as a tool argument or in frontmatter.
+Siblings keep the order you publish them in; `position` (from 0) places one exactly, and
+`group` lists it under a heading among its siblings, after the pages with no group. A
+tree goes three levels below its top page at most. `parent: null` takes a page out of
+its tree.
+
+For a tree built in one go, `artifact_publish_tree` takes every page at once, each with
+its `slug` and `parent`, and checks them all before writing any. A page that has not
+changed keeps its version, so a script can send the whole tree again after editing one
+page. When a call lists every page under a parent, they take the call's order; when it
+lists only some, the others keep their places and new pages go at the end. A subpage is
+in its top page's project. `::pages` works only on a line of its own at the top level of
+a page. `artifact_tree` reads a tree back, and `tree: true` on `artifact_comments` and
+`artifact_wait` covers every page in it.
+
+Do not write navigation by hand. To list a page's subpages in its body, write
+`::pages`; it draws them as cards with their descriptions and stays current as pages
+are added. `::pages{depth=2}` also lists each one's own subpages, like a course map.
+
+```markdown
+---
+title: Load test, Oct 9
+description: Checkout API under 2,000 requests a second
+---
+
+The checkout API held 1,800 requests a second before p95 passed 250 ms.
+
+::pages
+```
 
 ## Checklists
 
