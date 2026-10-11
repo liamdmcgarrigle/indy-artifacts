@@ -171,6 +171,26 @@ describe("mcp endpoint", () => {
     expect(jsonOf(await callTool("artifact_comments", { slug: "mcp-demo" }))).toHaveLength(0);
   });
 
+  it("reminds the agent of comments waiting for an answer, on other tools' answers about the page", async () => {
+    const { createComment } = await import("@/lib/service/comments");
+    const { getContext } = await import("@/lib/service/context");
+    const comment = createComment(getContext(), "mcp-demo", { body: "also, the title is off", authorName: "liam" });
+
+    expect(textOf(await callTool("artifact_get", { slug: "mcp-demo" }))).toContain('1 comment thread on "mcp-demo" is waiting for an answer');
+    // The comments tool shows them already, so it carries no reminder.
+    expect(textOf(await callTool("artifact_comments", { slug: "mcp-demo" }))).not.toContain("waiting for an answer");
+
+    await callTool("artifact_reply", { comment_id: comment.id, body: "Fixed the title.", agent: { name: "vitest" } });
+    expect(textOf(await callTool("artifact_get", { slug: "mcp-demo" }))).not.toContain("waiting for an answer");
+
+    // Someone answering the reply puts the thread back in the reminder.
+    createComment(getContext(), "mcp-demo", { body: "still off", authorName: "liam", parentId: comment.id });
+    expect(textOf(await callTool("artifact_responses", { slug: "mcp-demo" }))).toContain("waiting for an answer");
+
+    await callTool("artifact_resolve", { comment_id: comment.id });
+    expect(textOf(await callTool("artifact_get", { slug: "mcp-demo" }))).not.toContain("waiting for an answer");
+  });
+
   it("wait returns promptly when there is nothing new", async () => {
     const res = await callTool("artifact_wait", { slug: "mcp-demo", timeout_s: 1 });
     expect(textOf(res)).toContain("No feedback");

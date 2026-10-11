@@ -32,7 +32,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "indy", version: pkg.version },
     instructions:
-      "Indy hosts artifacts: versioned pages, reports and forms the operator reads, comments on and answers in a browser. Publish one with artifact_publish instead of pasting a long report into the terminal, and read indy://reference for the blocks. The operator's comments do not interrupt you: after publishing, call artifact_wait to collect them, or artifact_comments to check.",
+      "Indy hosts artifacts: versioned pages, reports and forms the operator reads, comments on and answers in a browser. Publish one with artifact_publish instead of pasting a long report into the terminal, and read indy://reference for the blocks. The operator's comments do not interrupt you: artifact_comments shows every open one as soon as it is written, and artifact_wait returns when they mark a batch ready. Reply to comments like text messages: a sentence or two, plain words.",
   },
 );
 
