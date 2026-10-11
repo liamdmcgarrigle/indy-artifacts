@@ -130,7 +130,7 @@ export function anchorFromSelection(root: HTMLElement): Anchor | null {
   const last = texts[texts.length - 1];
   const block = blockOf(first);
   const endBlock = blockOf(last);
-  if (!block || !endBlock) return null;
+  if (!block || !endBlock || !root.contains(block) || !root.contains(endBlock)) return null;
 
   const from = offsetIn(block, first, first === range.startContainer ? range.startOffset : 0);
   if (from === null) return null;

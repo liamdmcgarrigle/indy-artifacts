@@ -724,15 +724,20 @@ export function ArtifactView(props: ArtifactViewProps) {
       window.clearTimeout(timer);
       timer = window.setTimeout(place, 180);
     };
+    // The button is fixed to the screen: it steps out of the way while the
+    // page moves and comes back beside the words once it settles.
+    const onMove = () => {
+      setSelected(null);
+      onChange();
+    };
     document.addEventListener("selectionchange", onChange);
-    // The button is fixed to the screen, so it follows the words as they scroll.
-    window.addEventListener("scroll", onChange, { passive: true });
-    window.visualViewport?.addEventListener("resize", onChange);
+    window.addEventListener("scroll", onMove, { passive: true });
+    window.visualViewport?.addEventListener("resize", onMove);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("selectionchange", onChange);
-      window.removeEventListener("scroll", onChange);
-      window.visualViewport?.removeEventListener("resize", onChange);
+      window.removeEventListener("scroll", onMove);
+      window.visualViewport?.removeEventListener("resize", onMove);
     };
   }, []);
 
