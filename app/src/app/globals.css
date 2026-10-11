@@ -1266,15 +1266,18 @@ kbd {
   }
 
   /* No room beside a pin, so the card becomes a sheet at the bottom. */
+  /* The keyboard covers the foot of the window without moving anything fixed
+     there, so the sheet sits on top of it (use-keyboard-inset), and never grows
+     taller than what is left showing. */
   .pop {
     position: fixed;
     top: auto !important;
     left: 10px !important;
     right: 10px;
-    bottom: 10px;
+    bottom: calc(10px + var(--keyboard-inset, 0px));
     width: auto;
     max-width: none;
-    max-height: 70vh;
+    max-height: min(70vh, calc(var(--visible-height, 100vh) - 20px));
     overflow-y: auto;
     z-index: 45;
     border-radius: 16px;
@@ -1283,8 +1286,8 @@ kbd {
 
   .panel {
     position: fixed;
-    inset: auto 0 0 0;
-    max-height: 75vh;
+    inset: auto 0 var(--keyboard-inset, 0px) 0;
+    max-height: min(75vh, calc(var(--visible-height, 100vh) - 10px));
     width: auto;
     max-width: none;
     border-radius: 16px 16px 0 0;

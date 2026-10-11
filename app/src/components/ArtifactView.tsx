@@ -2,6 +2,7 @@
 
 import { Ago } from "@/components/indy/Ago";
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -1140,6 +1141,9 @@ export function ArtifactView(props: ArtifactViewProps) {
     return list;
   }, [visitor, canEdit, canComment, toggleTool, goVersion, props.versionNumber, props.currentVersion]);
   useCommands("viewer", commands);
+
+  // On a phone the comment sheet rides above the keyboard, not under it.
+  useKeyboardInset(draft !== null || active !== null || panel !== "none");
 
   // Leaving with unsaved changes asks first, by reload, close or Back.
   useLeaveGuard(editing && dirty && !saving);
