@@ -191,6 +191,16 @@ export function listComments(
   }));
 }
 
+/**
+ * Open threads still waiting for an answer: the last word in each is the
+ * operator's or a visitor's. They may be talking to each other rather than to
+ * an agent, so this says only that nobody has answered. A thread drops off
+ * once an agent replies, and comes back when someone answers that reply.
+ */
+export function awaitingAnswer(ctx: ServiceContext, slug: string): Thread[] {
+  return listComments(ctx, slug, { audience: "agent" }).filter((t) => (t.replies.at(-1) ?? t).authorKind !== "agent");
+}
+
 export function patchComment(
   ctx: ServiceContext,
   id: string,

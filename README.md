@@ -39,8 +39,7 @@ docker compose up -d
 - Checklists that show who ticked each item and when
 - Forms and multiple-choice questions the agent reads back
 - Comments pinned to the exact words or element they are about
-- A Send button that delivers your comments to the agent, or the agent waits on the page and
-  picks them up as they arrive
+- The agent reads your comments as you write them, and Mark ready tells it you are done
 - Editing in place for text, number tiles, chart data, and form questions, with other people's
   carets shown live
 - The agent can type into the page while you watch

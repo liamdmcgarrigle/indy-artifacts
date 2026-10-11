@@ -195,10 +195,10 @@ function focusInPlace(el: HTMLElement | null): void {
 const NAME_KEY = "art-author-name";
 
 const LISTENER_TEXT: Record<Listener, [label: string, detail: string]> = {
-  waiting: ["Agent is waiting", "It gets this right away."],
-  terminal: ["Agent's terminal", "Orca types this into its session now."],
-  "terminal-offline": ["Orca is not picking up", "The agent sees this next time it checks the page."],
-  none: ["No agent listening", "It sees this next time it checks the page."],
+  waiting: ["Agent is waiting", "It picks this up right away."],
+  terminal: ["Agent's terminal", "Orca tells its session now."],
+  "terminal-offline": ["Orca is not picking up", "The agent picks this up next time it checks the page."],
+  none: ["No agent waiting", "It picks this up next time it checks the page."],
 };
 const POP_W = 312;
 const POP_GAP = 16;
@@ -252,7 +252,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   // Read by the message handler: a frame's pick counts only while picking is on.
   const toolRef = useRef(tool);
   toolRef.current = tool;
-  const [draft, setDraft] = useState<{ anchor: Anchor | null; body: string; notify: boolean } | null>(null);
+  const [draft, setDraft] = useState<{ anchor: Anchor | null; body: string } | null>(null);
   const [draftSpot, setDraftSpot] = useState<Spot | null>(null);
   const [bubble, setBubble] = useState<{ top: number; left: number; anchor: Anchor } | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
@@ -675,7 +675,6 @@ export function ArtifactView(props: ArtifactViewProps) {
           y: data.point?.y ?? 0.5,
         }),
         body: "",
-        notify: false,
       });
     }
     window.addEventListener("message", onMessage);
@@ -958,7 +957,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       setPick(null);
       if (anchor) {
         setActiveId(null);
-        setDraft({ anchor, body: "", notify: false });
+        setDraft({ anchor, body: "" });
       }
       return;
     }
@@ -1038,7 +1037,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     window.getSelection()?.removeAllRanges();
     setBubble(null);
     setActiveId(null);
-    setDraft({ anchor, body: "", notify: false });
+    setDraft({ anchor, body: "" });
   }
 
   function openThread(thread: ThreadView) {
@@ -1241,7 +1240,6 @@ export function ArtifactView(props: ArtifactViewProps) {
       body: bodyText ?? draft?.body ?? "",
       author_name: author,
       anchor: parentId ? null : (draft?.anchor ?? null),
-      notify: parentId ? false : (draft?.notify ?? false),
       parent_id: parentId ?? null,
       version_number: props.versionNumber,
     };
@@ -1268,7 +1266,6 @@ export function ArtifactView(props: ArtifactViewProps) {
         window.getSelection()?.removeAllRanges();
       }
       await refreshThreads();
-      if (payload.notify) setNotice({ kind: "good", text: "Comment sent to the agent." });
       return true;
     } catch {
       setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
@@ -1349,7 +1346,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       });
       const data = (await res.json()) as { count?: number; ticks?: number; error?: { message?: string } };
       if (!res.ok) {
-        setNotice({ kind: "bad", text: data.error?.message ?? "could not send" });
+        setNotice({ kind: "bad", text: data.error?.message ?? "could not mark them ready" });
         return;
       }
       setPanel("none");
@@ -1359,7 +1356,7 @@ export function ArtifactView(props: ArtifactViewProps) {
       const heard = listener === "waiting" || listener === "terminal";
       setNotice({
         kind: "good",
-        text: !sent ? "Nothing new to send." : heard ? `Sent ${sent} to the agent.` : `Saved ${sent} for the agent. It sees them the next time it checks this page.`,
+        text: !sent ? "Nothing new to mark ready." : heard ? `Marked ${sent} ready. The agent has them now.` : `Marked ${sent} ready. The agent picks them up next time it checks this page.`,
       });
     } catch {
       setNotice({ kind: "bad", text: "Indy did not answer. Check the connection and try again." });
@@ -1449,7 +1446,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                     <span className="rowitem__head">
                       {thread.authorName} · {when(thread.createdAt)}
                       {thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
-                        <span className="badge badge--unsent">unsent</span>
+                        <span className="badge badge--unsent">not ready</span>
                       ) : null}
                       {thread.status === "resolved" ? <span className="badge">resolved</span> : null}
                       {!visitor && thread.authorKind === "visitor" ? <span className="badge">{thread.endorsedAt ? "visitor" : "visitor · ask first"}</span> : null}
@@ -1466,7 +1463,10 @@ export function ArtifactView(props: ArtifactViewProps) {
       {panel === "send" ? (
         <div className="panel panel--narrow">
           <div className="composer">
-            <div className="tiny">{capitalise(sentWhat(unsent, unsentTicks) || "nothing")} will go to the agent as one message.</div>
+            <div className="tiny">
+              The agent can read your comments already. Marking {sentWhat(unsent, unsentTicks) || "nothing"} ready tells it you are done and it
+              can start.
+            </div>
             {listener ? (
               <div className={`listener listener--${listener}`} role="status">
                 <span className="listener__dot" aria-hidden />
@@ -1479,7 +1479,7 @@ export function ArtifactView(props: ArtifactViewProps) {
             <input
               className="field"
               autoFocus
-              placeholder="Optional note, e.g. done reviewing"
+              placeholder="Optional note, e.g. go ahead with these"
               value={batchMessage}
               onChange={(e) => setBatchMessage(e.target.value)}
               onKeyDown={(e) => {
@@ -1491,8 +1491,8 @@ export function ArtifactView(props: ArtifactViewProps) {
               <button className="btn btn--ghost" onClick={() => setPanel("none")}>
                 Cancel
               </button>
-              <button className="btn btn--primary" onClick={sendBatch} disabled={busy} title="Send (⌘↵ or Enter)">
-                Send to agent <SendKeys />
+              <button className="btn btn--primary" onClick={sendBatch} disabled={busy} title="Mark ready (⌘↵ or Enter)">
+                Mark ready <SendKeys />
               </button>
             </div>
           </div>
@@ -1627,7 +1627,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                     onClick={() => {
                       setMenu(null);
                       setPick(null);
-                      setDraft({ anchor: o.anchor, body: "", notify: false });
+                      setDraft({ anchor: o.anchor, body: "" });
                     }}
                   >
                     {o.label}
@@ -1712,14 +1712,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                     {visitor ? (
                       <span className="tiny">{identity ? `Commenting as ${identity.name}` : "You'll be asked for your name first."}</span>
                     ) : (
-                      <label className="check">
-                        <input
-                          type="checkbox"
-                          checked={draft.notify}
-                          onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
-                        />
-                        Notify agent
-                      </label>
+                      <span />
                     )}
                     <span style={{ display: "flex", gap: 6 }}>
                       <button className="btn btn--ghost" onClick={() => setDraft(null)}>
@@ -1741,7 +1734,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                 className="btn btn--primary"
                 onClick={() => {
                   setActiveId(null);
-                  setDraft({ anchor: bubble.anchor, body: "", notify: false });
+                  setDraft({ anchor: bubble.anchor, body: "" });
                   setBubble(null);
                 }}
               >
@@ -1758,7 +1751,7 @@ export function ArtifactView(props: ArtifactViewProps) {
           style={{ top: selected.top, left: selected.left }}
           onClick={() => {
             setActiveId(null);
-            setDraft({ anchor: selected.anchor, body: "", notify: false });
+            setDraft({ anchor: selected.anchor, body: "" });
             setSelected(null);
             window.getSelection()?.removeAllRanges();
           }}
@@ -1932,7 +1925,7 @@ function ThreadCard({
                 <span className="msg__who">{message.authorName}</span>
                 <span>{when(message.createdAt)}</span>
                 {index === 0 && role === "owner" && thread.authorKind === "human" && !thread.sentAt && thread.status === "open" ? (
-                  <span className="chip">not sent</span>
+                  <span className="chip">not ready</span>
                 ) : null}
                 {role === "owner" && message.authorKind === "visitor" ? <span className="chip chip--visitor">visitor</span> : null}
               </div>
