@@ -554,14 +554,15 @@ kbd {
   color: var(--art-text);
   font-size: 20px;
 }
-.touchbar__select {
-  flex: 1;
-  height: 48px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--primary, var(--art-accent));
-  color: var(--primary-foreground, var(--art-on-accent));
-  font: 600 15px var(--art-font-sans);
+/* The touch screen's comment button for selected words, placed in script
+   clear of the system's copy menu and search panel. */
+.selcomment {
+  position: fixed;
+  z-index: 36;
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 22px;
+  transform: translateX(-50%);
   box-shadow: var(--art-shadow-lg);
 }
 .touchbar__hint {
