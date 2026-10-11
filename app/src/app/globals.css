@@ -175,6 +175,27 @@ kbd {
   border-color: transparent;
 }
 
+/* The send shortcut on a send button: quiet, and gone where there is no keyboard. */
+.sendkeys {
+  margin-left: 2px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  color: inherit;
+  font-family: var(--art-font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  opacity: 0.8;
+}
+
+@media (hover: none) {
+  .sendkeys {
+    display: none;
+  }
+}
+
 .btn--ghost {
   background: transparent;
   border-color: transparent;
@@ -918,7 +939,7 @@ kbd {
 .reply__row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--art-space-2);
 }
 

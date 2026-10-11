@@ -166,6 +166,22 @@ function fanOut<T extends { top: number; left: number }>(pins: T[]): T[] {
   return placed;
 }
 
+/** ⌘↵ (Ctrl+↵ off a Mac) sends from every box in a comment, the way it does in most chat apps. */
+function isSendKey(event: React.KeyboardEvent): boolean {
+  return event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing;
+}
+
+/** The send shortcut, shown on a send button. Hidden on a touch screen, which has no such keys. */
+function SendKeys() {
+  const [mac, setMac] = useState(true);
+  useEffect(() => setMac(/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)), []);
+  return (
+    <kbd className="sendkeys" aria-hidden>
+      {mac ? "⌘↵" : "Ctrl ↵"}
+    </kbd>
+  );
+}
+
 /** autoFocus without the scroll: the box is placed where the reader already is. */
 function focusInPlace(el: HTMLElement | null): void {
   el?.focus({ preventScroll: true });
@@ -1416,15 +1432,16 @@ export function ArtifactView(props: ArtifactViewProps) {
               value={batchMessage}
               onChange={(e) => setBatchMessage(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void sendBatch();
+                // One line, so a plain Enter sends too.
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) void sendBatch();
               }}
             />
             <div className="composer__row">
               <button className="btn btn--ghost" onClick={() => setPanel("none")}>
                 Cancel
               </button>
-              <button className="btn btn--primary" onClick={sendBatch} disabled={busy}>
-                Send to agent
+              <button className="btn btn--primary" onClick={sendBatch} disabled={busy} title="Send (⌘↵ or Enter)">
+                Send to agent <SendKeys />
               </button>
             </div>
           </div>
@@ -1621,7 +1638,10 @@ export function ArtifactView(props: ArtifactViewProps) {
                     placeholder="What should change?"
                     onChange={(e) => setDraft({ ...draft, body: e.target.value })}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void postComment();
+                      if (isSendKey(e)) {
+                        e.preventDefault();
+                        void postComment();
+                      }
                     }}
                   />
                   {props.userName || visitor ? null : <input
@@ -1630,6 +1650,12 @@ export function ArtifactView(props: ArtifactViewProps) {
                     onChange={(e) => rememberName(e.target.value)}
                     placeholder="Your name"
                     aria-label="Your name"
+                    onKeyDown={(e) => {
+                      if (isSendKey(e)) {
+                        e.preventDefault();
+                        void postComment();
+                      }
+                    }}
                   />}
                   <div className="composer__row">
                     {visitor ? (
@@ -1648,8 +1674,8 @@ export function ArtifactView(props: ArtifactViewProps) {
                       <button className="btn btn--ghost" onClick={() => setDraft(null)}>
                         Cancel
                       </button>
-                      <button className="btn btn--primary" onClick={() => void postComment()} disabled={busy || !draft.body.trim()}>
-                        Comment
+                      <button className="btn btn--primary" onClick={() => void postComment()} disabled={busy || !draft.body.trim()} title="Comment (⌘↵)">
+                        Comment <SendKeys />
                       </button>
                     </span>
                   </div>
@@ -1940,7 +1966,7 @@ function ReplyBox({ onSend, busy }: { onSend: (text: string) => Promise<boolean>
         onBlur={() => setFocused(false)}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
+          if (isSendKey(event)) {
             event.preventDefault();
             void send();
           }
@@ -1948,9 +1974,8 @@ function ReplyBox({ onSend, busy }: { onSend: (text: string) => Promise<boolean>
       />
       {focused || text ? (
         <div className="reply__row">
-          <span className="tiny">Enter sends</span>
-          <button className="btn btn--primary" disabled={busy || !text.trim()} onMouseDown={(e) => e.preventDefault()} onClick={send}>
-            Reply
+          <button className="btn btn--primary" disabled={busy || !text.trim()} onMouseDown={(e) => e.preventDefault()} onClick={send} title="Reply (⌘↵)">
+            Reply <SendKeys />
           </button>
         </div>
       ) : null}
