@@ -42,6 +42,11 @@ export interface FieldSpec {
   /** Words for the two ends of a scale: "coin flip" … "certain". */
   low?: string;
   high?: string;
+  /**
+   * Set when the question takes an optional note under its answer: the words
+   * that invite one. Written `note` (bare) or `note="Anything else?"`.
+   */
+  note?: string;
 }
 
 export interface FormSettings {
@@ -51,6 +56,20 @@ export interface FormSettings {
 
 export type Answer = string | number | boolean | string[] | null;
 export type Answers = Record<string, Answer>;
+
+export const DEFAULT_NOTE = "Add a note";
+
+/** Where a question's note is kept among the answers: beside it, under its own key. */
+export function noteKey(name: string): string {
+  return `${name}.note`;
+}
+
+/** The note left on a question, or "" when there is none. */
+export function noteText(field: FieldSpec | undefined, answers: Answers): string {
+  if (!field || field.note === undefined) return "";
+  const value = answers[noteKey(field.name)];
+  return typeof value === "string" ? value.trim() : "";
+}
 
 const DEFAULTS: FormSettings = { submit: "Submit", confirm: "Thanks, your answers are in." };
 
@@ -94,6 +113,7 @@ export function fieldSpec(attrs: Record<string, unknown>, kind: "field" | "choic
     step: num(attrs.step),
     low: attrs.low ? String(attrs.low) : undefined,
     high: attrs.high ? String(attrs.high) : undefined,
+    note: attrs.note === undefined || attrs.note === null || attrs.note === "false" ? undefined : String(attrs.note).trim() || DEFAULT_NOTE,
   };
   if (type === "choice") spec.options = options;
   else if (type === "select" || type === "radio" || type === "checkboxes") spec.options = splitOptions(attrs.options);
@@ -182,6 +202,9 @@ export function checkAnswer(field: FieldSpec, value: Answer | undefined): string
 export function cleanAnswers(fields: FieldSpec[], raw: Record<string, unknown>): Answers {
   const out: Answers = {};
   for (const f of fields) {
+    // A note is optional and only kept where the question asks for one.
+    const note = f.note === undefined ? undefined : raw[noteKey(f.name)];
+    if (typeof note === "string" && note.trim()) out[noteKey(f.name)] = note.trim().slice(0, 20_000);
     const v = raw[f.name];
     if (v === undefined || v === null) continue;
     // Each option once, and no more picks than there are options.

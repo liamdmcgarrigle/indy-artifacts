@@ -652,7 +652,7 @@ Everything on one screen.
 :::
 
 ::field{name=why type=textarea label="Why this one?" required placeholder="A line or two"}
-::field{name=sure type=scale label="How sure are you?" min=1 max=5 low="a coin flip" high="certain"}
+::field{name=sure type=scale label="How sure are you?" min=1 max=5 low="a coin flip" high="certain" note}
 ::field{name=worries type=checkboxes label="Anything worrying?" options="Too many steps|Total shows late"}
 \`\`\`
 
@@ -660,6 +660,12 @@ Everything on one screen.
 checkboxes (these three take \`options="A|B|C"\`), checkbox, switch, rating (\`max\`),
 scale (\`min\`, \`max\`, \`low\`, \`high\`) and slider (\`min\`, \`max\`, \`step\`). Every question
 needs a unique \`name\`; \`label\`, \`help\`, \`placeholder\` and \`required\` are optional.
+
+For room to explain an answer, add \`note\` to the question (a \`::field\` or a \`:::choice\`)
+rather than a separate notes question after it. It puts an optional box under the answer,
+behind an "Add a note" link, and it is not numbered as a question of its own. Give it
+words to invite something specific: \`note="Anything we missed?"\`. Notes come back
+beside the answers in \`artifact_responses\`, under \`notes\`.
 A \`:::choice\` takes \`multiple\` to allow several picks and \`columns\` to set the grid.
 On a phone the options stack, one per row; add \`compact\` to keep them side by side
 (two across at most), which suits options that are screens or images to compare:

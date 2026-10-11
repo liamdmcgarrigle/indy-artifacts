@@ -30,8 +30,9 @@ function loadAnswers(slug: string, byName: Map<string, FieldSpec>): Answers {
   try {
     const raw = JSON.parse(localStorage.getItem(storageKey(slug)) ?? "null") as unknown;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    // Drop answers to questions the page no longer asks.
-    return Object.fromEntries(Object.entries(raw as Answers).filter(([name]) => byName.has(name)));
+    // Drop answers (and notes) to questions the page no longer asks.
+    const asked = (key: string) => byName.has(key) || (key.endsWith(".note") && byName.get(key.slice(0, -5))?.note !== undefined);
+    return Object.fromEntries(Object.entries(raw as Answers).filter(([key]) => asked(key)));
   } catch {
     return {};
   }

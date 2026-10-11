@@ -517,6 +517,40 @@ kbd.kbd {
   line-height: 1.5;
   color: var(--muted-foreground);
 }
+/* A question's optional note: a quiet link until it is wanted, then a box. */
+.art-q__note-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.art-q__note-add:hover:not(:disabled) {
+  color: var(--foreground);
+}
+.art-q__note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.art-q__note-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.art-q__note-optional {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
 .art-q__error {
   display: flex;
   align-items: center;

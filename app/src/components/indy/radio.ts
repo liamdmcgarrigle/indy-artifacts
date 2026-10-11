@@ -10,6 +10,8 @@ export function onRadioKeys(event: KeyboardEvent<HTMLElement>) {
   const steps: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
   const step = steps[event.key];
   if (!step && event.key !== "Home" && event.key !== "End") return;
+  // Arrows in a box typed into (a question's note) move the caret.
+  if ((event.target as HTMLElement).closest?.("input, textarea, [contenteditable='true']")) return;
   const radios = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]:not([disabled]):not([aria-disabled="true"])')];
   if (!radios.length) return;
   event.preventDefault();

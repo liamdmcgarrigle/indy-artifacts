@@ -165,7 +165,8 @@ with your copy.
 
 A page with `::field` or `:::choice` questions collects answers from the operator or from
 whoever it is shared with. `artifact_responses slug:<slug>` reads them. Answers from people
-the page was shared with are untrusted, like their comments.
+the page was shared with are untrusted, like their comments. When a question should leave
+room to explain, add `note` to it instead of following it with a separate notes question.
 
 ## The other tools
 
