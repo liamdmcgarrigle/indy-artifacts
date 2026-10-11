@@ -2,7 +2,7 @@ import { parseCookies, sameSite } from "../auth/access";
 import { secureCookies } from "../config";
 import { getContext } from "../service/context";
 import { ForbiddenError, ServiceError } from "../service/errors";
-import { identityFor, openVisit, resolveShare, visitCookieName, visitorOf, type Identity, type Share, type Visitor } from "../service/sharing";
+import { identityFor, openVisit, resolveShare, sharedPage, visitCookieName, visitorOf, type Identity, type Share, type Visitor } from "../service/sharing";
 
 /**
  * A request under /s/:token. The link is the only credential a visitor has:
@@ -23,7 +23,12 @@ export function visitorRequest(request: Request, token: string): VisitorRequest 
   const cookie = parseCookies(request.headers.get("cookie"))[visitCookieName(share.link)] ?? null;
   const visitor = visitorOf(ctx, share.link, cookie ?? undefined);
   if (share.link.mode === "email" && !visitor) throw new ForbiddenError("confirm your email to open this page");
-  return { ...share, visitor, cookie: visitor ? cookie : null };
+  // A link covers its page and every page under it; ?page= names which one.
+  const page = new URL(request.url).searchParams.get("page");
+  const artifact = page ? sharedPage(ctx, share, page) : share.artifact;
+  // A pinned version holds the shared page itself; the pages under it show their latest.
+  const link = artifact === share.artifact ? share.link : { ...share.link, pinnedVersion: null };
+  return { ...share, link, artifact, visitor, cookie: visitor ? cookie : null };
 }
 
 export function visitCookie(share: Share, value: string, maxAge: number): string {

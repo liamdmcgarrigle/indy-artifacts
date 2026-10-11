@@ -1,0 +1,95 @@
+import { cookies } from "next/headers";
+import type { Metadata } from "next";
+import { ArtifactView } from "@/components/ArtifactView";
+import { ShareGate, ShareGone } from "@/components/share/ShareGate";
+import { getContext } from "@/lib/service/context";
+import { NotFoundError } from "@/lib/service/errors";
+import { formOf } from "@/lib/service/responses";
+import { requireVersion } from "@/lib/service/artifacts";
+import { recordOpen, resolveShare, sharedBy, sharedPage, visitCookieName, visitorOf, type Share } from "@/lib/service/sharing";
+import { loadView } from "@/lib/view";
+
+function share(token: string): Share | string {
+  try {
+    return resolveShare(getContext(), token);
+  } catch (err) {
+    if (err instanceof NotFoundError) return err.message;
+    throw err;
+  }
+}
+
+/** The tab title of a shared page, or of a page under it. */
+export function sharedMetadata(token: string, page?: string): Metadata {
+  const found = share(token);
+  let title = typeof found === "string" ? "Not shared" : found.artifact.title;
+  if (typeof found !== "string" && page) {
+    try {
+      title = sharedPage(getContext(), found, page).title;
+    } catch {
+      title = "Not shared";
+    }
+  }
+  return { title, robots: { index: false, follow: false } };
+}
+
+/**
+ * A page opened through a share link, or (with `page`) one under it at
+ * /s/<token>/p/<slug>. The visitor sees the page, and its comments when the
+ * link allows them; never the library, other versions or anything the owner
+ * and their agents said.
+ */
+export async function renderShared(token: string, page?: string) {
+  const ctx = getContext();
+  const found = share(token);
+  if (typeof found === "string") return <ShareGone message={found} />;
+  const { link: shared, artifact: top } = found;
+  let artifact = top;
+  if (page) {
+    try {
+      artifact = sharedPage(ctx, found, page);
+    } catch (err) {
+      if (err instanceof NotFoundError) return <ShareGone message={err.message} />;
+      throw err;
+    }
+  }
+  // A pinned version holds the shared page itself; the pages under it show their latest.
+  const link = artifact === top ? shared : { ...shared, pinnedVersion: null };
+
+  const jar = await cookies();
+  const visitor = visitorOf(ctx, link, jar.get(visitCookieName(link))?.value);
+  const owner = sharedBy(ctx);
+  if (link.mode === "email" && !visitor) {
+    const isForm = formOf(requireVersion(ctx, artifact).source).fields.length > 0;
+    return <ShareGate token={token} title={artifact.title} sharedBy={owner} isForm={isForm} />;
+  }
+  recordOpen(ctx, link, visitor?.email ?? null);
+
+  const view = loadView(artifact.slug, link.pinnedVersion ?? undefined, { audience: { linkId: link.id }, within: top.slug });
+  return (
+    <ArtifactView
+      {...view}
+      // Only what the page itself shows: no history, no organisation, no build notes.
+      project={null}
+      series={null}
+      branch={null}
+      agentName={null}
+      versions={[]}
+      currentVersion={view.versionNumber}
+      warnings={[]}
+      buildLog={null}
+      sharing={undefined}
+      initialThreads={link.allowComments ? view.initialThreads : []}
+      form={view.form ? { ...view.form, responses: 0 } : null}
+      userName={null}
+      unsentTicks={0}
+      visitor={{
+        token,
+        email: visitor?.email ?? null,
+        allowComments: link.allowComments,
+        sharedBy: owner,
+        mode: link.mode,
+        top: top.slug,
+      }}
+    />
+  );
+}

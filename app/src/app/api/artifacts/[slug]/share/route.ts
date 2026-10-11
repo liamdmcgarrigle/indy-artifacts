@@ -1,7 +1,8 @@
 import { requireOwner } from "@/lib/auth/access";
 import { getContext } from "@/lib/service/context";
 import { requireArtifact } from "@/lib/service/artifacts";
-import { activeLink, agentOrigin, emailGateAvailable, renewLink, setSharing, shareUrl, type Expiry, type ShareLink, type ShareMode } from "@/lib/service/sharing";
+import { activeLink, agentOrigin, emailGateAvailable, linkThrough, renewLink, setSharing, shareUrl, type Expiry, type ShareLink, type ShareMode } from "@/lib/service/sharing";
+import { subtreeIds } from "@/lib/service/tree";
 import { config } from "@/lib/config";
 import { body, fail, json } from "@/lib/api/respond";
 
@@ -17,6 +18,12 @@ function state(slug: string, link: ShareLink | null) {
     privateUrl: `${config().url}/a/${artifact.slug}`,
     emailGate: emailGateAvailable(),
     currentVersion: artifact.currentVersion,
+    // A link covers the pages under its page too, and a page can be shared by a link above it.
+    subpages: subtreeIds(getContext(), artifact.id).length - 1,
+    through: (() => {
+      const t = linkThrough(getContext(), artifact);
+      return t ? { title: t.title, url: t.url, mode: t.link.mode } : null;
+    })(),
   };
 }
 

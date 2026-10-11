@@ -161,3 +161,39 @@ describe("visitor ticks and comments", () => {
     expect(revoked.status).toBe(404);
   });
 });
+
+describe("a link covers the pages under its page", () => {
+  let sub = "";
+  let subKey = "";
+  let visitor = "";
+
+  beforeAll(async () => {
+    const { publishArtifact } = await import("@/lib/service/artifacts");
+    const { taskItemsOf } = await import("@/lib/doc/parse");
+    const source = "---\ntitle: Appendix\n---\n\n- [ ] Read the appendix\n";
+    sub = (await publishArtifact(services.getContext(), { source, parent: slug })).slug;
+    // The tests above end with the link turned off; this needs a working one.
+    link = services.setSharing(services.getContext(), slug, { mode: "link", allowComments: true })!.token;
+    subKey = taskItemsOf(source)[0].key;
+    visitor = ((await (await call(identity.POST, "POST", "/api/identity", { body: { name: "Ana", email: "ana@studio.io" } })).json()) as { token: string }).token;
+  });
+
+  it("takes ticks and comments on a subpage named with ?page=", async () => {
+    const tick = await call(ticks.POST, "POST", `/api/ticks?page=${sub}`, { body: { key: subKey, checked: true }, id: visitor });
+    expect(tick.status).toBe(200);
+    const comment = await call(comments.POST, "POST", `/api/comments?page=${sub}`, { body: { body: "on the appendix" }, id: visitor });
+    expect(comment.status).toBe(201);
+    const { listComments } = await import("@/lib/service/comments");
+    expect(listComments(services.getContext(), sub, { status: "all" }).map((t) => t.body)).toEqual(["on the appendix"]);
+  });
+
+  it("refuses a page outside the shared tree", async () => {
+    const { publishArtifact } = await import("@/lib/service/artifacts");
+    const outside = (await publishArtifact(services.getContext(), { source: "---\ntitle: Private\n---\n\nNot shared.\n" })).slug;
+    const res = await call(comments.GET, "GET", `/api/comments?page=${outside}`);
+    expect(res.status).toBe(404);
+    // Nor does a link reach up the tree from a shared subpage.
+    const subLink = services.setSharing(services.getContext(), sub, { mode: "link", allowComments: true })!.token;
+    expect((await call(comments.GET, "GET", `/api/comments?page=${slug}`, { on: subLink })).status).toBe(404);
+  });
+});
