@@ -1321,6 +1321,12 @@ kbd {
     box-shadow: 0 -8px 40px rgb(0 0 0 / 0.45);
   }
 
+  /* The sheet is stacked inside the pin layer, below a form's send bar, so the
+     bar steps aside while a comment is open rather than covering its foot. */
+  :root:has(.pins .pop) .formbar {
+    visibility: hidden;
+  }
+
   .panel {
     position: fixed;
     inset: auto 0 var(--keyboard-inset, 0px) 0;
