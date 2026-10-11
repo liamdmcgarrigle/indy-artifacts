@@ -72,14 +72,20 @@ export function DocView(props: {
   const [mounted, setMounted] = useState(false);
   const markMounted = useCallback(() => setMounted(true), []);
   return (
-    <>
+    <div className="docview">
       {/* Editing is a different set of node views, so it is a fresh editor. */}
       {/* Until the editing code arrives, the page stays up as it was. */}
+      {/* The editor builds out of the flow, unseen, and takes the stand-in's
+          place in one step. Built in the flow above it, it pushed the stand-in
+          down, the browser's scroll anchoring followed it, and a reload landed
+          at the foot of the page. */}
       {primitives ? (
-        <DocEditor key={editing ? "edit" : "view"} {...props} editing={editing} editViews={editViews} onMounted={markMounted} />
+        <div className={mounted ? undefined : "docview__pending"} aria-hidden={mounted ? undefined : true}>
+          <DocEditor key={editing ? "edit" : "view"} {...props} editing={editing} editViews={editViews} onMounted={markMounted} />
+        </div>
       ) : null}
       {mounted ? null : <div className="art-content" dangerouslySetInnerHTML={{ __html: props.fallbackHtml }} />}
-    </>
+    </div>
   );
 }
 
