@@ -10,10 +10,47 @@ import type { ArtifactViewProps, ThreadView } from "@/components/ArtifactView";
 import type { Audience } from "./service/comments";
 import type { Metadata } from "next";
 import { pageOwner } from "./auth/page";
-import { activeLink } from "./service/sharing";
+import { activeLink, linkThrough } from "./service/sharing";
 import { getBuild } from "./service/storybooks";
 import type { ServiceContext } from "./service/context";
 import { tickViews, unsentTicks } from "./service/ticks";
+import { ancestorsOf, treeOf } from "./service/tree";
+import { isBig, type PageTree } from "./page-tree";
+import type { Artifact } from "./service/types";
+
+/**
+ * The tree around a page for the viewer. A visitor sees only what their link
+ * covers: the shared page and what is under it, nothing above it.
+ */
+export function pageTreeFor(ctx: ServiceContext, artifact: Artifact, within?: string): PageTree | null {
+  const tree = treeOf(ctx, artifact);
+  if (!tree) return null;
+  let nodes = tree.nodes;
+  if (within) {
+    const start = nodes.findIndex((n) => n.slug === within);
+    if (start < 0) return null;
+    const end = nodes.findIndex((n, i) => i > start && n.depth <= nodes[start].depth);
+    const base = nodes[start].depth;
+    nodes = nodes.slice(start, end === -1 ? undefined : end).map((n) => ({ ...n, depth: n.depth - base }));
+    if (nodes.length < 2) return null;
+  }
+  const visible = new Set(nodes.map((n) => n.slug));
+  const ancestors = ancestorsOf(ctx, artifact).filter((a) => visible.has(a.slug)).map(({ slug, title }) => ({ slug, title }));
+  return {
+    nodes: nodes.map((n, i) => ({
+      slug: n.slug,
+      title: n.title,
+      description: n.description,
+      depth: n.depth,
+      parent: i === 0 ? null : n.parentSlug,
+      group: n.group,
+      unseen: within ? false : n.unseen,
+    })),
+    current: artifact.slug,
+    ancestors,
+    big: isBig(nodes),
+  };
+}
 
 /** The Storybooks a version draws stories from, by their own names. */
 function storybooksShown(ctx: ServiceContext, pins: Record<string, string>): string[] {
@@ -49,7 +86,7 @@ function docFor(key: string, source: string, rendered: ReturnType<typeof renderV
 }
 
 /** Everything the viewer needs for one version of one artifact. */
-export function loadView(slug: string, versionNumber?: number, opts: { audience?: Audience } = {}): ArtifactViewProps {
+export function loadView(slug: string, versionNumber?: number, opts: { audience?: Audience; within?: string } = {}): ArtifactViewProps {
   const ctx = getContext();
   const artifact = requireArtifact(ctx, slug);
   const pageTheme = effectiveTheme(ctx, artifact);
@@ -123,8 +160,10 @@ export function loadView(slug: string, versionNumber?: number, opts: { audience?
     initialThreads: threads,
     ticks: framed ? [] : tickViews(ctx, artifact, version),
     unsentTicks: framed ? 0 : unsentTicks(ctx, artifact.id).length,
-    sharing: activeLink(ctx, slug)?.mode ?? "private",
+    // Shared by its own link, or by a link on a page above it.
+    sharing: activeLink(ctx, slug)?.mode ?? linkThrough(ctx, artifact)?.link.mode ?? "private",
     storybooks: storybooksShown(ctx, version.storybooks),
+    tree: pageTreeFor(ctx, artifact, opts.within),
   };
 }
 

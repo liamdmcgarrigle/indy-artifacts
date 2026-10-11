@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, Copy, ExternalLink, FolderInput, Layers3, MoreHorizontal, Pin, PinOff } from "lucide-react";
+import { Archive, ArchiveRestore, Copy, ExternalLink, FolderInput, Layers3, ListTree, MoreHorizontal, Pin, PinOff } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { ShapeThumb } from "./ShapeThumb";
 import { saveNavList } from "./nav-list";
 import { OrganiseDialog } from "./OrganiseDialog";
+import { MoveIntoDialog } from "@/components/viewer/TreeTools";
 import { copyText } from "@/lib/clipboard";
 
 export interface BoardSection {
@@ -33,9 +34,17 @@ export interface BoardSection {
 
 const KIND_LABEL: Record<string, string> = { markdown: "page", react: "react app", svelte: "svelte app", html: "html" };
 
+/** The pages above a subpage shown on its own, quieter than its title. */
+function PathPrefix({ path }: { path: string[] }) {
+  if (!path.length) return null;
+  return <span className="font-normal text-muted-foreground">{path.join(" › ")} › </span>;
+}
+
 function reasonText(r: Reason, row: LibraryRow): string {
   if (r.kind === "new" && row.series && row.seriesCount > 1)
     return `${row.seriesCount} new in ${row.series}; ${r.who} published the latest`;
+  if (r.kind === "new" && r.pages && r.pages > 1)
+    return `${r.pages} pages changed${row.path.length ? ` in ${row.path[0]}` : ""}; ${r.who} published the latest`;
   switch (r.kind) {
     case "reply":
       return `${r.who} replied: “${r.excerpt}”`;
@@ -81,7 +90,7 @@ function RowMenu({
 }: {
   row: LibraryRow;
   onChanged: () => void;
-  onOrganise: (row: LibraryRow, what: "project" | "series") => void;
+  onOrganise: (row: LibraryRow, what: "project" | "series" | "parent") => void;
 }) {
   return (
     <DropdownMenu>
@@ -126,6 +135,9 @@ function RowMenu({
         <DropdownMenuItem onSelect={() => onOrganise(row, "series")}>
           <Layers3 /> Add to series…
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onOrganise(row, "parent")}>
+          <ListTree /> Move into a page…
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={async () => {
@@ -147,7 +159,7 @@ export function LibraryBoard({ sections, listLabel }: { sections: BoardSection[]
   const router = useRouter();
   const flat = useMemo(() => sections.flatMap((s) => s.rows.map((row) => ({ row, section: s.id }))), [sections]);
   const [focus, setFocus] = useState(-1);
-  const [organise, setOrganise] = useState<{ row: LibraryRow; what: "project" | "series" } | null>(null);
+  const [organise, setOrganise] = useState<{ row: LibraryRow; what: "project" | "series" | "parent" } | null>(null);
   const refs = useRef<(HTMLElement | null)[]>([]);
 
   useEffect(() => {
@@ -245,7 +257,10 @@ export function LibraryBoard({ sections, listLabel }: { sections: BoardSection[]
                   >
                     <ReasonGlyph reason={r.reason} />
                     <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate text-sm font-medium">{row.title}</span>
+                      <span className="truncate text-sm font-medium">
+                        <PathPrefix path={row.path} />
+                        {row.title}
+                      </span>
                       <span className="truncate text-[13px] text-fg-3">{reasonText(r.reason, row)}</span>
                     </span>
                     <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground max-md:hidden">
@@ -308,6 +323,7 @@ export function LibraryBoard({ sections, listLabel }: { sections: BoardSection[]
                           onClick={() => saveNavList(listLabel, flat.map((f) => f.row.slug))}
                           className="truncate font-medium hover:text-sand-strong"
                         >
+                          <PathPrefix path={row.path} />
                           {row.title}
                         </Link>
                         {row.unseen ? <span aria-label="new" className="size-1.5 shrink-0 rounded-full bg-sand" /> : null}
@@ -317,6 +333,7 @@ export function LibraryBoard({ sections, listLabel }: { sections: BoardSection[]
                       <span className="truncate font-mono text-[11px] text-muted-foreground">
                         {row.project ? <span className="md:hidden">{row.project} · </span> : null}
                         {KIND_LABEL[row.kind] ?? row.kind}
+                        {row.subpages ? ` · ${row.subpages} ${row.subpages === 1 ? "subpage" : "subpages"}${row.subpagesUnseen ? `, ${row.subpagesUnseen} new` : ""}` : ""}
                         {row.branch ? ` · ⎇ ${row.branch}` : ""}
                         {row.series ? ` · ${row.series}${row.seriesCount > 1 ? `, ${row.seriesCount} runs` : ""}` : ""}
                       </span>
@@ -370,8 +387,13 @@ export function LibraryBoard({ sections, listLabel }: { sections: BoardSection[]
         </span>
       </div>
 
+      <MoveIntoDialog
+        page={organise?.what === "parent" ? organise.row : null}
+        onClose={() => setOrganise(null)}
+        onMoved={() => refresh()}
+      />
       <OrganiseDialog
-        target={organise}
+        target={organise?.what === "parent" ? null : (organise as { row: LibraryRow; what: "project" | "series" } | null)}
         onClose={() => setOrganise(null)}
         onSaved={() => {
           setOrganise(null);

@@ -1,5 +1,6 @@
 "use client";
 
+import type { PageTree } from "@/lib/page-tree";
 import { Ago } from "@/components/indy/Ago";
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
@@ -33,6 +34,8 @@ import type { FieldSpec, FormSettings } from "@/lib/forms/spec";
 import { FormProvider } from "./forms/FormState";
 import { FormBar } from "./forms/FormBar";
 import { ShareDialog } from "./viewer/ShareDialog";
+import { ContentsRail, ContentsSheet, Pager, PagesButton, PageTreeProvider, useContents } from "./viewer/PageNav";
+import { useTreeTools } from "./viewer/TreeTools";
 import { primitivesUrl } from "@/lib/primitives";
 import { copyText } from "@/lib/clipboard";
 import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
@@ -117,6 +120,8 @@ export interface ArtifactViewProps {
   ticks?: TickView[];
   /** Ticks not yet sent to the agent. */
   unsentTicks?: number;
+  /** The tree the page is in, when it has a parent or subpages. */
+  tree?: PageTree | null;
 }
 
 export interface VisitorInfo {
@@ -126,6 +131,8 @@ export interface VisitorInfo {
   allowComments: boolean;
   sharedBy: string | null;
   mode?: "link" | "email";
+  /** The page the link shares; any other page here is one under it. */
+  top?: string;
 }
 
 interface Box {
@@ -265,7 +272,38 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [author, setAuthor] = useState(props.userName ?? (props.visitor ? "" : "operator"));
   const visitor = props.visitor ?? null;
   // Where this page's comments live: the owner's API, or the share link's.
-  const commentsApi = visitor ? `/s/${visitor.token}/api/comments` : `/api/artifacts/${props.slug}/comments`;
+  // A visitor on a subpage of the shared page names it; the link itself is for the top one.
+  const sharedTop = visitor?.top ?? props.slug;
+  const visitorPage = visitor && props.slug !== sharedTop ? `?page=${encodeURIComponent(props.slug)}` : "";
+  const commentsApi = visitor ? `/s/${visitor.token}/api/comments${visitorPage}` : `/api/artifacts/${props.slug}/comments`;
+  const treeTools = useTreeTools(props.tree);
+  const treeNav = useMemo(() => {
+    if (!props.tree) return null;
+    const hrefFor = (slug: string) =>
+      visitor ? (slug === sharedTop ? `/s/${visitor.token}` : `/s/${visitor.token}/p/${slug}`) : `/a/${slug}`;
+    const here = props.tree.nodes.find((n) => n.slug === props.slug);
+    // The owner changes the tree from its contents; a visitor only reads it.
+    const tools = visitor
+      ? undefined
+      : {
+          row: treeTools.rowTools,
+          drag: treeTools.drag,
+          dragging: treeTools.dragging,
+          footer:
+            here && here.depth < 3 ? (
+              <button
+                type="button"
+                onClick={() => treeTools.addUnder(here)}
+                className="mt-2 flex min-h-10 items-center gap-2 rounded-[7px] px-2 text-left text-[14px] text-muted-foreground hover:bg-raised hover:text-foreground md:min-h-[30px] md:text-[13px]"
+              >
+                <span aria-hidden className="w-4 text-center">+</span> Add a page under this one
+              </button>
+            ) : null,
+        };
+    return { tree: props.tree, hrefFor, tools };
+  }, [props.tree, props.slug, visitor, sharedTop, treeTools]);
+  const contents = useContents(props.tree);
+  const trail = treeNav ? treeNav.tree.ancestors.map((a) => ({ title: a.title, href: treeNav.hrefFor(a.slug) })) : [];
   const canComment = !visitor || visitor.allowComments;
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
@@ -337,7 +375,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   }, [notice]);
 
   const refreshThreads = useCallback(async () => {
-    const res = await fetch(`${commentsApi}?status=all`, { cache: "no-store" });
+    const res = await fetch(`${commentsApi}${commentsApi.includes("?") ? "&" : "?"}status=all`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as { threads: ThreadView[] };
     setThreads(data.threads);
@@ -398,7 +436,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     },
     [visitor, remember],
   );
-  const ticksApi = visitor ? `/s/${visitor.token}/api/ticks` : `/api/artifacts/${props.slug}/ticks`;
+  const ticksApi = visitor ? `/s/${visitor.token}/api/ticks${visitorPage}` : `/api/artifacts/${props.slug}/ticks`;
   // The owner ticks the latest version; a visitor, whatever the link shows.
   const canTick = props.kind === "markdown" && !editing && (visitor ? visitor.allowComments : isLatest);
   useEffect(() => tickStore.setCanTick(canTick), [tickStore, canTick]);
@@ -1005,7 +1043,36 @@ export function ArtifactView(props: ArtifactViewProps) {
   }
 
   /** A click on a bit of inline code copies it: a command or a path, ready to paste. */
+  /**
+   * A link in the text to another page, written as /a/<slug>. The owner gets
+   * it without a reload. A visitor gets the page at its address under their
+   * link when the link covers it, and a word instead of the sign-in screen
+   * when it does not.
+   */
+  function followPageLink(event: React.MouseEvent): boolean {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+    const a = (event.target as HTMLElement).closest?.("a[href]") as HTMLAnchorElement | null;
+    if (!a || !contentRef.current?.contains(a)) return false;
+    const url = new URL(a.href, window.location.href);
+    const m = url.origin === window.location.origin ? url.pathname.match(/^\/a\/([a-z0-9][a-z0-9-]{2,63})\/?$/) : null;
+    if (!m) return false;
+    event.preventDefault();
+    // A link to a spot on this same page just goes there.
+    if (m[1] === props.slug) {
+      if (url.hash) window.location.hash = url.hash;
+      return true;
+    }
+    if (!visitor) {
+      router.push(`${url.pathname}${url.search}${url.hash}`);
+      return true;
+    }
+    if (treeNav?.tree.nodes.some((n) => n.slug === m[1])) router.push(`${treeNav.hrefFor(m[1])}${url.hash}`);
+    else setNotice({ kind: "bad", text: "That page is not part of what was shared with you." });
+    return true;
+  }
+
   function onContentClick(event: React.MouseEvent) {
+    if (!editing && !tool && followPageLink(event)) return;
     if (editing || tool || event.detail > 1) return;
     const code = (event.target as HTMLElement).closest?.("code");
     if (!code || code.closest("pre, a") || !contentRef.current?.contains(code)) return;
@@ -1368,16 +1435,19 @@ export function ArtifactView(props: ArtifactViewProps) {
   // ---- render --------------------------------------------------------------
 
   return (
+    <PageTreeProvider value={treeNav}>
     <FormGate
       slug={props.slug}
       form={props.form}
-      submitUrl={visitor ? `/s/${visitor.token}/api/responses` : undefined}
+      submitUrl={visitor ? `/s/${visitor.token}/api/responses${visitorPage}` : undefined}
       onSent={() => (visitor ? undefined : router.refresh())}
     >
       <link rel="stylesheet" href={props.themeHref} />
       {visitor ? (
         <VisitorHeader
           title={props.title}
+          trail={trail}
+          pages={treeNav ? <PagesButton open={contents.open} onClick={contents.toggle} className="max-md:hidden" /> : null}
           sharedBy={visitor.sharedBy}
           threads={canComment ? visible.length : null}
           panel={panel}
@@ -1389,6 +1459,8 @@ export function ArtifactView(props: ArtifactViewProps) {
       <ViewerHeader
         slug={props.slug}
         title={props.title}
+        trail={trail}
+        pages={treeNav ? <PagesButton open={contents.open} onClick={contents.toggle} className="max-md:hidden" /> : null}
         project={props.project}
         series={props.series}
         branch={props.branch}
@@ -1416,6 +1488,9 @@ export function ArtifactView(props: ArtifactViewProps) {
               {showResolved ? "Hide resolved threads" : "Show resolved threads"}
             </ViewerMenuItem>
             <ViewerMenuSeparator />
+            {(props.tree?.nodes.find((n) => n.slug === props.slug)?.depth ?? 0) < 3 ? (
+              <ViewerMenuItem onSelect={() => treeTools.addUnder({ slug: props.slug, title: props.title })}>Add a page under this…</ViewerMenuItem>
+            ) : null}
             <ViewerMenuItem onSelect={() => setShareOpen(true)}>Share…</ViewerMenuItem>
           </>
         }
@@ -1499,8 +1574,11 @@ export function ArtifactView(props: ArtifactViewProps) {
         </div>
       ) : null}
 
+      {treeNav && contents.railOpen ? <ContentsRail /> : null}
+      {treeNav ? <ContentsSheet open={contents.sheetOpen} onOpenChange={contents.setSheet} /> : null}
+      {!visitor ? treeTools.dialogs : null}
       <main
-        className={["stage", tool && "stage--picking", editing && "stage--editing"].filter(Boolean).join(" ")}
+        className={["stage", tool && "stage--picking", editing && "stage--editing", contents.railOpen && "stage--rail"].filter(Boolean).join(" ")}
         onMouseMove={onStageMove}
       >
         <div className="stage__inner" ref={innerRef}>
@@ -1566,6 +1644,7 @@ export function ArtifactView(props: ArtifactViewProps) {
               </div>
             ) : (
               <>
+                {treeNav && !editing ? <PagesButton open={contents.sheetOpen} onClick={contents.toggle} className="mb-3 ml-4 md:hidden" /> : null}
                 <ArticleHead {...props} doc={shownDoc} head={editing ? head : null} onHead={setHeadDirty} />
                 {shownDoc ? (
                   <DocView
@@ -1584,6 +1663,8 @@ export function ArtifactView(props: ArtifactViewProps) {
               </>
             )}
           </div>
+
+          {treeNav && !editing ? <Pager /> : null}
 
           <div className="pins">
             {/* The element a comment is about is outlined while its thread is open. */}
@@ -1802,6 +1883,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         />
       ) : null}
     </FormGate>
+    </PageTreeProvider>
   );
 }
 

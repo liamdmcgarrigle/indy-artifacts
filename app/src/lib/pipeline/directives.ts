@@ -124,6 +124,11 @@ function handleDirective(node: AnyNode, ctx: PipelineContext) {
         { type: "element", tagName: "label", properties: {}, children: [{ type: "text", value: attrs.label || attrs.name || "Question" }] },
       ]);
       return;
+    // The pages under this one. The viewer fills it from the tree; this is what
+    // shows before it loads.
+    case "pages":
+      setElement(node, "div", { className: "art-pages art-pages--empty" }, [{ type: "text", value: "Subpages" }]);
+      return;
     case "choice":
       if (!attrs.name) warn(ctx, node, '":::choice" needs a name, e.g. :::choice{name=pick label="Which one?"}');
       setElement(node, "div", { className: "art-choice" });
@@ -231,6 +236,8 @@ export function artifactsDirectives(ctx: PipelineContext) {
         node.type === "leafDirective"
       ) {
         checkParent(node, parent, ctx);
+        if (node.name === "pages" && parent?.type !== "root")
+          warn(ctx, node, '"::pages" lists the pages under this one only on a line of its own at the top level of the page, not inside another block');
         handleDirective(node, ctx);
         // A counter list is read whole, and warns about its own lines.
         if (node.name === "kpis") return SKIP;

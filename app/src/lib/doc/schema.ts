@@ -52,6 +52,7 @@ export const TOP_LEVEL = [
   "embed",
   "field",
   "choice",
+  "pages",
   "rawBlock",
 ] as const;
 
@@ -158,6 +159,20 @@ export const Field = Node.create({
   renderHTML({ node }) {
     const a = (node.attrs.attributes ?? {}) as Record<string, string>;
     return ["div", { class: "art-field", "data-name": a.name ?? "" }, ["label", {}, a.label ?? a.name ?? ""]];
+  },
+});
+
+/** The pages under this one, as cards: `::pages`, or `::pages{depth=2}` to list theirs too. */
+export const Pages = Node.create({
+  name: "pages",
+  group: "block",
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return { attributes: { default: {}, rendered: false } };
+  },
+  renderHTML() {
+    return ["div", { class: "art-pages art-pages--empty" }, "Subpages"];
   },
 });
 
@@ -442,6 +457,7 @@ export function docExtensions(options: DocOptions = {}): AnyExtension[] {
     TimelineEvent,
     Badge,
     Field,
+    Pages,
     Choice,
     ChoiceOption,
     Kpis,

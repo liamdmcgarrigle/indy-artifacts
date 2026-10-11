@@ -449,6 +449,110 @@ kbd {
   position: relative;
 }
 
+/* ---------- a tree of pages ---------- */
+
+/* The contents beside the page, under the header, scrolling on its own. */
+.contents-rail {
+  position: fixed;
+  top: 52px;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  width: 272px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 10px 48px;
+  border-right: 1px solid var(--hairline);
+  background: var(--background);
+}
+.stage--rail {
+  padding-left: calc(272px + var(--art-space-5));
+}
+
+/* Previous and next at the foot of a page in a tree. */
+.pager {
+  display: flex;
+  gap: 12px;
+  box-sizing: content-box;
+  max-width: var(--art-measure, 68ch);
+  /* In line with the article, which keeps 16px from the edge. */
+  margin: 56px 16px 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
+}
+@media (max-width: 640px) {
+  .pager { flex-direction: column; }
+  .pager > a[rel="next"] { align-items: flex-end; }
+}
+
+/* ::pages, the pages under this one as cards. Inside the page, so in its theme. */
+.art-pages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: var(--art-space-3, 12px);
+  margin: 1.5em 0;
+  max-width: var(--art-measure);
+}
+.art-pages--empty {
+  display: block;
+  padding: var(--art-space-4, 16px);
+  border: 1px dashed var(--art-border);
+  border-radius: var(--art-radius);
+  color: var(--art-text-muted);
+  font-size: 0.9em;
+}
+.art-pages__group {
+  grid-column: 1 / -1;
+  margin-top: var(--art-space-3, 12px);
+  font: 600 0.72em/1.4 var(--art-font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--art-text-muted);
+}
+.art-pages__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--art-space-4, 16px);
+  background: var(--art-surface);
+  border: 1px solid var(--art-hairline);
+  border-radius: var(--art-radius-lg, 10px);
+  box-shadow: var(--art-shadow-sm);
+}
+/* Inside the page, the page's own link style would win without the extra class. */
+.art-pages .art-pages__title {
+  font-family: var(--art-font-display, var(--art-font-sans));
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--art-text);
+  text-decoration: none;
+}
+.art-pages .art-pages__title:hover { color: var(--art-accent); }
+.art-pages__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--art-accent);
+}
+.art-pages__desc {
+  margin: 0;
+  color: var(--art-text-muted);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.art-pages .art-pages__list {
+  margin: 4px 0 0;
+  padding-left: 1.1em;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.art-pages .art-pages__list li { margin: 0.25em 0; }
+.art-pages .art-pages__list a { color: var(--art-text-muted); text-decoration: none; }
+.art-pages .art-pages__list a:hover { color: var(--art-accent); text-decoration: underline; }
+
 .stage--picking {
   cursor: crosshair;
 }

@@ -65,8 +65,9 @@ export function openCommand() {
 /* ------------------------------------------------------------ palette */
 
 interface SearchResult {
-  pages: { slug: string; title: string; project: string | null; series: string | null; updatedAt: string; kind: string }[];
-  hits: { slug: string; title: string; project: string | null; snippet: string; version: number }[];
+  /** `path`: for a subpage, the titles of the pages above it. */
+  pages: { slug: string; title: string; project: string | null; series: string | null; updatedAt: string; kind: string; path?: string[] }[];
+  hits: { slug: string; title: string; project: string | null; snippet: string; version: number; path?: string[] }[];
 }
 
 function Snippet({ text }: { text: string }) {
@@ -121,11 +122,12 @@ export function CommandPalette({ projects }: { projects: string[] }) {
       setPicking(false);
       return;
     }
-    fetch("/api/artifacts?limit=6")
+    // Recent pages are top pages: a tree published at once would otherwise fill the list.
+    fetch("/api/artifacts?limit=40")
       .then((r) => r.json())
       .then((d) =>
         setRecent(
-          (d.artifacts ?? []).map((a: Record<string, unknown>) => ({
+          (d.artifacts ?? []).filter((a: Record<string, unknown>) => !a.parentId).slice(0, 6).map((a: Record<string, unknown>) => ({
             slug: a.slug,
             title: a.title,
             project: a.project,
@@ -244,7 +246,10 @@ export function CommandPalette({ projects }: { projects: string[] }) {
                     {pages.map((p) => (
                       <Cmdk.Item key={p.slug} value={`page-${p.slug}`} className={ITEM} onSelect={() => go(`/a/${p.slug}`)}>
                         {p.series ? <Layers3 className="size-4 text-muted-foreground" /> : <FileText className="size-4 text-muted-foreground" />}
-                        <span className="min-w-0 flex-1 truncate">{p.title}</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {p.path?.length ? <span className="text-muted-foreground">{p.path.join(" › ")} › </span> : null}
+                          {p.title}
+                        </span>
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {p.project ? `${p.project} · ` : ""}
                           {ago(p.updatedAt)}
@@ -264,7 +269,10 @@ export function CommandPalette({ projects }: { projects: string[] }) {
                         onSelect={() => go(`/a/${h.slug}?find=${encodeURIComponent(query.trim())}`)}
                       >
                         <span className="flex gap-2 text-xs text-muted-foreground">
-                          <span className="text-fg-2">{h.title}</span>
+                          <span className="truncate text-fg-2">
+                            {h.path?.length ? <span className="text-muted-foreground">{h.path.join(" › ")} › </span> : null}
+                            {h.title}
+                          </span>
                           {h.project ? <span>· {h.project}</span> : null}
                           <span className="ml-auto font-mono">v{h.version}</span>
                         </span>

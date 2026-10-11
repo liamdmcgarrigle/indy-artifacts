@@ -53,9 +53,15 @@ export function ViewerHeader({
   sharing = "private",
   editing,
   menu,
+  trail = [],
+  pages,
 }: {
   slug: string;
   title: string;
+  /** The pages above this one in its tree, top first, linked. */
+  trail?: { title: string; href: string }[];
+  /** The button that shows the tree's pages. */
+  pages?: React.ReactNode;
   project: string | null;
   series: string | null;
   branch?: string | null;
@@ -105,8 +111,18 @@ export function ViewerHeader({
   }
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1.5 border-b border-hairline bg-background px-2 md:h-[52px] md:gap-3 md:bg-background/92 md:px-4 md:backdrop-blur">
+      {/* In a tree, back on a phone goes up a page; the breadcrumb does that on a wider screen. */}
+      {trail.length ? (
+        <Link
+          href={trail[trail.length - 1].href}
+          aria-label={`Back to ${trail[trail.length - 1].title}`}
+          className={cn(iconButton, "flex size-10 items-center justify-center md:hidden")}
+        >
+          <ArrowLeft className="size-5" />
+        </Link>
+      ) : null}
       <Tip label="Back to the library" keys="esc">
-        <Link href="/" aria-label="Back to the library" className={cn(iconButton, "flex size-10 items-center justify-center md:size-7")}>
+        <Link href="/" aria-label="Back to the library" className={cn(iconButton, "flex size-10 items-center justify-center md:size-7", trail.length && "max-md:hidden")}>
           <ArrowLeft className="size-5 md:size-4" />
         </Link>
       </Tip>
@@ -141,7 +157,19 @@ export function ViewerHeader({
             <span className="text-faint max-md:hidden">/</span>
           </>
         ) : null}
-        <span className="truncate text-[15px] font-medium text-foreground md:text-[13px]">{title}</span>
+        {trail.map((t, i) => (
+          <span key={t.href} className={cn("flex min-w-0 items-center gap-1.5 max-md:hidden", i < trail.length - 2 && "max-lg:hidden")}>
+            <Link href={t.href} className="max-w-[200px] truncate text-fg-2 hover:text-foreground">
+              {t.title}
+            </Link>
+            <span className="text-faint">/</span>
+          </span>
+        ))}
+        <span className="flex min-w-0 flex-col">
+          {/* On a phone the trail shortens to the page above. */}
+          {trail.length ? <span className="truncate text-[11px] leading-tight text-muted-foreground md:hidden">{trail[trail.length - 1].title}</span> : null}
+          <span className="truncate text-[15px] font-medium text-foreground md:text-[13px]">{title}</span>
+        </span>
       </nav>
 
       {nav ? (
@@ -163,6 +191,7 @@ export function ViewerHeader({
       ) : null}
 
       <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-1.5">
+        {pages}
         <VersionMenu slug={slug} version={version} latest={latest} versions={versions} onVersion={onVersion} />
         {canEdit ? (
           <Tip label="Edit" keys="e">
