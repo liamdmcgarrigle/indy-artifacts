@@ -235,8 +235,11 @@
   margin: 1.4em 0;
 }
 
-.art-code > pre {
+/* The editor's own stylesheet wraps every <pre> (.ProseMirror pre); code
+   reads by its lines, so a long one scrolls sideways instead. */
+.art-content .art-code > pre {
   margin: 0;
+  white-space: pre;
 }
 
 .art-code__copy {
@@ -277,7 +280,7 @@
     opacity: 1;
   }
 
-  .art-code > pre {
+  .art-content .art-code > pre {
     padding-top: 40px;
   }
 }
