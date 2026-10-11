@@ -150,6 +150,11 @@ interface Pin extends Spot {
  * it (a sheet from the bottom on a phone).
  */
 const PIN_SIZE = 26;
+// Room the phone keeps around a selection: the drag handles under the words,
+// the copy menu over them, and Chrome's tap-to-search panel at the foot.
+const SELECTION_HANDLES = 40;
+const SYSTEM_MENU = 64;
+const SEARCH_PANEL = 110;
 
 /** Where a pin goes for a resolved anchor: the end of a selection, the spot itself otherwise. */
 function pinPoint(rect: DOMRect, type: Anchor["type"]): { x: number; y: number } {
@@ -255,7 +260,7 @@ export function ArtifactView(props: ArtifactViewProps) {
   const [domTick, setDomTick] = useState(0);
   const onDocReady = useCallback(() => setDomTick((t) => t + 1), []);
   const [pick, setPick] = useState<Box | null>(null);
-  const [selected, setSelected] = useState<Anchor | null>(null);
+  const [selected, setSelected] = useState<{ anchor: Anchor; top: number; left: number } | null>(null);
   // Signed in, you are who you are; the name box is for when you are not.
   const [author, setAuthor] = useState(props.userName ?? (props.visitor ? "" : "operator"));
   const visitor = props.visitor ?? null;
@@ -692,22 +697,47 @@ export function ArtifactView(props: ArtifactViewProps) {
     return () => window.removeEventListener("art:scheme", onScheme);
   }, []);
 
-  // On a touch screen a selection is made with handles, not a mouse-up, and
-  // the system menu sits right over it; offer the comment from the bottom bar.
+  // On a touch screen a selection is made with handles, not a mouse-up. The
+  // system's copy menu floats just above the words and Chrome's search panel
+  // takes the foot of the screen, so the comment button sits under the
+  // selection's handles, or above the copy menu when there is no room below.
   useEffect(() => {
     if (window.matchMedia("(hover: hover)").matches) return;
     let timer = 0;
+    const place = () => {
+      const content = contentRef.current;
+      const anchor = content ? anchorFromSelection(content) : null;
+      const rects = anchor ? Array.from(window.getSelection()?.getRangeAt(0).getClientRects() ?? []) : [];
+      if (!anchor || !rects.length) return setSelected(null);
+      const first = rects[0];
+      const last = rects[rects.length - 1];
+      const height = window.visualViewport?.height ?? window.innerHeight;
+      const button = 44;
+      const below = last.bottom + SELECTION_HANDLES;
+      const above = first.top - SYSTEM_MENU - button;
+      let top = below;
+      if (below + button > height - SEARCH_PANEL) top = above >= 12 ? above : Math.max(12, height - SEARCH_PANEL - button);
+      const middle = (Math.min(first.left, last.left) + Math.max(first.right, last.right)) / 2;
+      setSelected({ anchor, top, left: Math.min(Math.max(middle, 70), window.innerWidth - 70) });
+    };
     const onChange = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const content = contentRef.current;
-        setSelected(content ? anchorFromSelection(content) : null);
-      }, 180);
+      timer = window.setTimeout(place, 180);
+    };
+    // The button is fixed to the screen: it steps out of the way while the
+    // page moves and comes back beside the words once it settles.
+    const onMove = () => {
+      setSelected(null);
+      onChange();
     };
     document.addEventListener("selectionchange", onChange);
+    window.addEventListener("scroll", onMove, { passive: true });
+    window.visualViewport?.addEventListener("resize", onMove);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("selectionchange", onChange);
+      window.removeEventListener("scroll", onMove);
+      window.visualViewport?.removeEventListener("resize", onMove);
     };
   }, []);
 
@@ -810,18 +840,24 @@ export function ArtifactView(props: ArtifactViewProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleTool, setFramePicking, goNav, goVersion, router]);
 
-  // A click outside the open card closes it. The draft composer stays put, so a
-  // half-typed comment is never thrown away by a stray click.
+  // A click or tap outside the open card closes it, and an empty draft with it.
+  // A draft with words in it stays put, so a half-typed comment is never thrown
+  // away by a stray tap. Pointer events, because a phone's long-press to select
+  // other words fires no mousedown.
+  const draftEmpty = useRef(true);
+  draftEmpty.current = !draft?.body.trim();
   useEffect(() => {
-    function onDown(event: MouseEvent) {
+    function onDown(event: PointerEvent) {
       const el = event.target as HTMLElement | null;
       if (!el) return;
       if (el.closest(".pop") || el.closest(".pin") || el.closest(".panel") || el.closest(".panel-btn")) return;
+      if (el.closest(".selcomment, .bubble, .touchbar, [role=dialog]")) return;
       setActiveId(null);
       setPanel("none");
+      if (draftEmpty.current) setDraft(null);
     }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
   }, []);
 
   // ---- press and hold -------------------------------------------------------
@@ -935,6 +971,8 @@ export function ArtifactView(props: ArtifactViewProps) {
       if (hit) openThread(hit);
       return;
     }
+    // A phone places its own button, clear of the system menus.
+    if (hoverless) return;
     const selection = window.getSelection();
     const rect = selection?.getRangeAt(0).getBoundingClientRect();
     const origin = inner.getBoundingClientRect();
@@ -1714,22 +1752,24 @@ export function ArtifactView(props: ArtifactViewProps) {
         </div>
       </main>
 
+      {hoverless && !editing && canComment && selected && !draft?.body.trim() ? (
+        <button
+          className="btn btn--primary selcomment"
+          style={{ top: selected.top, left: selected.left }}
+          onClick={() => {
+            setActiveId(null);
+            setDraft({ anchor: selected.anchor, body: "", notify: false });
+            setSelected(null);
+            window.getSelection()?.removeAllRanges();
+          }}
+        >
+          Comment
+        </button>
+      ) : null}
+
       {/* Touch screens: commenting without a keyboard shortcut or hover. */}
       {hoverless && !editing ? (
         <div className={props.form ? "touchbar touchbar--raised" : "touchbar"}>
-          {selected && !draft ? (
-            <button
-              className="touchbar__select"
-              onClick={() => {
-                setActiveId(null);
-                setDraft({ anchor: selected, body: "", notify: false });
-                setSelected(null);
-                window.getSelection()?.removeAllRanges();
-              }}
-            >
-              Comment on the selected words
-            </button>
-          ) : null}
           {tool ? <span className="touchbar__hint">Tap the spot or element the comment is about</span> : null}
           {/* A form's send bar owns the foot of a phone screen; hold to comment there. */}
           {!draft && !active && !props.form && canComment ? (

@@ -554,14 +554,15 @@ kbd {
   color: var(--art-text);
   font-size: 20px;
 }
-.touchbar__select {
-  flex: 1;
-  height: 48px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--primary, var(--art-accent));
-  color: var(--primary-foreground, var(--art-on-accent));
-  font: 600 15px var(--art-font-sans);
+/* The touch screen's comment button for selected words, placed in script
+   clear of the system's copy menu and search panel. */
+.selcomment {
+  position: fixed;
+  z-index: 36;
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 22px;
+  transform: translateX(-50%);
   box-shadow: var(--art-shadow-lg);
 }
 .touchbar__hint {
@@ -1318,6 +1319,12 @@ kbd {
     z-index: 45;
     border-radius: 16px;
     box-shadow: 0 -8px 40px rgb(0 0 0 / 0.45);
+  }
+
+  /* The sheet is stacked inside the pin layer, below a form's send bar, so the
+     bar steps aside while a comment is open rather than covering its foot. */
+  :root:has(.pins .pop) .formbar {
+    visibility: hidden;
   }
 
   .panel {
