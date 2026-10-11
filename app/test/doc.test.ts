@@ -278,6 +278,25 @@ A.
     expect(noteText(fields[0], answers)).toBe("Depends on the budget.");
     expect(noteText(fields[1], answers)).toBe("");
   });
+
+  it("opens a note box from the start with note-open, which implies a note", async () => {
+    const { formFields, cleanAnswers, DEFAULT_NOTE } = await import("@/lib/forms/spec");
+    const md = `::field{name=a type=text label="A" note-open}
+
+::field{name=b type=text label="B" note="Why?" note-open}
+
+::field{name=c type=text label="C" note}
+`;
+    const doc = markdownToDoc(md);
+    expect(docToMarkdown(doc)).toBe(md);
+    const fields = formFields(doc);
+    expect(fields.map((f) => [f.note, f.noteOpen ?? false])).toEqual([
+      [DEFAULT_NOTE, true],
+      ["Why?", true],
+      [DEFAULT_NOTE, false],
+    ]);
+    expect(cleanAnswers(fields, { a: "x", "a.note": "kept" })).toEqual({ a: "x", "a.note": "kept" });
+  });
 });
 
 describe("editing in place", () => {

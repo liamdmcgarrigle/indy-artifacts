@@ -47,6 +47,11 @@ export interface FieldSpec {
    * that invite one. Written `note` (bare) or `note="Anything else?"`.
    */
   note?: string;
+  /**
+   * The note box is open from the start, rather than behind a link: for when a
+   * note is wanted, not merely allowed. Written `note-open`, which implies `note`.
+   */
+  noteOpen?: boolean;
 }
 
 export interface FormSettings {
@@ -113,8 +118,12 @@ export function fieldSpec(attrs: Record<string, unknown>, kind: "field" | "choic
     step: num(attrs.step),
     low: attrs.low ? String(attrs.low) : undefined,
     high: attrs.high ? String(attrs.high) : undefined,
-    note: attrs.note === undefined || attrs.note === null || attrs.note === "false" ? undefined : String(attrs.note).trim() || DEFAULT_NOTE,
   };
+  const noteOpen = truthy(attrs["note-open"]);
+  if (noteOpen || (attrs.note !== undefined && attrs.note !== null && attrs.note !== "false")) {
+    spec.note = (attrs.note === "false" ? "" : String(attrs.note ?? "").trim()) || DEFAULT_NOTE;
+    if (noteOpen) spec.noteOpen = true;
+  }
   if (type === "choice") spec.options = options;
   else if (type === "select" || type === "radio" || type === "checkboxes") spec.options = splitOptions(attrs.options);
   if (type === "rating") spec.max = spec.max ?? 5;
