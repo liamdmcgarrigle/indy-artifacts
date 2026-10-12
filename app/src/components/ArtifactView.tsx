@@ -41,6 +41,7 @@ import { copyText } from "@/lib/clipboard";
 import { MadeWithIndy, VisitorHeader } from "./viewer/VisitorHeader";
 import { IDENTITY_HEADER, IdentityDialog, renewIdentity, storedIdentity, storeIdentity, type VisitorIdentity } from "./share/IdentityDialog";
 import { createTickStore } from "@/lib/doc/tasks-view";
+import { capturePlace, type Place } from "@/lib/doc/keep-place";
 import type { TickView } from "@/lib/tasks";
 import type { Listener } from "@/lib/service/listeners";
 
@@ -1139,6 +1140,14 @@ export function ArtifactView(props: ArtifactViewProps) {
     setPick({ top: r.top - origin.top, left: r.left - origin.left, width: r.width, height: r.height });
   }
 
+  // Where the reader is when editing starts or stops; the page puts them back there.
+  const place = useRef<Place | null>(null);
+  function switchEditing(on: boolean) {
+    const editor = editorRef.current;
+    place.current = editor && !editor.isDestroyed ? capturePlace(editor.view) : null;
+    setEditing(on);
+  }
+
   function startEditing() {
     if (!canEdit || editing) return;
     setTool(false);
@@ -1151,12 +1160,12 @@ export function ArtifactView(props: ArtifactViewProps) {
     setPanel("none");
     setHead({ title: props.title, description: props.description ?? "" });
     setDirty(false);
-    setEditing(true);
+    switchEditing(true);
   }
 
   function cancelEditing() {
     if (dirty && !window.confirm("Throw away your changes to this page?")) return;
-    setEditing(false);
+    switchEditing(false);
     setDirty(false);
   }
 
@@ -1177,7 +1186,7 @@ export function ArtifactView(props: ArtifactViewProps) {
     const source = docToMarkdown(json);
     // Nothing changed if the edit reads back exactly as the page it started from.
     if (shownDoc && source === docToMarkdown(shownDoc)) {
-      setEditing(false);
+      switchEditing(false);
       setDirty(false);
       return;
     }
@@ -1201,7 +1210,7 @@ export function ArtifactView(props: ArtifactViewProps) {
         return;
       }
       setSavedDoc({ version: props.versionNumber, doc: json });
-      setEditing(false);
+      switchEditing(false);
       setDirty(false);
       setNotice({ kind: "good", text: `Saved as version ${data.version?.number ?? props.currentVersion + 1}.` });
       router.refresh();
@@ -1656,6 +1665,7 @@ export function ArtifactView(props: ArtifactViewProps) {
                     onEditor={onEditor}
                     onDirty={onDirty}
                     ticks={props.kind === "markdown" ? tickStore : undefined}
+                    place={place}
                   />
                 ) : (
                   <div className="art-content" dangerouslySetInnerHTML={{ __html: props.html ?? "" }} />
