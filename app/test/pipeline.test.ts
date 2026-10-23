@@ -409,3 +409,16 @@ describe("plain text for search", () => {
     expect(Date.now() - started).toBeLessThan(1000);
   });
 });
+
+describe("links", () => {
+  it("opens links that leave Indy in a new tab", () => {
+    const r = renderMarkdown("[out](https://example.com/x) and <http://example.org>\n");
+    expect(r.html).toContain('<a href="https://example.com/x" target="_blank" rel="noopener noreferrer">out</a>');
+    expect(r.html).toContain('<a href="http://example.org" target="_blank" rel="noopener noreferrer">');
+  });
+
+  it("leaves links within Indy and mail links in the same tab", () => {
+    const r = renderMarkdown("[page](/a/other-page) [spot](#heading) [mail](mailto:a@b.c)\n");
+    expect(r.html).not.toContain("target=");
+  });
+});
