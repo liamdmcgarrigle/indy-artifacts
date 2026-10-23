@@ -65,6 +65,20 @@ function stampTasks(ctx: PipelineContext) {
   };
 }
 
+/**
+ * Links that leave Indy open in a new tab, so following one never loses the
+ * page. Links within Indy (relative, or #spots on this page) stay put.
+ */
+function externalLinksInNewTab() {
+  return (tree: AnyNode) => {
+    visit(tree, "element", (node: AnyNode) => {
+      if (node.tagName !== "a" || !/^https?:\/\//i.test(String(node.properties?.href ?? ""))) return;
+      node.properties.target = "_blank";
+      node.properties.rel = ["noopener", "noreferrer"];
+    });
+  };
+}
+
 /** Keep each top-level block's finished HTML by its first line, for blocks the editor shows as-is. */
 function captureBlocks(ctx: PipelineContext) {
   return (tree: AnyNode) => {
@@ -113,6 +127,7 @@ export function renderMarkdown(source: string, fallbackTitle = "Untitled", optio
     .use(remarkRehype, { allowDangerousHtml: false })
     .use(assignBlocks, ctx)
     .use(rehypeSanitize, schema as never)
+    .use(externalLinksInNewTab)
     .use(captureBlocks, ctx)
     .use(rehypeStringify);
 
